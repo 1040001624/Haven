@@ -30,7 +30,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         WorkspaceProfile::class,
         WorkspaceItem::class,
     ],
-    version = 46,
+    version = 47,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -649,6 +649,16 @@ abstract class HavenDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_workspace_item_connectionProfileId` " +
                         "ON `workspace_item` (`connectionProfileId`)",
                 )
+            }
+        }
+
+        /**
+         * #144: per-profile terminal colour-scheme override. Null = inherit
+         * the global pref. Stored as the enum's `name` (e.g. "DRACULA").
+         */
+        val MIGRATION_46_47 = object : Migration(46, 47) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE connection_profiles ADD COLUMN terminalColorScheme TEXT")
             }
         }
     }

@@ -363,11 +363,15 @@ fun TerminalScreen(
     // Resolve the active terminal foreground/background. For static
     // schemes use the enum's fixed longs; for MATERIAL_YOU pull live
     // values from the system theme so the terminal stays in sync with
-    // the wallpaper-driven dynamic palette.
-    val terminalBg: Color = if (colorScheme.isDynamic) MaterialTheme.colorScheme.surface
-        else Color(colorScheme.background)
-    val terminalFg: Color = if (colorScheme.isDynamic) MaterialTheme.colorScheme.onSurface
-        else Color(colorScheme.foreground)
+    // the wallpaper-driven dynamic palette. The active tab's
+    // [colorScheme] (#144 — per-profile override) wins over the global
+    // pref so the surrounding chrome matches whatever the emulator is
+    // rendering for that tab.
+    val activeTabScheme = tabs.getOrNull(activeTabIndex)?.colorScheme ?: colorScheme
+    val terminalBg: Color = if (activeTabScheme.isDynamic) MaterialTheme.colorScheme.surface
+        else Color(activeTabScheme.background)
+    val terminalFg: Color = if (activeTabScheme.isDynamic) MaterialTheme.colorScheme.onSurface
+        else Color(activeTabScheme.foreground)
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (tabs.isEmpty()) {

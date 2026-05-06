@@ -240,6 +240,12 @@ data class TerminalTab(
     val sendInput: (ByteArray) -> Unit,
     val resize: (Int, Int) -> Unit,
     val close: () -> Unit,
+    /** Effective terminal colour scheme for this tab — the profile's
+     *  override (#144) or the user's global preference at the time the
+     *  tab was created. The screen reads this for the surrounding
+     *  surface so it matches the emulator's bg/fg. */
+    val colorScheme: UserPreferencesRepository.TerminalColorScheme =
+        UserPreferencesRepository.TerminalColorScheme.HAVEN,
 )
 
 /** VNC connection info for the active terminal's host. */
@@ -382,6 +388,22 @@ class TerminalViewModel @Inject constructor(
                 SharingStarted.WhileSubscribed(5000),
                 UserPreferencesRepository.TerminalColorScheme.HAVEN,
             )
+
+    /**
+     * Resolve the effective colour scheme for a tab built off [profile].
+     * Per-profile override (#144) wins; a missing profile, null override
+     * or unrecognised name all fall through to the global preference.
+     */
+    private fun effectiveColorScheme(
+        profile: sh.haven.core.data.db.entities.ConnectionProfile?,
+    ): UserPreferencesRepository.TerminalColorScheme {
+        val override = profile?.terminalColorScheme?.let { name ->
+            runCatching {
+                UserPreferencesRepository.TerminalColorScheme.valueOf(name)
+            }.getOrNull()
+        }
+        return override ?: terminalColorScheme.value
+    }
 
     private val _tabs = MutableStateFlow<List<TerminalTab>>(emptyList())
     val tabs: StateFlow<List<TerminalTab>> = _tabs.asStateFlow()
@@ -790,8 +812,8 @@ class TerminalViewModel @Inject constructor(
             ) ?: continue
 
             val coalescer = InputCoalescer { data -> termSession.sendToSsh(data) }
-            val scheme = terminalColorScheme.value
             val sshProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
+            val scheme = effectiveColorScheme(sshProfile)
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -840,6 +862,7 @@ class TerminalViewModel @Inject constructor(
                     sendInput = { data -> termSession.sendToSsh(data) },
                     resize = { cols, rows -> termSession.resize(cols, rows) },
                     close = { termSession.close() },
+                    colorScheme = scheme,
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -874,8 +897,8 @@ class TerminalViewModel @Inject constructor(
             ) ?: continue
 
             val rnsCoalescer = InputCoalescer { data -> rnsSession.sendInput(data) }
-            val rnsScheme = terminalColorScheme.value
             val rnsProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
+            val rnsScheme = effectiveColorScheme(rnsProfile)
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -913,6 +936,7 @@ class TerminalViewModel @Inject constructor(
                     sendInput = { data -> rnsSession.sendInput(data) },
                     resize = { cols, rows -> rnsSession.resize(cols, rows) },
                     close = { rnsSession.close() },
+                    colorScheme = rnsScheme,
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -970,7 +994,7 @@ class TerminalViewModel @Inject constructor(
             moshSessionRef[0] = moshSession
 
             val moshCoalescer = InputCoalescer { data -> moshSession.sendInput(data) }
-            val moshScheme = terminalColorScheme.value
+            val moshScheme = effectiveColorScheme(moshProfile)
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -1008,6 +1032,7 @@ class TerminalViewModel @Inject constructor(
                     sendInput = { data -> moshSession.sendInput(data) },
                     resize = { cols, rows -> moshSession.resize(cols, rows) },
                     close = { moshSession.close() },
+                    colorScheme = moshScheme,
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -1064,7 +1089,7 @@ class TerminalViewModel @Inject constructor(
             etSessionRef[0] = etSession
 
             val etCoalescer = InputCoalescer { data -> etSession.sendInput(data) }
-            val etScheme = terminalColorScheme.value
+            val etScheme = effectiveColorScheme(etProfile)
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -1102,6 +1127,7 @@ class TerminalViewModel @Inject constructor(
                     sendInput = { data -> etSession.sendInput(data) },
                     resize = { cols, rows -> etSession.resize(cols, rows) },
                     close = { etSession.close() },
+                    colorScheme = etScheme,
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -1136,8 +1162,8 @@ class TerminalViewModel @Inject constructor(
             ) ?: continue
 
             val localCoalescer = InputCoalescer { data -> localSession.sendInput(data) }
-            val localScheme = terminalColorScheme.value
             val localProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
+            val localScheme = effectiveColorScheme(localProfile)
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -1175,6 +1201,7 @@ class TerminalViewModel @Inject constructor(
                     sendInput = { data -> localSession.sendInput(data) },
                     resize = { cols, rows -> localSession.resize(cols, rows) },
                     close = { localSession.close() },
+                    colorScheme = localScheme,
                 )
             )
             trackedSessionIds.add(session.sessionId)

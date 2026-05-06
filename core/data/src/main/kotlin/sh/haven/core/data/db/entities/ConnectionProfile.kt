@@ -131,6 +131,16 @@ data class ConnectionProfile(
      * "connect directly via the system network".
      */
     val tunnelConfigId: String? = null,
+    /**
+     * Per-profile terminal colour-scheme override (#144). Null = inherit
+     * the user's global preference. Non-null = the name of one of the
+     * `UserPreferencesRepository.TerminalColorScheme` enum entries
+     * (e.g. "DRACULA", "NORD"). Lets users distinguish servers at a
+     * glance instead of relying on the tab-colour dot alone. Unknown
+     * names fall back to inherit so an old client reading a future
+     * scheme doesn't error.
+     */
+    val terminalColorScheme: String? = null,
 ) {
     enum class AuthType {
         PASSWORD,

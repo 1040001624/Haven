@@ -112,6 +112,7 @@ class BackupService @Inject constructor(
                 put("postLoginBeforeSessionManager", p.postLoginBeforeSessionManager)
                 put("fileTransport", p.fileTransport)
                 put("tunnelConfigId", p.tunnelConfigId ?: JSONObject.NULL)
+                put("terminalColorScheme", p.terminalColorScheme ?: JSONObject.NULL)
             })
         }
         json.put("connections", connections)
@@ -365,6 +366,7 @@ class BackupService @Inject constructor(
                             postLoginBeforeSessionManager = c.optBoolean("postLoginBeforeSessionManager", true),
                             fileTransport = c.optString("fileTransport", "AUTO"),
                             tunnelConfigId = c.optStringOrNull("tunnelConfigId"),
+                            terminalColorScheme = c.optStringOrNull("terminalColorScheme"),
                         ),
                     )
                     count++

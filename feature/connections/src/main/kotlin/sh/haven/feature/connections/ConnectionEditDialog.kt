@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ListItem
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,11 +60,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import sh.haven.core.data.db.entities.ConnectionProfile
+import sh.haven.core.data.preferences.UserPreferencesRepository
 
 /** Profile group colors — matches PROFILE_COLORS in ConnectionsScreen. */
 private val EDIT_DIALOG_COLORS = listOf(
@@ -199,6 +204,11 @@ fun ConnectionEditDialog(
     var rnsNetworkName by rememberSaveable { mutableStateOf(existing?.reticulumNetworkName ?: "") }
     var rnsPassphrase by rememberSaveable { mutableStateOf(existing?.reticulumPassphrase ?: "") }
     var fileTransport by rememberSaveable { mutableStateOf(existing?.fileTransport ?: "AUTO") }
+    // Per-profile terminal colour-scheme override (#144). null = inherit
+    // the global preference; otherwise one of the
+    // UserPreferencesRepository.TerminalColorScheme enum names.
+    var terminalColorScheme by rememberSaveable { mutableStateOf(existing?.terminalColorScheme) }
+    var showColorSchemeDialog by rememberSaveable { mutableStateOf(false) }
 
     val isEdit = existing != null
     val title = if (isEdit) stringResource(R.string.connections_dialog_edit) else stringResource(R.string.connections_dialog_new)
@@ -1623,6 +1633,62 @@ fun ConnectionEditDialog(
                         )
                     }
 
+                    // Per-profile terminal colour scheme (#144). Null on the
+                    // profile means "inherit the global setting"; setting a
+                    // scheme here overrides only this profile so users can
+                    // distinguish servers by background colour at a glance.
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Terminal colour scheme",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val activeSchemeEnum = remember(terminalColorScheme) {
+                        terminalColorScheme?.let { name ->
+                            runCatching {
+                                UserPreferencesRepository.TerminalColorScheme.valueOf(name)
+                            }.getOrNull()
+                        }
+                    }
+                    val schemeBg = when {
+                        activeSchemeEnum == null -> MaterialTheme.colorScheme.surfaceVariant
+                        activeSchemeEnum.isDynamic -> MaterialTheme.colorScheme.surface
+                        else -> Color(activeSchemeEnum.background)
+                    }
+                    val schemeFg = when {
+                        activeSchemeEnum == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        activeSchemeEnum.isDynamic -> MaterialTheme.colorScheme.onSurface
+                        else -> Color(activeSchemeEnum.foreground)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showColorSchemeDialog = true }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(schemeBg)
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(4.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "A",
+                                color = schemeFg,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(activeSchemeEnum?.label ?: "Use default")
+                    }
+
                     // Agent forwarding toggle (OpenSSH ForwardAgent)
                     Spacer(Modifier.height(4.dp))
                     FilterChip(
@@ -2127,6 +2193,7 @@ fun ConnectionEditDialog(
                             postLoginCommand = postLoginCommand.ifBlank { null },
                             postLoginBeforeSessionManager = postLoginBeforeSessionManager,
                             disableAltScreen = disableAltScreen,
+                            terminalColorScheme = terminalColorScheme,
                             useAndroidShell = useAndroidShell,
                             forwardAgent = forwardAgent,
                             addressFamily = addressFamily,
@@ -2179,6 +2246,113 @@ fun ConnectionEditDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
+        },
+    )
+
+    if (showColorSchemeDialog) {
+        ProfileColorSchemeDialog(
+            current = terminalColorScheme,
+            onDismiss = { showColorSchemeDialog = false },
+            onSelect = { selected ->
+                terminalColorScheme = selected
+                showColorSchemeDialog = false
+            },
+        )
+    }
+}
+
+/**
+ * Dialog for picking a per-profile terminal colour-scheme override.
+ * Mirrors the global [feature.settings.ColorSchemeDialog] but adds a
+ * "Use default" sentinel at the top — selecting it stores `null` on the
+ * profile so the terminal falls back to the global preference.
+ */
+@Composable
+private fun ProfileColorSchemeDialog(
+    current: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Terminal colour scheme") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                ListItem(
+                    headlineContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline,
+                                        RoundedCornerShape(4.dp),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "—",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = FontFamily.Monospace,
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text("Use default (global setting)")
+                        }
+                    },
+                    leadingContent = {
+                        RadioButton(selected = current == null, onClick = null)
+                    },
+                    modifier = Modifier.clickable(role = Role.RadioButton) { onSelect(null) },
+                )
+                UserPreferencesRepository.TerminalColorScheme.entries.forEach { scheme ->
+                    val previewBg = if (scheme.isDynamic) MaterialTheme.colorScheme.surface
+                        else Color(scheme.background)
+                    val previewFg = if (scheme.isDynamic) MaterialTheme.colorScheme.onSurface
+                        else Color(scheme.foreground)
+                    ListItem(
+                        headlineContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(previewBg)
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outline,
+                                            RoundedCornerShape(4.dp),
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "A",
+                                        color = previewFg,
+                                        fontFamily = FontFamily.Monospace,
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(scheme.label)
+                            }
+                        },
+                        leadingContent = {
+                            RadioButton(
+                                selected = current == scheme.name,
+                                onClick = null,
+                            )
+                        },
+                        modifier = Modifier.clickable(role = Role.RadioButton) {
+                            onSelect(scheme.name)
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }
