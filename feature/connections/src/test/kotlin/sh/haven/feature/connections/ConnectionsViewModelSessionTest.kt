@@ -146,6 +146,9 @@ class ConnectionsViewModelSessionTest {
             tunnelConfigRepository = mockk(relaxed = true) {
                 every { observeAll() } returns flowOf(emptyList())
             },
+            certRenewalGate = mockk(relaxed = true) {
+                every { renewing } returns kotlinx.coroutines.flow.MutableStateFlow(null)
+            },
         )
     }
 
