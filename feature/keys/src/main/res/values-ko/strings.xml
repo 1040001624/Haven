@@ -89,4 +89,7 @@
     <string name="keys_stepca_label">키 라벨</string>
     <string name="keys_stepca_generate">생성</string>
     <string name="keys_chip_certificate_minted">%1$s 발급</string>
+
+    <!-- #133 phase 2b: regenerate menu -->
+    <string name="keys_regenerate_via_stepca">step-ca로 재생성</string>
 </resources>

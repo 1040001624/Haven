@@ -32,7 +32,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         WorkspaceItem::class,
         StepCaConfig::class,
     ],
-    version = 48,
+    version = 49,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -696,6 +696,20 @@ abstract class HavenDatabase : RoomDatabase() {
                 )
                 db.execSQL("ALTER TABLE ssh_keys ADD COLUMN caConfigId TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE ssh_keys ADD COLUMN certIssuedAt INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * #133 phase 2b: optional SSH host CA public key on each step-ca
+         * config row. When set, [HostKeyVerifier] short-circuits TOFU
+         * for hosts presenting a CA-signed host cert. Default null —
+         * existing CAs keep their TOFU-only behaviour.
+         */
+        val MIGRATION_48_49 = object : Migration(48, 49) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE step_ca_configs ADD COLUMN sshHostCaPublicKey TEXT DEFAULT NULL",
+                )
             }
         }
     }

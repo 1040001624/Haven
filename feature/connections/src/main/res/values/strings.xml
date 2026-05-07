@@ -311,4 +311,7 @@
     <string name="connections_action_tunnels">Tunnels</string>
     <string name="connections_action_reauthenticate">Re-authenticate</string>
     <string name="connections_action_cancel_oauth">Cancel OAuth</string>
+
+    <!-- #133 phase 2b: cert renewal status banner -->
+    <string name="connections_renewing_cert">Renewing %1$s\'s cert via %2$s…</string>
 </resources>

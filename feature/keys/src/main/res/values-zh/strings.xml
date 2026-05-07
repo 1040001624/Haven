@@ -89,4 +89,7 @@
     <string name="keys_stepca_label">密钥标签</string>
     <string name="keys_stepca_generate">生成</string>
     <string name="keys_chip_certificate_minted">%1$s 颁发</string>
+
+    <!-- #133 phase 2b: regenerate menu -->
+    <string name="keys_regenerate_via_stepca">通过 step-ca 重新生成</string>
 </resources>

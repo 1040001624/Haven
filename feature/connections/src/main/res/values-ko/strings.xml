@@ -209,4 +209,7 @@
     <string name="connections_field_color_scheme">터미널 색상 테마</string>
     <string name="connections_color_scheme_inherit">기본값 사용(전역 설정)</string>
     <string name="connections_tunnel_dropdown_label">터널: %1$s</string>
+
+    <!-- #133 phase 2b: cert renewal status banner -->
+    <string name="connections_renewing_cert">%2$s를 통해 %1$s의 인증서를 갱신하는 중…</string>
 </resources>

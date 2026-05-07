@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -235,6 +236,7 @@ fun KeysScreen(
                             },
                             onAttachCertificate = { viewModel.requestAttachCertificate(sshKey.id) },
                             onRemoveCertificate = { viewModel.removeCertificate(sshKey.id) },
+                            onRegenerateViaStepCa = { viewModel.regenerateViaStepCa(sshKey.id) },
                         )
                         HorizontalDivider()
                     }
@@ -622,6 +624,7 @@ private fun SshKeyAuditRow(
     onBiometricToggle: (Boolean) -> Unit,
     onAttachCertificate: () -> Unit,
     onRemoveCertificate: () -> Unit,
+    onRegenerateViaStepCa: () -> Unit,
 ) {
     val flags = entry?.flags ?: emptySet()
     Box(
@@ -739,6 +742,15 @@ private fun SshKeyAuditRow(
                         text = { Text(stringResource(R.string.keys_attach_certificate)) },
                         onClick = { onMenuDismiss(); onAttachCertificate() },
                         leadingIcon = { Icon(Icons.Filled.Badge, contentDescription = null) },
+                    )
+                }
+                // Regenerate (step-ca-minted keys only). Same flow as the
+                // first Generate; updates the existing row in place. (#133 2b)
+                if (sshKey.caConfigId != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.keys_regenerate_via_stepca)) },
+                        onClick = { onMenuDismiss(); onRegenerateViaStepCa() },
+                        leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
                     )
                 }
             }

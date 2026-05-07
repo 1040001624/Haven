@@ -259,4 +259,10 @@
     <string name="stepca_validation_pem">루트 인증서는 PEM 형식이어야 합니다</string>
     <string name="stepca_delete_confirm_title">%1$s을(를) 삭제할까요?</string>
     <string name="stepca_delete_confirm_body">이 CA로 발급된 기존 키는 인증서가 만료될 때까지 작동하지만, 갱신하거나 새로 생성할 수 없습니다.</string>
+
+    <!-- #133 phase 2b: SSH host CA pubkey field -->
+    <string name="stepca_field_ssh_host_ca">SSH 호스트 CA 공개 키 (선택)</string>
+    <string name="stepca_field_ssh_host_ca_hint">ssh-ed25519 AAAAC3…</string>
+    <string name="stepca_discover_host_ca">/1.0/ssh/config에서 검색</string>
+    <string name="stepca_discovering">검색 중…</string>
 </resources>

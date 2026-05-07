@@ -250,4 +250,7 @@
     <string name="connections_vm_step_vnc_body">For remote desktop access via Haven\'s Desktop tab.</string>
     <string name="connections_vm_step_desktop_body">Xfce4 is lightweight and works well over VNC.</string>
     <string name="connections_vm_step_apps_body">File manager, text editor, image viewer, browser, calculator.</string>
+
+    <!-- #133 phase 2b: cert renewal status banner --> (en fallback)
+    <string name="connections_renewing_cert">Renewing %1$s\'s cert via %2$s…</string>
 </resources>

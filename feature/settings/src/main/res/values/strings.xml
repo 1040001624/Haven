@@ -259,4 +259,10 @@
     <string name="stepca_validation_pem">Root certificate must be PEM-encoded</string>
     <string name="stepca_delete_confirm_title">Delete %1$s?</string>
     <string name="stepca_delete_confirm_body">Existing keys minted via this CA will keep working until their certificates expire, but you won\'t be able to renew or generate new ones.</string>
+
+    <!-- #133 phase 2b: SSH host CA pubkey field -->
+    <string name="stepca_field_ssh_host_ca">SSH host CA public key (optional)</string>
+    <string name="stepca_field_ssh_host_ca_hint">ssh-ed25519 AAAAC3…</string>
+    <string name="stepca_discover_host_ca">Discover from /1.0/ssh/config</string>
+    <string name="stepca_discovering">Discovering…</string>
 </resources>

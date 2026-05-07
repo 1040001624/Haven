@@ -52,6 +52,10 @@ class MainActivity : AppCompatActivity() {
     // Cross-tab navigation verbs: HavenNavHost collects from this so an
     // MCP `navigate_sftp_browser` switches the pager to the right tab.
     @Inject lateinit var agentUiCommandBus: sh.haven.core.data.agent.AgentUiCommandBus
+    // Cert renewal request bus: notifications fire haven://renew-cert/<id>
+    // intents which land here and we re-publish via the existing
+    // AgentUiCommandBus so HavenNavHost flips to Keys and KeysViewModel
+    // picks up the regenerate request. (#133 phase 2b)
     // Keystore biometric gate: a fetch on a BIOMETRIC_PROTECTED entry
     // queues a request here, this Activity collects, runs
     // BiometricPrompt, and posts the decision back. Foreground tracking
@@ -90,6 +94,25 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         exitIfDisconnected()
         handleWorkspaceShortcut(intent)
+        handleRenewCertDeepLink(intent)
+    }
+
+    /**
+     * Parse `haven://renew-cert/<keyId>` deep links posted by
+     * [sh.haven.core.stepca.RenewalNotifier] and re-publish onto the
+     * existing UI command bus. The notifier never imports the bus
+     * directly — that would couple core/stepca to core/data — so the
+     * Activity bridges the two.
+     */
+    private fun handleRenewCertDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "haven" || data.host != "renew-cert") return
+        val keyId = data.lastPathSegment ?: return
+        Log.d("MainActivity", "renew-cert deep link for key $keyId")
+        agentUiCommandBus.emit(
+            sh.haven.core.data.agent.AgentUiCommand.RegenerateStepCaCert(keyId),
+        )
+        intent.data = null
     }
 
     /**
@@ -121,6 +144,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleWorkspaceShortcut(intent)
+        handleRenewCertDeepLink(intent)
         setContent {
             // Prevent screenshots/screen recording when enabled
             val screenSecurity by preferencesRepository.screenSecurity

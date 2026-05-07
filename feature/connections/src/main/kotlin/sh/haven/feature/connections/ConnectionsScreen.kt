@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -213,6 +214,7 @@ fun ConnectionsScreen(
     val desktopStates by viewModel.desktopStates.collectAsState()
     val desktopVncPasswordPrompt by viewModel.desktopVncPasswordPrompt.collectAsState()
     val groupLaunchState by viewModel.groupLaunchState.collectAsState()
+    val certRenewing by viewModel.certRenewing.collectAsState()
 
     LaunchedEffect(navigateToTerminal) {
         navigateToTerminal?.let { profileId ->
@@ -921,6 +923,34 @@ fun ConnectionsScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            // step-ca cert renewal banner — visible only while CertRenewalGate
+            // is mid-flight. Tells the user why the OS browser just popped
+            // over the connect spinner. (#133 phase 2b)
+            certRenewing?.let { renewing ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.connections_renewing_cert,
+                            renewing.keyLabel,
+                            renewing.caName,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
+
             // Quick connect bar
             val quickConnectError = stringResource(R.string.connections_quick_connect_error)
             OutlinedTextField(

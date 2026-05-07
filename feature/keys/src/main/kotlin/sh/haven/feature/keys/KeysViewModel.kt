@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import sh.haven.core.data.agent.AgentUiCommand
+import sh.haven.core.data.agent.AgentUiCommandBus
 import sh.haven.core.data.db.entities.SshKey
 import sh.haven.core.data.db.entities.StepCaConfig
 import sh.haven.core.data.repository.ConnectionRepository
@@ -46,7 +48,20 @@ class KeysViewModel @Inject constructor(
     private val keystore: Keystore,
     private val stepCaConfigRepository: StepCaConfigRepository,
     private val stepCaSignFlow: StepCaSignFlow,
+    agentUiCommandBus: AgentUiCommandBus,
 ) : ViewModel() {
+
+    init {
+        // Notification deep-link → MainActivity emits RegenerateStepCaCert
+        // → we react. (#133 phase 2b)
+        viewModelScope.launch {
+            agentUiCommandBus.commands.collect { command ->
+                if (command is AgentUiCommand.RegenerateStepCaCert) {
+                    regenerateViaStepCa(command.keyId)
+                }
+            }
+        }
+    }
 
     /** Registered step-ca CAs (#133 phase 2). The Keys "Generate via
      *  step-ca" affordance disables itself when this is empty and links
@@ -222,6 +237,67 @@ class KeysViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("KeysViewModel", "step-ca generate failed", e)
                 _error.value = e.message ?: "step-ca generation failed"
+            } finally {
+                _generating.value = false
+            }
+        }
+    }
+
+    /**
+     * Re-mint the cert for an existing step-ca-minted [SshKey]. Same
+     * shape as [generateViaStepCa] but updates the existing row rather
+     * than inserting a new one — preserves the id, label, isEncrypted,
+     * and biometricProtected flags. (#133 phase 2b)
+     *
+     * Triggered by:
+     *  - the "Regenerate" action on a key row's overflow menu
+     *  - a renewal-notification deep-link (via AgentUiCommandBus)
+     */
+    fun regenerateViaStepCa(keyId: String) {
+        viewModelScope.launch {
+            _generating.value = true
+            _error.value = null
+            try {
+                val existing = repository.getById(keyId) ?: run {
+                    _error.value = "Key no longer exists"
+                    return@launch
+                }
+                val caConfigId = existing.caConfigId ?: run {
+                    _error.value = "Key was not minted via step-ca; nothing to regenerate"
+                    return@launch
+                }
+                val caConfig = stepCaConfigRepository.getById(caConfigId) ?: run {
+                    _error.value =
+                        "step-ca CA used to mint '${existing.label}' has been removed"
+                    return@launch
+                }
+                val generated = withContext(Dispatchers.Default) {
+                    SshKeyGenerator.generate(SshKeyGenerator.KeyType.ED25519, existing.label)
+                }
+                val signResult = stepCaSignFlow.run(
+                    caConfig = caConfig,
+                    publicKeyOpenSsh = generated.publicKeyOpenSsh,
+                    keyLabel = existing.label,
+                )
+                when (signResult) {
+                    is StepCaSignFlow.Result.Failure -> {
+                        _error.value = signResult.message
+                        return@launch
+                    }
+                    is StepCaSignFlow.Result.Success -> {
+                        val updated = existing.copy(
+                            privateKeyBytes = generated.privateKeyBytes,
+                            publicKeyOpenSsh = generated.publicKeyOpenSsh,
+                            fingerprintSha256 = generated.fingerprintSha256,
+                            certificateBytes = signResult.certBytes,
+                            certIssuedAt = System.currentTimeMillis(),
+                        )
+                        repository.save(updated)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("KeysViewModel", "step-ca regenerate failed", e)
+                _error.value = e.message ?: "step-ca regeneration failed"
             } finally {
                 _generating.value = false
             }

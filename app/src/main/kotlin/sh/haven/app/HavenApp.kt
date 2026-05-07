@@ -1,6 +1,8 @@
 package sh.haven.app
 
 import android.app.Application
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -8,17 +10,32 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.launchIn
+import sh.haven.core.stepca.CertRenewalWorker
 import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
-class HavenApp : Application() {
+class HavenApp : Application(), Configuration.Provider {
 
     @Inject lateinit var mcpServer: sh.haven.app.agent.McpServer
     @Inject lateinit var preferencesRepository: sh.haven.core.data.preferences.UserPreferencesRepository
     @Inject lateinit var workspaceShortcutManager: sh.haven.app.workspace.WorkspaceShortcutManager
+    @Inject lateinit var workerFactory: HiltWorkerFactory
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Required by [Configuration.Provider] so the Hilt-aware worker
+     * factory is wired before any [androidx.work.WorkManager] lookup.
+     * [CertRenewalWorker] (#133 phase 2b) needs `@AssistedInject` deps,
+     * which require this. Other workers (e.g. ReticulumWorker) keep
+     * working unchanged — plain-constructor workers don't go through
+     * the factory.
+     */
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +70,11 @@ class HavenApp : Application() {
                 }
             }
             .launchIn(appScope)
+
+        // Schedule the daily step-ca cert-renewal check (#133 phase 2b).
+        // Idempotent (KEEP policy); cheap when the user has no CAs
+        // configured — the worker enumerates SshKeys and exits early.
+        CertRenewalWorker.schedule(this)
     }
 
     /**

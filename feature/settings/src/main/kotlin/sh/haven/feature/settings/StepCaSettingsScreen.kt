@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import sh.haven.core.data.db.entities.StepCaConfig
 import sh.haven.core.stepca.StepCaApiClient
 
@@ -140,6 +141,9 @@ fun StepCaSettingsScreen(
                 viewModel.save(it)
                 addOpen = false
             },
+            onDiscoverHostCa = { caUrl, rootCert ->
+                viewModel.discoverSshHostCa(caUrl, rootCert)
+            },
         )
     }
     editing?.let { existing ->
@@ -149,6 +153,9 @@ fun StepCaSettingsScreen(
             onConfirm = {
                 viewModel.save(it)
                 editing = null
+            },
+            onDiscoverHostCa = { caUrl, rootCert ->
+                viewModel.discoverSshHostCa(caUrl, rootCert)
             },
         )
     }
@@ -270,6 +277,8 @@ private fun StepCaConfigDialog(
     initial: StepCaConfig?,
     onDismiss: () -> Unit,
     onConfirm: (StepCaConfig) -> Unit,
+    onDiscoverHostCa: suspend (caUrl: String, rootCertPem: String) ->
+        sh.haven.core.stepca.StepCaApiClient.SshConfigResult,
 ) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var caUrl by remember { mutableStateOf(initial?.caUrl.orEmpty()) }
@@ -280,6 +289,10 @@ private fun StepCaConfigDialog(
     var provisioner by remember { mutableStateOf(initial?.provisioner.orEmpty()) }
     var principals by remember { mutableStateOf(initial?.defaultPrincipals.orEmpty()) }
     var rootCert by remember { mutableStateOf(initial?.rootCertPem.orEmpty()) }
+    var sshHostCa by remember { mutableStateOf(initial?.sshHostCaPublicKey.orEmpty()) }
+    var discovering by remember { mutableStateOf(false) }
+    var discoverError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
@@ -375,6 +388,52 @@ private fun StepCaConfigDialog(
                         .fillMaxWidth()
                         .height(120.dp),
                 )
+                // SSH host CA pubkey + auto-discover button. Optional —
+                // when blank, host-cert TOFU bypass is skipped. (#133 2b)
+                OutlinedTextField(
+                    value = sshHostCa,
+                    onValueChange = { sshHostCa = it },
+                    label = { Text(stringResource(R.string.stepca_field_ssh_host_ca)) },
+                    placeholder = { Text(stringResource(R.string.stepca_field_ssh_host_ca_hint)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(
+                    enabled = !discovering &&
+                        caUrl.trim().startsWith("https://") &&
+                        rootCert.contains("BEGIN CERTIFICATE"),
+                    onClick = {
+                        discoverError = null
+                        discovering = true
+                        coroutineScope.launch {
+                            try {
+                                when (val r = onDiscoverHostCa(caUrl.trim(), rootCert.trim())) {
+                                    is sh.haven.core.stepca.StepCaApiClient.SshConfigResult.Success -> {
+                                        r.hostKey?.let { sshHostCa = it.trim() }
+                                            ?: run { discoverError = "step-ca returned no hostKey" }
+                                    }
+                                    is sh.haven.core.stepca.StepCaApiClient.SshConfigResult.Failure ->
+                                        discoverError = r.message
+                                }
+                            } finally {
+                                discovering = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(
+                        if (discovering) stringResource(R.string.stepca_discovering)
+                        else stringResource(R.string.stepca_discover_host_ca),
+                    )
+                }
+                discoverError?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 error?.let {
                     Text(
                         it,
@@ -421,6 +480,7 @@ private fun StepCaConfigDialog(
                     provisioner = provisioner.trim(),
                     defaultPrincipals = principals.trim(),
                     rootCertPem = rootCert.trim(),
+                    sshHostCaPublicKey = sshHostCa.trim().ifBlank { null },
                 )
                 onConfirm(out)
             }) {

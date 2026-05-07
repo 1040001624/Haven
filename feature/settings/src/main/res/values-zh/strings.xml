@@ -258,4 +258,10 @@
     <string name="stepca_validation_pem">根证书必须为 PEM 编码</string>
     <string name="stepca_delete_confirm_title">删除 %1$s 吗？</string>
     <string name="stepca_delete_confirm_body">通过此 CA 颁发的现有密钥在证书到期前仍可使用，但您将无法续期或生成新密钥。</string>
+
+    <!-- #133 phase 2b: SSH host CA pubkey field -->
+    <string name="stepca_field_ssh_host_ca">SSH 主机 CA 公钥（可选）</string>
+    <string name="stepca_field_ssh_host_ca_hint">ssh-ed25519 AAAAC3…</string>
+    <string name="stepca_discover_host_ca">从 /1.0/ssh/config 发现</string>
+    <string name="stepca_discovering">正在发现…</string>
 </resources>

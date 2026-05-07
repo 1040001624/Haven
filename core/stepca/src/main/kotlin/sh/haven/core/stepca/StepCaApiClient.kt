@@ -23,6 +23,54 @@ import javax.net.ssl.HttpsURLConnection
 @Singleton
 class StepCaApiClient @Inject constructor() {
 
+    /**
+     * Fetch the SSH user/host CA public keys from step-ca's
+     * `/1.0/ssh/config` endpoint. Used by the Settings dialog's
+     * "Discover host CA" button so the user doesn't have to paste the
+     * key by hand. Some step-ca deployments don't expose this endpoint
+     * to unauthenticated clients — manual paste is the fallback.
+     * (#133 phase 2b)
+     */
+    suspend fun fetchSshConfig(caConfig: StepCaConfig): SshConfigResult = withContext(Dispatchers.IO) {
+        val pinned = try {
+            PinnedTls.fromPem(caConfig.rootCertPem)
+        } catch (e: Throwable) {
+            return@withContext SshConfigResult.Failure("Invalid root cert PEM: ${e.message}")
+        }
+        val url = URL(caConfig.caUrl.trimEnd('/') + "/1.0/ssh/config")
+        val conn = (url.openConnection() as HttpsURLConnection).apply {
+            sslSocketFactory = pinned.socketFactory
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            requestMethod = "GET"
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            val rc = conn.responseCode
+            if (rc !in 200..299) {
+                val err = (conn.errorStream ?: conn.inputStream).bufferedReader().use { it.readText() }
+                return@withContext SshConfigResult.Failure("HTTP $rc: ${err.take(300)}")
+            }
+            val resp = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(resp)
+            // step-ca returns hostKey/userKey as either base64 strings or
+            // OpenSSH single-line text — be flexible. Most installs emit
+            // PEM-shaped values.
+            val hostKey = json.optString("hostKey", "").ifEmpty { null }
+            val userKey = json.optString("userKey", "").ifEmpty { null }
+            if (hostKey == null && userKey == null) {
+                return@withContext SshConfigResult.Failure(
+                    "step-ca /1.0/ssh/config returned no hostKey or userKey",
+                )
+            }
+            SshConfigResult.Success(hostKey = hostKey, userKey = userKey)
+        } catch (e: Throwable) {
+            SshConfigResult.Failure("Network error: ${e.message}")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** Lightweight reachability check for the Settings UI. */
     suspend fun testConnection(caConfig: StepCaConfig): TestResult = withContext(Dispatchers.IO) {
         val pinned = try {
@@ -127,6 +175,11 @@ class StepCaApiClient @Inject constructor() {
         data class BadRootCert(val reason: String) : TestResult
         data class HttpError(val code: Int, val message: String) : TestResult
         data class NetworkError(val message: String) : TestResult
+    }
+
+    sealed interface SshConfigResult {
+        data class Success(val hostKey: String?, val userKey: String?) : SshConfigResult
+        data class Failure(val message: String) : SshConfigResult
     }
 
     sealed interface SignSshResult {

@@ -296,4 +296,7 @@
     <string name="connections_action_tunnels">隧道</string>
     <string name="connections_action_reauthenticate">重新认证</string>
     <string name="connections_action_cancel_oauth">取消 OAuth</string>
+
+    <!-- #133 phase 2b: cert renewal status banner -->
+    <string name="connections_renewing_cert">正在通过 %2$s 续签 %1$s 的证书…</string>
 </resources>

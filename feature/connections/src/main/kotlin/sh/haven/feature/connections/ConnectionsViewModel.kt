@@ -58,6 +58,7 @@ import sh.haven.core.reticulum.DiscoveredDestination
 import sh.haven.core.reticulum.ReticulumSessionManager
 import sh.haven.core.reticulum.ReticulumTransport
 import sh.haven.core.smb.SmbSessionManager
+import sh.haven.core.stepca.CertRenewalGate
 import android.util.Log
 import com.jcraft.jsch.Proxy
 import java.io.File
@@ -100,7 +101,15 @@ class ConnectionsViewModel @Inject constructor(
     private val connectionLogRepository: ConnectionLogRepository,
     private val tunnelManager: sh.haven.core.tunnel.TunnelManager,
     private val tunnelConfigRepository: sh.haven.core.data.repository.TunnelConfigRepository,
+    private val certRenewalGate: CertRenewalGate,
 ) : ViewModel() {
+
+    /**
+     * Re-exposed from [CertRenewalGate] so the Connections screen can
+     * render a status banner ("Renewing cert via step-ca…") while a
+     * connect-time renewal is in flight. (#133 phase 2b)
+     */
+    val certRenewing: StateFlow<CertRenewalGate.Renewing?> = certRenewalGate.renewing
 
     /** Verbose SSH log captured during connect, keyed by sessionId. Consumed by finishConnect. */
     private val pendingVerboseLogs = mutableMapOf<String, String>()
@@ -2528,8 +2537,19 @@ class ConnectionsViewModel @Inject constructor(
         // Profile has an explicit key assigned
         val keyId = profile.keyId
         if (keyId != null) {
-            val keyBytes = sshKeyRepository.getDecryptedKeyBytes(keyId)
-            val key = sshKeyRepository.getById(keyId)
+            // Fetch row metadata first (no biometric prompt yet) so the
+            // cert-renewal gate can run before we trigger the biometric
+            // prompt and the JSch connect. If the cert is fresh enough,
+            // ensureFresh returns the input unchanged (no UI). If it's
+            // expiring, it runs the OIDC + sign flow inline and the
+            // saved row is what subsequent fetches see. (#133 phase 2b)
+            val originalKey = sshKeyRepository.getById(keyId)
+            val key = if (originalKey != null) {
+                certRenewalGate.ensureFresh(originalKey)
+            } else null
+            val keyBytes = if (key != null) {
+                sshKeyRepository.getDecryptedKeyBytes(keyId)
+            } else null
             if (keyBytes != null && key != null) {
                 // FIDO2 SK keys use hardware signing, not PEM key material
                 if (key.keyType.startsWith("sk-")) {

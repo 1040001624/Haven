@@ -53,4 +53,29 @@ class StepCaSettingsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Auto-discover the SSH host CA public key from step-ca's
+     * `/1.0/ssh/config` endpoint, using the dialog's current
+     * caUrl + rootCertPem (a config that may not be saved yet).
+     * Lets the user fill in the host-CA field with one tap rather
+     * than pasting it manually. (#133 phase 2b)
+     */
+    suspend fun discoverSshHostCa(
+        caUrl: String,
+        rootCertPem: String,
+    ): StepCaApiClient.SshConfigResult {
+        val transient = StepCaConfig(
+            name = "_discover",
+            caUrl = caUrl,
+            oidcIssuer = "",
+            oidcAuthUrl = "",
+            oidcTokenUrl = "",
+            oidcClientId = "",
+            provisioner = "",
+            defaultPrincipals = "",
+            rootCertPem = rootCertPem,
+        )
+        return apiClient.fetchSshConfig(transient)
+    }
 }

@@ -89,4 +89,5 @@
     <string name="keys_stepca_label">Key label</string>
     <string name="keys_stepca_generate">Generate</string>
     <string name="keys_chip_certificate_minted">Minted %1$s</string>
+    <string name="keys_regenerate_via_stepca">Regenerate via step-ca</string>
 </resources>

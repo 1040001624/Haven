@@ -22,12 +22,16 @@ android {
 dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:security"))
+    implementation(project(":core:ssh"))
 
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.hilt.work)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    ksp(libs.androidx.hilt.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

@@ -47,6 +47,17 @@ data class StepCaConfig(
      * private and not anchored in any public chain.
      */
     val rootCertPem: String,
+    /**
+     * Optional OpenSSH wire-format public key of the SSH **host** CA
+     * (separate from [rootCertPem], which is the X.509 TLS root). When
+     * non-null, [sh.haven.core.ssh.HostKeyVerifier] will silently accept
+     * a server presenting an `ssh-*-cert-v01@openssh.com` host cert
+     * signed by this key, provided the cert is currently valid and the
+     * hostname matches one of its principals — bypassing the TOFU
+     * prompt. Null = behave as before (every cert-bearing host triggers
+     * TOFU just like a raw key would). (#133 phase 2b)
+     */
+    val sshHostCaPublicKey: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     override fun equals(other: Any?): Boolean {
