@@ -24,6 +24,9 @@ import sh.haven.core.mosh.MoshSessionManager
 import sh.haven.core.rdp.RdpSession
 import sh.haven.core.ssh.SshClient
 import sh.haven.core.ssh.SshSessionManager
+import sh.haven.core.tunnel.TunnelResolver
+import sh.haven.core.tunnel.TunneledConnection
+import sh.haven.core.tunnel.TunneledSocket
 import sh.haven.core.vnc.ColorDepth
 import sh.haven.core.vnc.VncClient
 import sh.haven.core.vnc.VncConfig
@@ -50,6 +53,7 @@ class DesktopViewModel @Inject constructor(
     private val connectionLogRepository: ConnectionLogRepository,
     private val preferencesRepository: UserPreferencesRepository,
     private val connectionRepository: ConnectionRepository,
+    private val tunnelResolver: TunnelResolver,
     private val agentUiCommandBus: sh.haven.core.data.agent.AgentUiCommandBus,
 ) : ViewModel() {
 
@@ -311,6 +315,10 @@ class DesktopViewModel @Inject constructor(
                 val actualPort: Int
                 var tunnelPort: Int? = null
                 var tunnelSessionId: String? = null
+                // WireGuard / Tailscale TunneledConnection — non-null when
+                // the profile has tunnelConfigId set and we're not going
+                // through SSH RemoteForward instead.
+                var tunneledConn: TunneledConnection? = null
 
                 if (sshForward && sshSessionId != null) {
                     val sshClient = findSshClient(sshSessionId)
@@ -332,6 +340,18 @@ class DesktopViewModel @Inject constructor(
                 } else {
                     actualHost = host
                     actualPort = port
+                    // Try the WireGuard / Tailscale path. Returns null when
+                    // the profile has no tunnelConfigId — caller falls
+                    // through to a direct kernel-socket dial in client.start.
+                    if (profileId != null) {
+                        val profile = connectionRepository.getById(profileId)
+                        if (profile != null) {
+                            tunneledConn = tunnelResolver.dial(profile, actualHost, actualPort, 30_000)
+                            if (tunneledConn != null) {
+                                Log.d(TAG, "VNC dialed via tunnel ${profile.tunnelConfigId} -> $actualHost:$actualPort")
+                            }
+                        }
+                    }
                 }
 
                 val connected = MutableStateFlow(false)
@@ -374,7 +394,12 @@ class DesktopViewModel @Inject constructor(
                 }
 
                 val client = VncClient(config)
-                client.start(actualHost, actualPort)
+                val tc = tunneledConn
+                if (tc != null) {
+                    client.start(TunneledSocket(tc, actualHost, actualPort), actualHost)
+                } else {
+                    client.start(actualHost, actualPort)
+                }
                 connected.value = true
 
                 val connectedTab = tab.copy(
@@ -748,20 +773,27 @@ class DesktopViewModel @Inject constructor(
     }
 
     /**
-     * Decrement the refcount on any SSH session that was opened solely
-     * to carry this profile's tunnel. The v5.24.85 wiring in
-     * [ConnectionsViewModel.disconnect] called this for connections-tab
-     * disconnects, but the bottom-of-Desktop-tab "Disconnect" button
-     * routes through [closeTab] / [disconnectTab] instead — without
-     * this call the auto-opened SSH idled on with a green dot in the
-     * connections list (#121, KoriKraut on v5.24.89).
+     * Decrement refcounts on any auto-opened tunnels this profile holds.
      *
-     * No-op when [profileId] is null (older tabs / Wayland) or when
-     * the profile was never registered as a tunnel dependent.
+     * SSH-side: the v5.24.85 wiring in [ConnectionsViewModel.disconnect]
+     * called this for connections-tab disconnects, but the bottom-of-
+     * Desktop-tab "Disconnect" button routes through [closeTab] /
+     * [disconnectTab] instead — without this call the auto-opened SSH
+     * idled on with a green dot in the connections list (#121,
+     * KoriKraut on v5.24.89).
+     *
+     * WireGuard / Tailscale side: a profile that dialled through
+     * [TunnelResolver.dial] holds a slot in [TunnelManager]'s dependent
+     * set. Release here so the underlying tunnel tears down when the
+     * last dependent disconnects (#149).
+     *
+     * No-op when [profileId] is null (older tabs / Wayland) or when the
+     * profile was never registered as a tunnel dependent on either side.
      */
     private fun releaseSshTunnelDependent(profileId: String?) {
         if (profileId == null) return
         sshSessionManager.releaseTunnelDependent(profileId)
+        viewModelScope.launch { tunnelResolver.release(profileId) }
     }
 
     private fun tearDownTunnel(port: Int?, sessionId: String?) {

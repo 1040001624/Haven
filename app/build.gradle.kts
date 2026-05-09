@@ -126,6 +126,7 @@ dependencies {
     implementation(project(":core:wayland"))
     implementation(project(":core:terminal-haven"))
     implementation(project(":core:stepca"))
+    implementation(project(":core:tunnel"))
 
     implementation(project(":feature:connections"))
     implementation(project(":feature:terminal"))
