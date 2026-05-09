@@ -797,11 +797,9 @@ private fun RdpViewer(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Button(onClick = onDisconnect) {
-                    Text("Disconnect")
+                IconButton(onClick = onDisconnect) {
+                    Icon(Icons.Default.Close, contentDescription = "Disconnect")
                 }
-
-                Spacer(Modifier.width(8.dp))
 
                 IconButton(onClick = {
                     keyboardVisible = !keyboardVisible
