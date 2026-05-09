@@ -668,6 +668,50 @@ internal class McpTools(
             },
         ) { args -> setProfileRouting(args) },
 
+        "create_connection" to ToolHandler(
+            description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP. SSH-family fields: username (required), password (optional, stored). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("label", JSONObject().apply { put("type", "string"); put("description", "User-facing label.") })
+                    put("connectionType", JSONObject().apply { put("type", "string"); put("description", "SSH | SMB | VNC | RDP.") })
+                    put("host", JSONObject().apply { put("type", "string"); put("description", "Target hostname or IP.") })
+                    put("port", JSONObject().apply { put("type", "integer"); put("description", "TCP port. Defaults: SSH 22, SMB 445, VNC 5900, RDP 3389.") })
+                    put("username", JSONObject().apply { put("type", "string"); put("description", "Username for SSH/SMB.") })
+                    put("password", JSONObject().apply { put("type", "string"); put("description", "Password (stored). Optional for SSH if a key is used; some VNC/SMB setups allow guest.") })
+                    put("smbShare", JSONObject().apply { put("type", "string"); put("description", "Share name (SMB). Required when connectionType=SMB.") })
+                    put("smbDomain", JSONObject().apply { put("type", "string"); put("description", "AD/workgroup domain (SMB). Optional.") })
+                    put("vncUsername", JSONObject().apply { put("type", "string"); put("description", "Username for VeNCrypt VNC.") })
+                    put("vncPassword", JSONObject().apply { put("type", "string"); put("description", "VNC password.") })
+                    put("rdpUsername", JSONObject().apply { put("type", "string"); put("description", "Windows username (RDP). Required when connectionType=RDP.") })
+                    put("rdpPassword", JSONObject().apply { put("type", "string"); put("description", "Windows password (RDP).") })
+                    put("rdpDomain", JSONObject().apply { put("type", "string"); put("description", "AD domain (RDP). Optional.") })
+                    put("tunnelConfigId", JSONObject().apply { put("type", "string"); put("description", "Optional: route the new profile through this tunnel (from list_tunnels). Equivalent to follow-up set_profile_routing.") })
+                })
+                put("required", JSONArray().put("label").put("connectionType").put("host"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val type = args.optString("connectionType")
+                val label = args.optString("label", "(unnamed)")
+                val host = args.optString("host", "?")
+                "Create $type profile \"$label\" → $host?"
+            },
+        ) { args -> createConnection(args) },
+
+        "delete_connection" to ToolHandler(
+            description = "Delete a saved connection profile by id. Disconnects any live session for the profile first. Use this after integration tests to clean up agent-created profiles.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Delete profile \"${profileLabel(args.optString("profileId"))}\"?" },
+        ) { args -> deleteConnection(args) },
+
         "connect_profile" to ToolHandler(
             description = "Initiate a connection for a saved profile via the same code path a UI tap uses (route-through, stored password, key auth all apply). Posts an AgentUiCommand.ConnectProfile that ConnectionsViewModel observes — the actual connect happens asynchronously. Use list_sessions afterwards to confirm the session reached CONNECTED. If the profile needs a password that isn't stored and isn't a key, the UI password prompt will surface to the user.",
             inputSchema = JSONObject().apply {
@@ -1939,6 +1983,121 @@ internal class McpTools(
             put("proxyType", updated.proxyType ?: JSONObject.NULL)
             put("proxyHost", updated.proxyHost ?: JSONObject.NULL)
             put("proxyPort", updated.proxyPort)
+        }
+    }
+
+    private suspend fun createConnection(args: JSONObject): JSONObject {
+        val label = args.optString("label").ifBlank { throw IllegalArgumentException("label required") }
+        val type = args.optString("connectionType").uppercase().ifBlank {
+            throw IllegalArgumentException("connectionType required")
+        }
+        if (type !in setOf("SSH", "SMB", "VNC", "RDP")) {
+            throw IllegalArgumentException("connectionType must be SSH, SMB, VNC, or RDP (use the UI for LOCAL / RCLONE / RETICULUM)")
+        }
+        val host = args.optString("host").ifBlank { throw IllegalArgumentException("host required") }
+        val username = args.optString("username")
+        val password = args.optString("password")
+        val tunnelConfigId = if (args.has("tunnelConfigId")) args.optString("tunnelConfigId") else null
+        if (!tunnelConfigId.isNullOrBlank()) {
+            tunnelConfigRepository.getById(tunnelConfigId)
+                ?: throw IllegalArgumentException("tunnel config $tunnelConfigId not found")
+        }
+
+        val defaultPort = when (type) {
+            "SSH" -> 22
+            "SMB" -> 445
+            "VNC" -> 5900
+            "RDP" -> 3389
+            else -> 22
+        }
+        val port = if (args.has("port")) args.optInt("port", defaultPort) else defaultPort
+
+        val profile = when (type) {
+            "SSH" -> ConnectionProfile(
+                label = label,
+                host = host,
+                port = port,
+                username = username,
+                sshPassword = password.ifBlank { null },
+                connectionType = "SSH",
+                tunnelConfigId = tunnelConfigId,
+            )
+            "SMB" -> {
+                val share = args.optString("smbShare").ifBlank {
+                    throw IllegalArgumentException("smbShare required for SMB")
+                }
+                ConnectionProfile(
+                    label = label,
+                    host = host,
+                    port = port,
+                    username = username,
+                    connectionType = "SMB",
+                    smbPort = port,
+                    smbShare = share,
+                    smbDomain = args.optString("smbDomain").ifBlank { null },
+                    smbPassword = password.ifBlank { null },
+                    tunnelConfigId = tunnelConfigId,
+                )
+            }
+            "VNC" -> ConnectionProfile(
+                label = label,
+                host = host,
+                port = port,
+                username = "",
+                connectionType = "VNC",
+                vncPort = port,
+                vncUsername = args.optString("vncUsername").ifBlank { null },
+                vncPassword = args.optString("vncPassword").ifBlank { null },
+                vncSshForward = false,
+                tunnelConfigId = tunnelConfigId,
+            )
+            "RDP" -> {
+                val rdpUser = args.optString("rdpUsername").ifBlank {
+                    throw IllegalArgumentException("rdpUsername required for RDP")
+                }
+                ConnectionProfile(
+                    label = label,
+                    host = host,
+                    port = port,
+                    username = rdpUser,
+                    connectionType = "RDP",
+                    rdpPort = port,
+                    rdpUsername = rdpUser,
+                    rdpPassword = args.optString("rdpPassword").ifBlank { null },
+                    rdpDomain = args.optString("rdpDomain").ifBlank { null },
+                    rdpSshForward = false,
+                    tunnelConfigId = tunnelConfigId,
+                )
+            }
+            else -> error("unreachable")
+        }
+        connectionRepository.save(profile)
+        return JSONObject().apply {
+            put("id", profile.id)
+            put("label", profile.label)
+            put("connectionType", profile.connectionType)
+            put("host", profile.host)
+            put("port", profile.port)
+            put("tunnelConfigId", profile.tunnelConfigId ?: JSONObject.NULL)
+        }
+    }
+
+    private suspend fun deleteConnection(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifBlank {
+            throw IllegalArgumentException("profileId required")
+        }
+        val existing = connectionRepository.getById(profileId)
+            ?: return JSONObject().apply { put("deleted", false); put("reason", "not found") }
+        // Tear down any live session for this profile, then drop tunnel
+        // refcount, then delete.
+        sessionManagerRegistry.disconnectProfile(profileId)
+        sshSessionManager.releaseTunnelDependent(profileId)
+        tunnelManager.release(profileId)
+        connectionRepository.delete(profileId)
+        return JSONObject().apply {
+            put("deleted", true)
+            put("id", profileId)
+            put("label", existing.label)
         }
     }
 
