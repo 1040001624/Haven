@@ -469,22 +469,50 @@ class TerminalViewModel @Inject constructor(
     private val _remoteSessionNames = MutableStateFlow<List<String>>(emptyList())
     val remoteSessionNames: StateFlow<List<String>> = _remoteSessionNames.asStateFlow()
 
-    /** Refresh the list of remote sessions for the active tab's connection. */
+    /**
+     * Refresh the list of remote sessions for the active tab's connection.
+     * Resets [_remoteSessionNames] in every early-return path — the long-
+     * press tab menu reads this list to surface attach-existing-session
+     * shortcuts, and stale state (left over from a previous tab whose
+     * profile was tmux/zellij/screen) was getting shown on tabs whose
+     * profile is sessionManager=NONE. Picking a stale name then ran
+     * openRemoteSession against the NONE-resolved manager so no tmux
+     * attach actually happened and the user landed on bare bash.
+     */
     fun refreshRemoteSessions() {
-        val activeTab = _tabs.value.getOrNull(_activeTabIndex.value) ?: return
-        if (activeTab.transportType != "SSH") return
-        val configPair = sessionManager.getConnectionConfigForProfile(activeTab.profileId) ?: return
+        val activeTab = _tabs.value.getOrNull(_activeTabIndex.value)
+        if (activeTab == null || activeTab.transportType != "SSH") {
+            _remoteSessionNames.value = emptyList()
+            return
+        }
+        val configPair = sessionManager.getConnectionConfigForProfile(activeTab.profileId)
+        if (configPair == null) {
+            _remoteSessionNames.value = emptyList()
+            return
+        }
         val (_, sshSessionMgr) = configPair
-        val listCmd = sshSessionMgr.listCommand ?: return
-        val session = sessionManager.getSession(activeTab.sessionId) ?: return
+        val listCmd = sshSessionMgr.listCommand
+        if (listCmd == null) {
+            _remoteSessionNames.value = emptyList()
+            return
+        }
+        val session = sessionManager.getSession(activeTab.sessionId)
+        if (session == null) {
+            _remoteSessionNames.value = emptyList()
+            return
+        }
         val client = session.client
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) { client.execCommand(listCmd) }
-                if (result.exitStatus == 0) {
-                    _remoteSessionNames.value = SessionManager.parseSessionList(sshSessionMgr, result.stdout)
+                _remoteSessionNames.value = if (result.exitStatus == 0) {
+                    SessionManager.parseSessionList(sshSessionMgr, result.stdout)
+                } else {
+                    emptyList()
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                _remoteSessionNames.value = emptyList()
+            }
         }
     }
 
@@ -1291,6 +1319,12 @@ class TerminalViewModel @Inject constructor(
     fun selectTab(index: Int) {
         if (index in _tabs.value.indices) {
             _activeTabIndex.value = index
+            // Re-query remote sessions for the new active tab — without
+            // this the long-press tab menu kept showing tmux names from
+            // a previously-active tab whose profile used a different
+            // session manager (e.g. user switches from a tmux profile to
+            // a NONE profile and the stale tmux list lingers).
+            refreshRemoteSessions()
         }
     }
 
