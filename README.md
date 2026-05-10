@@ -18,6 +18,7 @@
   <img src="https://img.shields.io/badge/Android-8.0%2B-3ddc84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+" />
   <a href="https://github.com/GlassHaven/Haven/releases"><img src="https://img.shields.io/github/downloads/GlassHaven/Haven/total?style=flat-square&label=downloads&cacheSeconds=3600" alt="Downloads" /></a>
   <a href="https://ko-fi.com/glassontin"><img src="https://img.shields.io/badge/Ko--fi-support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
+  <a href="https://liberapay.com/GlassOnTin"><img src="https://img.shields.io/liberapay/receives/GlassOnTin.svg?style=flat-square&logo=liberapay&logoColor=white&label=Liberapay" alt="Liberapay" /></a>
 </p>
 
 <p align="center">
@@ -118,6 +119,17 @@ Output: `app/build/outputs/apk/debug/haven-*-debug.apk`
 | [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) | Wayland compositor library | MIT |
 | [virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer) | GPU virtualization (OpenGL passthrough to PRoot apps) | MIT |
 | [Jetpack Compose](https://developer.android.com/jetpack/compose) | UI toolkit | Apache-2.0 |
+
+## Backing
+
+Haven is built and maintained by one person. A small recurring amount
+comes in via [Ko-fi](https://ko-fi.com/glassontin) and
+[Liberapay](https://liberapay.com/GlassOnTin), which doesn't cover the
+development tooling — but it's appreciated, and a clear signal that
+people find the work useful.
+
+The project will continue regardless of donations. I use Haven myself
+daily; I'd build it for that alone.
 
 ## License
 
