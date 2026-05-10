@@ -574,7 +574,11 @@ internal class McpTools(
                 })
                 put("required", JSONArray().put("sessionId").put("row").put("col"))
             },
-            consentLevel = ConsentLevel.EVERY_CALL,
+            // ONCE_PER_SESSION: only mutates an in-memory UI selection,
+            // doesn't write to the clipboard or send anything to the
+            // remote. The destructive step (copy_selection) keeps
+            // EVERY_CALL because it writes to the system clipboard.
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Start ${args.optString("mode", "CHARACTER")} selection at row=${args.optInt("row")} col=${args.optInt("col")}?" },
         ) { args -> startSelection(args) },
 
@@ -589,7 +593,10 @@ internal class McpTools(
                 })
                 put("required", JSONArray().put("sessionId").put("row").put("col"))
             },
-            consentLevel = ConsentLevel.EVERY_CALL,
+            // ONCE_PER_SESSION for the same reason as start_selection —
+            // pure UI-state move, the clipboard-touching follow-up
+            // (copy_selection) gates separately.
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Extend selection to row=${args.optInt("row")} col=${args.optInt("col")}?" },
         ) { args -> extendSelection(args) },
 
@@ -631,7 +638,9 @@ internal class McpTools(
                 })
                 put("required", JSONArray().put("sessionId").put("lines"))
             },
-            consentLevel = ConsentLevel.EVERY_CALL,
+            // ONCE_PER_SESSION: pure view-state change — no PTY input,
+            // no clipboard write, fully reversible by the user.
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
                 val n = args.optInt("lines")
                 if (n >= 0) "Scroll terminal $n lines into scrollback?"
