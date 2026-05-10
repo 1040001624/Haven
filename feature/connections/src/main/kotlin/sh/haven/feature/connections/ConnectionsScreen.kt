@@ -732,25 +732,37 @@ fun ConnectionsScreen(
     }
 
     sessionSelection?.let { selection ->
-        SessionPickerDialog(
-            managerLabel = selection.managerLabel,
+        sh.haven.core.ui.SessionPickerDialog(
+            title = stringResource(R.string.connections_sessions_title, selection.managerLabel),
             sessionNames = selection.sessionNames,
-            previousSessionNames = selection.previousSessionNames,
             suggestedNewName = selection.suggestedNewName,
-            canKill = selection.manager.killCommand != null,
-            canRename = selection.manager.renameCommand != null,
+            createButtonContentDescription = stringResource(R.string.connections_new_session_create),
             onSelect = { name -> viewModel.onSessionSelected(selection.sessionId, name) },
-            onRestore = { names -> viewModel.restorePreviousSessions(selection.sessionId, names) },
-            onKill = { name -> viewModel.killRemoteSession(name) },
-            onRename = { old, new -> viewModel.renameRemoteSession(old, new) },
             onNewSession = { name ->
                 // Empty string is treated as "use the suggestion the ViewModel
                 // would generate" — pass null down so the existing fallback
                 // path runs. Any non-empty user input goes through as-is.
                 viewModel.onSessionSelected(selection.sessionId, name.takeIf { it.isNotBlank() })
             },
-            onPlainShell = { viewModel.onPlainShellSelected(selection.sessionId) },
             onDismiss = { viewModel.dismissSessionPicker() },
+            previousSessionNames = selection.previousSessionNames,
+            restorePreviousLabel = if (selection.previousSessionNames.size > 1) {
+                stringResource(R.string.connections_restore_previous_sessions, selection.previousSessionNames.size)
+            } else null,
+            onRestorePrevious = { names -> viewModel.restorePreviousSessions(selection.sessionId, names) },
+            canKill = selection.manager.killCommand != null,
+            canRename = selection.manager.renameCommand != null,
+            killContentDescription = stringResource(R.string.connections_kill_session),
+            renameContentDescription = stringResource(R.string.connections_rename_session),
+            onKill = { name -> viewModel.killRemoteSession(name) },
+            onRename = { old, new -> viewModel.renameRemoteSession(old, new) },
+            plainShellLabel = stringResource(R.string.connections_open_plain_shell),
+            plainShellSubtitle = stringResource(R.string.connections_open_plain_shell_subtitle, selection.managerLabel),
+            onPlainShell = { viewModel.onPlainShellSelected(selection.sessionId) },
+            cancelLabel = stringResource(R.string.common_cancel),
+            renameDialog = { currentLabel, onDismiss, onRenameTo ->
+                RenameDialog(currentLabel = currentLabel, onDismiss = onDismiss, onRename = onRenameTo)
+            },
         )
     }
 
@@ -1680,213 +1692,6 @@ private fun EmptyState() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
-    }
-}
-
-@Composable
-private fun SessionPickerDialog(
-    managerLabel: String,
-    sessionNames: List<String>,
-    previousSessionNames: List<String> = emptyList(),
-    suggestedNewName: String = "",
-    canKill: Boolean = false,
-    canRename: Boolean = false,
-    onSelect: (String) -> Unit,
-    onRestore: (List<String>) -> Unit = {},
-    onKill: (String) -> Unit = {},
-    onRename: (old: String, new: String) -> Unit = { _, _ -> },
-    onNewSession: (name: String) -> Unit,
-    onPlainShell: () -> Unit = {},
-    onDismiss: () -> Unit,
-) {
-    var renamingSession by remember { mutableStateOf<String?>(null) }
-
-    renamingSession?.let { name ->
-        RenameDialog(
-            currentLabel = name,
-            onDismiss = { renamingSession = null },
-            onRename = { newName ->
-                onRename(name, newName)
-                renamingSession = null
-            },
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.connections_sessions_title, managerLabel)) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                // Restore previous sessions button (if any match)
-                if (previousSessionNames.size > 1) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.connections_restore_previous_sessions, previousSessionNames.size),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                previousSessionNames.joinToString(", "),
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1,
-                            )
-                        },
-                        leadingContent = {
-                            Icon(
-                                Icons.Filled.Restore,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier = Modifier.clickable { onRestore(previousSessionNames) },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                }
-                sessionNames.forEach { name ->
-                    val wasPrevious = name in previousSessionNames
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                name,
-                                fontWeight = if (wasPrevious) androidx.compose.ui.text.font.FontWeight.Bold else null,
-                            )
-                        },
-                        trailingContent = {
-                            Row {
-                                if (canRename) {
-                                    IconButton(onClick = { renamingSession = name }) {
-                                        Icon(
-                                            Icons.Filled.DriveFileRenameOutline,
-                                            contentDescription = stringResource(R.string.connections_rename_session),
-                                        )
-                                    }
-                                }
-                                if (canKill) {
-                                    IconButton(onClick = { onKill(name) }) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = stringResource(R.string.connections_kill_session),
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier.clickable { onSelect(name) },
-                    )
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                NewSessionInlineRow(
-                    suggestedName = suggestedNewName,
-                    onCreate = onNewSession,
-                )
-                // Bypass row — opens a plain shell for this connection,
-                // skipping tmux/zellij/screen even when the profile has
-                // one configured. Useful for one-off checks that
-                // shouldn't disturb the long-running multiplexed
-                // session.
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.connections_open_plain_shell))
-                    },
-                    supportingContent = {
-                        Text(
-                            stringResource(R.string.connections_open_plain_shell_subtitle, managerLabel),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            Icons.Filled.Terminal,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    modifier = Modifier.clickable { onPlainShell() },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_cancel))
-            }
-        },
-    )
-}
-
-/**
- * The "Create new session" row at the bottom of [SessionPickerDialog] and
- * [NewTabSessionPickerDialog] in TerminalScreen. A pre-filled text field
- * with a Create button. The field's text is selected on first focus so a
- * tap-then-type immediately replaces the suggestion. Keyboard "Done" /
- * Enter triggers Create. (#112)
- */
-@Composable
-internal fun NewSessionInlineRow(
-    suggestedName: String,
-    onCreate: (String) -> Unit,
-) {
-    var fieldValue by remember(suggestedName) {
-        mutableStateOf(
-            androidx.compose.ui.text.input.TextFieldValue(
-                text = suggestedName,
-                selection = androidx.compose.ui.text.TextRange(0, suggestedName.length),
-            )
-        )
-    }
-    var hasBeenFocused by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            Icons.Filled.Add,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        OutlinedTextField(
-            value = fieldValue,
-            onValueChange = { fieldValue = it },
-            singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .onFocusChanged { focusState ->
-                    // Re-select all on each refocus so a tap-then-type wipes
-                    // the field — matches SeriousM's request in #112. The
-                    // `hasBeenFocused` gate prevents fighting with the user's
-                    // own selection moves while they're already typing.
-                    if (focusState.isFocused && !hasBeenFocused) {
-                        hasBeenFocused = true
-                        fieldValue = fieldValue.copy(
-                            selection = androidx.compose.ui.text.TextRange(0, fieldValue.text.length),
-                        )
-                    } else if (!focusState.isFocused) {
-                        hasBeenFocused = false
-                    }
-                },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
-            ),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                onDone = {
-                    if (fieldValue.text.isNotBlank()) onCreate(fieldValue.text)
-                },
-            ),
-        )
-        IconButton(
-            onClick = { onCreate(fieldValue.text) },
-            enabled = fieldValue.text.isNotBlank(),
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(R.string.connections_new_session_create),
-            )
-        }
     }
 }
 

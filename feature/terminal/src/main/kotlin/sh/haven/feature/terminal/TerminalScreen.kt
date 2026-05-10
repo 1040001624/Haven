@@ -342,22 +342,33 @@ fun TerminalScreen(
         )
     }
 
-    // Session picker dialog for new tab
+    // Session picker dialog for new tab — shared composable from core/ui
+    // (consolidated with the connect-time picker in ConnectionsScreen).
     newTabSessionPicker?.let { selection ->
-        NewTabSessionPickerDialog(
-            managerLabel = selection.managerLabel,
+        sh.haven.core.ui.SessionPickerDialog(
+            title = stringResource(R.string.terminal_sessions_title, selection.managerLabel),
             sessionNames = selection.sessionNames,
             suggestedNewName = selection.suggestedNewName,
-            canKill = selection.manager.killCommand != null,
-            canRename = selection.manager.renameCommand != null,
-            error = selection.error,
+            createButtonContentDescription = stringResource(R.string.terminal_new_session_create),
             onSelect = { name -> viewModel.onNewTabSessionSelected(selection.sessionId, name) },
-            onKill = { name -> viewModel.killRemoteSession(name) },
-            onRename = { old, new -> viewModel.renameRemoteSession(old, new) },
             onNewSession = { name ->
                 viewModel.onNewTabSessionSelected(selection.sessionId, name.takeIf { it.isNotBlank() })
             },
             onDismiss = { viewModel.dismissNewTabSessionPicker() },
+            canKill = selection.manager.killCommand != null,
+            canRename = selection.manager.renameCommand != null,
+            killContentDescription = stringResource(R.string.terminal_kill_session),
+            renameContentDescription = stringResource(R.string.terminal_rename_session),
+            onKill = { name -> viewModel.killRemoteSession(name) },
+            onRename = { old, new -> viewModel.renameRemoteSession(old, new) },
+            error = selection.error,
+            plainShellLabel = stringResource(R.string.terminal_open_plain_shell),
+            plainShellSubtitle = stringResource(R.string.terminal_open_plain_shell_subtitle, selection.managerLabel),
+            onPlainShell = { viewModel.onNewTabPlainShellSelected(selection.sessionId) },
+            cancelLabel = stringResource(R.string.common_cancel),
+            renameDialog = { currentLabel, onDismiss, onRenameTo ->
+                RenameSessionDialog(currentLabel = currentLabel, onDismiss = onDismiss, onRename = onRenameTo)
+            },
         )
     }
 
@@ -1001,157 +1012,6 @@ private fun EmptyTerminalState(
             fontSize = fontSize.sp,
             color = foregroundColor,
         )
-    }
-}
-
-@Composable
-private fun NewTabSessionPickerDialog(
-    managerLabel: String,
-    sessionNames: List<String>,
-    suggestedNewName: String = "",
-    canKill: Boolean = false,
-    canRename: Boolean = false,
-    error: String? = null,
-    onSelect: (String) -> Unit,
-    onKill: (String) -> Unit = {},
-    onRename: (old: String, new: String) -> Unit = { _, _ -> },
-    onNewSession: (name: String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var renamingSession by remember { mutableStateOf<String?>(null) }
-
-    renamingSession?.let { name ->
-        RenameSessionDialog(
-            currentLabel = name,
-            onDismiss = { renamingSession = null },
-            onRename = { newName ->
-                onRename(name, newName)
-                renamingSession = null
-            },
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.terminal_sessions_title, managerLabel)) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                if (error != null) {
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-                sessionNames.forEach { name ->
-                    ListItem(
-                        headlineContent = { Text(name) },
-                        trailingContent = {
-                            Row {
-                                if (canRename) {
-                                    IconButton(onClick = { renamingSession = name }) {
-                                        Icon(
-                                            Icons.Filled.DriveFileRenameOutline,
-                                            contentDescription = stringResource(R.string.terminal_rename_session),
-                                        )
-                                    }
-                                }
-                                if (canKill) {
-                                    IconButton(onClick = { onKill(name) }) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = stringResource(R.string.terminal_kill_session),
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier.clickable { onSelect(name) },
-                    )
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                NewSessionInlineRow(
-                    suggestedName = suggestedNewName,
-                    onCreate = onNewSession,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_cancel))
-            }
-        },
-    )
-}
-
-/**
- * The "Create new session" row at the bottom of [NewTabSessionPickerDialog].
- * A pre-filled text field with a Create button. The field's text is
- * selected on first focus so a tap-then-type immediately replaces the
- * suggestion. Keyboard "Done" / Enter triggers Create. Mirrored from
- * the connections-module SessionPickerDialog for consistency. (#112)
- */
-@Composable
-private fun NewSessionInlineRow(
-    suggestedName: String,
-    onCreate: (String) -> Unit,
-) {
-    var fieldValue by remember(suggestedName) {
-        mutableStateOf(
-            androidx.compose.ui.text.input.TextFieldValue(
-                text = suggestedName,
-                selection = androidx.compose.ui.text.TextRange(0, suggestedName.length),
-            )
-        )
-    }
-    var hasBeenFocused by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            Icons.Filled.Add,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        OutlinedTextField(
-            value = fieldValue,
-            onValueChange = { fieldValue = it },
-            singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .onFocusChanged { focusState ->
-                    if (focusState.isFocused && !hasBeenFocused) {
-                        hasBeenFocused = true
-                        fieldValue = fieldValue.copy(
-                            selection = androidx.compose.ui.text.TextRange(0, fieldValue.text.length),
-                        )
-                    } else if (!focusState.isFocused) {
-                        hasBeenFocused = false
-                    }
-                },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
-            ),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                onDone = {
-                    if (fieldValue.text.isNotBlank()) onCreate(fieldValue.text)
-                },
-            ),
-        )
-        IconButton(
-            onClick = { onCreate(fieldValue.text) },
-            enabled = fieldValue.text.isNotBlank(),
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(R.string.terminal_new_session_create),
-            )
-        }
     }
 }
 

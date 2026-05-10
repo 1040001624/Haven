@@ -1726,6 +1726,34 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    /**
+     * "Plain shell" path from the new-tab picker — finish the SSH side
+     * for [sessionId] without invoking the configured session manager.
+     * Mirrors [sh.haven.feature.connections.ConnectionsViewModel.onPlainShellSelected]
+     * for the long-press-tab flow, so a one-off bare bash on a tmux
+     * profile is reachable from either entry point.
+     */
+    fun onNewTabPlainShellSelected(sessionId: String) {
+        _newTabSessionPicker.value = null
+        viewModelScope.launch {
+            _newTabLoading.value = true
+            try {
+                sessionManager.setBypassSessionManager(sessionId, true)
+                sessionManager.setChosenSessionName(sessionId, "shell")
+                finishNewSshTab(sessionId)
+            } catch (e: Exception) {
+                Log.e(TAG, "onNewTabPlainShellSelected failed", e)
+                sessionManager.removeSession(sessionId)
+                _newTabMessage.value = appContext.getString(
+                    R.string.terminal_new_tab_shell_failed,
+                    e.message ?: e.javaClass.simpleName,
+                )
+            } finally {
+                _newTabLoading.value = false
+            }
+        }
+    }
+
     fun onNewTabSessionSelected(sessionId: String, sessionName: String?) {
         val remoteNames = _newTabSessionPicker.value?.sessionNames ?: emptyList()
         _newTabSessionPicker.value = null
