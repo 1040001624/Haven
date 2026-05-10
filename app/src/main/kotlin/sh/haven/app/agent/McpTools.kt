@@ -552,7 +552,13 @@ internal class McpTools(
                 })
                 put("required", JSONArray().put("key").put("value"))
             },
-            consentLevel = ConsentLevel.EVERY_CALL,
+            // ONCE_PER_SESSION: settings writes are reversible and the
+            // whitelist is small + non-sensitive (terminal display
+            // tweaks). One approval per session avoids prompt fatigue
+            // when an agent is sweeping multiple settings during a test
+            // run; the user retains the destructive-action safety on
+            // tools that touch session state or the clipboard.
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Set Haven preference ${args.optString("key")} = ${args.opt("value")}?" },
         ) { args -> setPreference(args) },
 
