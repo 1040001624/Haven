@@ -69,6 +69,8 @@ internal class McpTools(
     private val tunnelConfigRepository: sh.haven.core.data.repository.TunnelConfigRepository,
     private val tunnelManager: sh.haven.core.tunnel.TunnelManager,
     private val terminalSessionRegistry: sh.haven.feature.terminal.agent.TerminalSessionRegistry,
+    private val portKnocker: sh.haven.core.knock.PortKnocker,
+    private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
 ) {
 
     /**
@@ -875,6 +877,8 @@ internal class McpTools(
                     put("rdpDomain", JSONObject().apply { put("type", "string"); put("description", "AD domain (RDP). Optional.") })
                     put("tunnelConfigId", JSONObject().apply { put("type", "string"); put("description", "Optional: route the new profile through this tunnel (from list_tunnels). Equivalent to follow-up set_profile_routing.") })
                     put("tunnelOnly", JSONObject().apply { put("type", "boolean"); put("description", "SSH only: tunnel-only mode (#150). When true, the profile brings up the SSH transport and registers port forwards but does not open a terminal. Default false. Pair with auto_reconnect for autossh-style keepalive.") })
+                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Optional port-knock sequence fired before the real connect. Format: whitespace/comma-separated 'port[/proto]' tokens — e.g. '7000 8000 9000' (all TCP) or '7000/tcp 8000/udp 9000/tcp'. Empty = disabled.") })
+                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms (default 100). Ignored when portKnockSequence is empty.") })
                 })
                 put("required", JSONArray().put("label").put("connectionType").put("host"))
             },
@@ -884,9 +888,61 @@ internal class McpTools(
                 val label = args.optString("label", "(unnamed)")
                 val host = args.optString("host", "?")
                 val tunnelTag = if (args.optBoolean("tunnelOnly", false)) " [tunnel-only]" else ""
-                "Create $type profile \"$label\" → $host$tunnelTag?"
+                val knockTag = args.optString("portKnockSequence").let {
+                    if (it.isNotBlank()) " [knock: $it]" else ""
+                }
+                "Create $type profile \"$label\" → $host$tunnelTag$knockTag?"
             },
         ) { args -> createConnection(args) },
+
+        "set_port_knock" to ToolHandler(
+            description = "Update the port-knock fields on an existing profile. Pass portKnockSequence='' (empty) to disable knocking. Format: 'port[/proto]' tokens — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'. Returns the updated profile summary.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
+                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Sequence string ('' to disable).") })
+                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms. Optional; default 100 when sequence becomes non-empty.") })
+                })
+                put("required", JSONArray().put("profileId").put("portKnockSequence"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val seq = args.optString("portKnockSequence")
+                val target = profileLabel(args.optString("profileId"))
+                if (seq.isBlank()) "Disable port knock on \"$target\"?"
+                else "Set port knock on \"$target\" to: $seq?"
+            },
+        ) { args -> setPortKnock(args) },
+
+        "test_port_knock" to ToolHandler(
+            description = "Send a port-knock sequence to a host without committing or connecting anything. Bypasses the saved profile state — pass host + sequence directly. Returns ok/sent/durationMs/error so an agent can verify a knockd config end-to-end without opening a real session.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("host", JSONObject().apply { put("type", "string"); put("description", "Hostname or IP literal to knock against.") })
+                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Sequence string — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'.") })
+                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms (default 100).") })
+                })
+                put("required", JSONArray().put("host").put("portKnockSequence"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                "Send test knock '${args.optString("portKnockSequence")}' to ${args.optString("host")}?"
+            },
+        ) { args -> testPortKnock(args) },
+
+        "get_connection_log" to ToolHandler(
+            description = "Read the most recent ConnectionLog entries for a profile. Use this to verify post-hoc what happened during a connect — including knock results (look for '[knock]' lines in verboseLog), TLS handshakes, and authentication. limit defaults to 10.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
+                    put("limit", JSONObject().apply { put("type", "integer"); put("description", "Max entries to return (default 10, max 100).") })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+        ) { args -> getConnectionLog(args) },
 
         "delete_connection" to ToolHandler(
             description = "Delete a saved connection profile by id. Disconnects any live session for the profile first. Use this after integration tests to clean up agent-created profiles.",
@@ -1026,6 +1082,10 @@ internal class McpTools(
         // filter on it without first connecting.
         if (!p.sessionManager.isNullOrEmpty()) put("sessionManager", p.sessionManager)
         if (p.disableAltScreen) put("disableAltScreen", true)
+        if (!p.portKnockSequence.isNullOrEmpty()) {
+            put("portKnockSequence", p.portKnockSequence)
+            put("portKnockDelayMs", p.portKnockDelayMs)
+        }
     }
 
     private fun listSessions(): JSONObject {
@@ -2524,6 +2584,17 @@ internal class McpTools(
         if (tunnelOnly && type != "SSH") {
             throw IllegalArgumentException("tunnelOnly is only meaningful for SSH connections")
         }
+
+        // Validate the knock sequence eagerly so an invalid string is
+        // rejected at create time rather than silently saved and only
+        // surfaced when the user (or agent) tries to connect. Empty/blank
+        // means "no knock configured" — equivalent to omitting the field.
+        val rawKnock = args.optString("portKnockSequence")
+        val knockDelay = if (args.has("portKnockDelayMs")) args.optInt("portKnockDelayMs", 100) else 100
+        val parsedKnock = sh.haven.core.knock.KnockSequence.parse(rawKnock, knockDelay)
+            .getOrElse { throw IllegalArgumentException("portKnockSequence: ${it.message}") }
+        val knockSequence = if (parsedKnock != null) rawKnock.trim() else null
+
         val profile = when (type) {
             "SSH" -> ConnectionProfile(
                 label = label,
@@ -2534,6 +2605,8 @@ internal class McpTools(
                 connectionType = "SSH",
                 tunnelConfigId = tunnelConfigId,
                 tunnelOnly = tunnelOnly,
+                portKnockSequence = knockSequence,
+                portKnockDelayMs = knockDelay,
             )
             "SMB" -> {
                 val share = args.optString("smbShare").ifBlank {
@@ -2550,6 +2623,8 @@ internal class McpTools(
                     smbDomain = args.optString("smbDomain").ifBlank { null },
                     smbPassword = password.ifBlank { null },
                     tunnelConfigId = tunnelConfigId,
+                    portKnockSequence = knockSequence,
+                    portKnockDelayMs = knockDelay,
                 )
             }
             "VNC" -> ConnectionProfile(
@@ -2563,6 +2638,8 @@ internal class McpTools(
                 vncPassword = args.optString("vncPassword").ifBlank { null },
                 vncSshForward = false,
                 tunnelConfigId = tunnelConfigId,
+                portKnockSequence = knockSequence,
+                portKnockDelayMs = knockDelay,
             )
             "RDP" -> {
                 val rdpUser = args.optString("rdpUsername").ifBlank {
@@ -2580,6 +2657,8 @@ internal class McpTools(
                     rdpDomain = args.optString("rdpDomain").ifBlank { null },
                     rdpSshForward = false,
                     tunnelConfigId = tunnelConfigId,
+                    portKnockSequence = knockSequence,
+                    portKnockDelayMs = knockDelay,
                 )
             }
             else -> error("unreachable")
@@ -2593,6 +2672,88 @@ internal class McpTools(
             put("port", profile.port)
             put("tunnelConfigId", profile.tunnelConfigId ?: JSONObject.NULL)
             if (profile.tunnelOnly) put("tunnelOnly", true)
+            if (knockSequence != null) {
+                put("portKnockSequence", knockSequence)
+                put("portKnockDelayMs", knockDelay)
+            }
+        }
+    }
+
+    private suspend fun setPortKnock(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifBlank {
+            throw IllegalArgumentException("profileId required")
+        }
+        val existing = connectionRepository.getById(profileId)
+            ?: throw IllegalArgumentException("profile $profileId not found")
+        val rawSeq = args.optString("portKnockSequence")
+        val delay = if (args.has("portKnockDelayMs")) {
+            args.optInt("portKnockDelayMs", existing.portKnockDelayMs)
+        } else {
+            existing.portKnockDelayMs
+        }
+        val parsed = sh.haven.core.knock.KnockSequence.parse(rawSeq, delay)
+            .getOrElse { throw IllegalArgumentException("portKnockSequence: ${it.message}") }
+        val newSeq = if (parsed != null) rawSeq.trim() else null
+        val updated = existing.copy(
+            portKnockSequence = newSeq,
+            portKnockDelayMs = delay,
+        )
+        connectionRepository.save(updated)
+        return JSONObject().apply {
+            put("id", updated.id)
+            put("label", updated.label)
+            put("portKnockSequence", newSeq ?: JSONObject.NULL)
+            put("portKnockDelayMs", delay)
+            put("steps", parsed?.steps?.size ?: 0)
+        }
+    }
+
+    private suspend fun testPortKnock(args: JSONObject): JSONObject {
+        val host = args.optString("host").ifBlank {
+            throw IllegalArgumentException("host required")
+        }
+        val rawSeq = args.optString("portKnockSequence").ifBlank {
+            throw IllegalArgumentException("portKnockSequence required")
+        }
+        val delay = if (args.has("portKnockDelayMs")) args.optInt("portKnockDelayMs", 100) else 100
+        val seq = sh.haven.core.knock.KnockSequence.parse(rawSeq, delay)
+            .getOrElse { throw IllegalArgumentException("portKnockSequence: ${it.message}") }
+            ?: throw IllegalArgumentException("portKnockSequence parsed to empty")
+        val result = portKnocker.knock(host, seq)
+        return JSONObject().apply {
+            put("host", host)
+            put("sequence", seq.format())
+            put("ok", result.ok)
+            put("sentSteps", result.sentSteps)
+            put("totalSteps", seq.steps.size)
+            put("durationMs", result.totalDurationMs)
+            put("error", result.error?.message ?: JSONObject.NULL)
+        }
+    }
+
+    private suspend fun getConnectionLog(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifBlank {
+            throw IllegalArgumentException("profileId required")
+        }
+        val limit = args.optInt("limit", 10).coerceIn(1, 100)
+        // ConnectionLogRepository observes a Flow — take the latest snapshot
+        // and slice it down to the requested limit. Newest first.
+        val entries = connectionLogRepository.observeForProfile(profileId, limit)
+            .first()
+        val arr = JSONArray()
+        for (e in entries) {
+            arr.put(JSONObject().apply {
+                put("timestamp", e.timestamp)
+                put("status", e.status.name)
+                put("durationMs", e.durationMs)
+                put("details", e.details ?: JSONObject.NULL)
+                put("verboseLog", e.verboseLog ?: JSONObject.NULL)
+            })
+        }
+        return JSONObject().apply {
+            put("profileId", profileId)
+            put("count", entries.size)
+            put("entries", arr)
         }
     }
 

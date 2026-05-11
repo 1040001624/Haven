@@ -99,6 +99,8 @@ class McpServer @Inject constructor(
     private val tunnelConfigRepository: sh.haven.core.data.repository.TunnelConfigRepository,
     private val tunnelManager: sh.haven.core.tunnel.TunnelManager,
     private val terminalSessionRegistry: sh.haven.feature.terminal.agent.TerminalSessionRegistry,
+    private val portKnocker: sh.haven.core.knock.PortKnocker,
+    private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
 ) : Closeable {
 
     /**
@@ -177,6 +179,8 @@ class McpServer @Inject constructor(
         tunnelConfigRepository = tunnelConfigRepository,
         tunnelManager = tunnelManager,
         terminalSessionRegistry = terminalSessionRegistry,
+        portKnocker = portKnocker,
+        connectionLogRepository = connectionLogRepository,
     )
 
     /**
