@@ -40,6 +40,7 @@ The **gateway** is how runtimes talk to each other and to the outside world. Hav
 - **Port forwarding** — Local (`-L`), Remote (`-R`), and Dynamic (`-D`, SOCKS5 proxy server) over any active SSH session, managed live from the UI.
 - **ProxyJump** — multi-hop tunnels through bastions and jump hosts, visualised as a tree.
 - **Transport proxies** — SOCKS5/SOCKS4/HTTP for reaching `.onion` or corp-restricted endpoints.
+- **Overlay tunnels** — WireGuard, Tailscale, and Cloudflare Access let a profile reach hosts that have no public IP, without consuming the system VPN slot. Each tunnel is per-profile, ref-counted across protocols (SSH + VNC + SFTP through one handle), and survives network transitions.
 - **Network-aware reconnect** — NetworkMonitor triggers an immediate reconnect when WiFi/cellular/VPN flips, instead of waiting for a TCP timeout.
 - **Mesh** — Reticulum transport for off-grid connectivity.
 - **Service publishing** — the rclone media server, the HLS streaming server, and the Wayland socket (via Shizuku) turn the phone itself into a host that other devices on the LAN can reach.

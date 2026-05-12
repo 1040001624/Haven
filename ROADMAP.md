@@ -37,6 +37,7 @@
 - [x] **Network-aware reconnect** — ConnectivityManager detects WiFi/cellular/VPN changes, triggers immediate SSH reconnect (2s debounce) instead of waiting for TCP timeout
 - [x] **WireGuard tunnels** — per-app userspace WireGuard tunnel (wireguard-go + gVisor netstack via gomobile), wg-quick config per profile, no system VPN slot
 - [x] **Tailscale auto-discovery** — detect Tailscale peers via local API and show as discovered hosts
+- [x] **Cloudflare Access SSH** — per-hostname WebSocket tunnel via `cdn-cgi/access/ssh-gateway` with `Cookie: CF_Authorization=<jwt>`. In-app WebView captures the JWT from the team's IdP login; paste-JWT path for `cloudflared access token` headless setups. Experimental — wire protocol reverse-engineered from cloudflared, awaiting confirmation against live tenants (v5.35.0-rc1, #154).
 - [x] **Workspace profiles** — savable session bundles open SSH tabs + port forwards + SFTP in one tap; also exposed as MCP `compose_workspace` verb
 
 ### Security
