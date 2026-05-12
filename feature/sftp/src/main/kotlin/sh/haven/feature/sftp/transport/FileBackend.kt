@@ -1,6 +1,7 @@
 package sh.haven.feature.sftp.transport
 
 import sh.haven.feature.sftp.SftpEntry
+import java.io.InputStream
 
 /**
  * Backend-agnostic file operations. Implementations exist for every browser
@@ -72,4 +73,31 @@ interface FileBackend {
      * doesn't exist; the parent directory must already exist.
      */
     suspend fun writeBytes(path: String, data: ByteArray)
+
+    /**
+     * Stat a single entry without listing its parent directory. Used by
+     * the MCP `serve_file` tool to size the file for HTTP `Content-Length`,
+     * and elsewhere where a callsite only has the path. Implementations
+     * throw on missing entries rather than returning a sentinel — callers
+     * should expect `IOException`/`FileNotFoundException` or backend-specific
+     * variants and catch broadly.
+     */
+    suspend fun stat(path: String): SftpEntry
+
+    /**
+     * Open a streaming [InputStream] over the file at [path], optionally
+     * starting at byte [offset]. Caller owns the stream and must close it.
+     *
+     * Used by the MCP `serve_file` tool (and by `SftpStreamServer` callers
+     * that want a backend-agnostic Range-capable opener). Unlike
+     * [readBytes], this is the right primitive for files of arbitrary
+     * size — backends that genuinely can't seek (e.g. SCP) throw rather
+     * than silently buffering the whole prefix.
+     *
+     * Implementations may throw [UnsupportedOperationException] for
+     * `offset > 0` if the underlying protocol doesn't support resume;
+     * callers that don't actually need a non-zero offset should treat
+     * `offset = 0` as universally supported.
+     */
+    suspend fun openInputStream(path: String, offset: Long = 0): InputStream
 }

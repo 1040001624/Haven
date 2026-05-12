@@ -189,6 +189,11 @@ private fun summariseResult(toolName: String?, result: JSONObject?): String? {
         }
         "remove_port_forward" -> if (result.optBoolean("deactivated", false)) "removed and deactivated" else "removed"
         "upload_file_to_sftp" -> result.optLong("bytesUploaded", -1L).takeIf { it >= 0 }?.let { "uploaded ${it} bytes" }
+        "serve_file" -> {
+            val n = result.optLong("size", -1L)
+            val backend = result.optString("backend", "")
+            if (n >= 0) "served $n bytes from $backend" else null
+        }
         "delete_sftp_file" -> "deleted"
         "upload_file" -> {
             val n = result.optLong("bytesUploaded", -1L)

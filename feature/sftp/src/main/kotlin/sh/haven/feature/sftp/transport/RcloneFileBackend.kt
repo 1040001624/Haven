@@ -113,6 +113,51 @@ class RcloneFileBackend(
         }
     }
 
+    override suspend fun stat(path: String): SftpEntry = withContext(Dispatchers.IO) {
+        // rclone's RPC has no single-entry stat — list the parent
+        // remote-path and filter. Bounded by parent-dir size; acceptable
+        // for serve_file's per-call consent flow.
+        val parent = path.trimEnd('/').substringBeforeLast('/', "")
+        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty {
+            throw java.io.FileNotFoundException("Cannot derive name from path: $path")
+        }
+        list(parent).firstOrNull { it.name == name }
+            ?: throw java.io.FileNotFoundException(path)
+    }
+
+    /**
+     * Stream via a temp-file download — rclone's gomobile RPC is
+     * file-path oriented, not stream oriented. Caller closes the
+     * returned stream; close also deletes the cached temp file so
+     * heavy `serve_file` usage doesn't fill the app cache.
+     *
+     * For media files the existing rclone HTTP serve (used by the
+     * frame-preview / HLS pipeline) is the lighter path; this method
+     * exists so non-media files (PDFs, configs, source) can also be
+     * served via the MCP `serve_file` tool without per-backend special
+     * casing on the call site.
+     */
+    override suspend fun openInputStream(path: String, offset: Long): java.io.InputStream =
+        withContext(Dispatchers.IO) {
+            val tempFile = File(appContext.cacheDir, "rclone-serve-${System.nanoTime()}.bin")
+            try {
+                client.copyFile(remoteName, path, tempFile.parent!!, tempFile.name)
+            } catch (t: Throwable) {
+                tempFile.delete()
+                throw t
+            }
+            val raw = java.io.FileInputStream(tempFile)
+            if (offset > 0) raw.channel.position(offset)
+            object : java.io.InputStream() {
+                override fun read(): Int = raw.read()
+                override fun read(b: ByteArray, off: Int, len: Int): Int = raw.read(b, off, len)
+                override fun available(): Int = raw.available()
+                override fun close() {
+                    try { raw.close() } finally { tempFile.delete() }
+                }
+            }
+        }
+
     /**
      * Probe whether [path] points at a directory by listing its parent.
      * Returns false when the entry isn't found at all — let the caller's

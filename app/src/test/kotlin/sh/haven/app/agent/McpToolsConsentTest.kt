@@ -71,6 +71,7 @@ class McpToolsConsentTest {
             terminalSessionRegistry = sh.haven.feature.terminal.agent.TerminalSessionRegistry(),
             portKnocker = mockk<sh.haven.core.knock.PortKnocker>(relaxed = true),
             connectionLogRepository = mockk<sh.haven.core.data.repository.ConnectionLogRepository>(relaxed = true),
+            servedFileTracker = sh.haven.core.data.agent.ServedFileTracker(),
         )
     }
 

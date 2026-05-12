@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.haven.feature.sftp.SftpEntry
 import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
 
 private const val TAG = "LocalFileBackend"
 
@@ -70,6 +72,30 @@ class LocalFileBackend(
 
     override suspend fun writeBytes(path: String, data: ByteArray) = withContext(Dispatchers.IO) {
         File(path).writeBytes(data)
+    }
+
+    override suspend fun openInputStream(path: String, offset: Long): InputStream =
+        withContext(Dispatchers.IO) {
+            FileInputStream(File(path)).apply {
+                if (offset > 0) channel.position(offset)
+            }
+        }
+
+    override suspend fun stat(path: String): SftpEntry = withContext(Dispatchers.IO) {
+        val f = File(path)
+        if (!f.exists()) throw java.io.FileNotFoundException(path)
+        SftpEntry(
+            name = f.name,
+            path = f.absolutePath,
+            isDirectory = f.isDirectory,
+            size = if (f.isDirectory) 0 else f.length(),
+            modifiedTime = f.lastModified() / 1000,
+            permissions = buildString {
+                if (f.canRead()) append('r') else append('-')
+                if (f.canWrite()) append('w') else append('-')
+                if (f.canExecute()) append('x') else append('-')
+            },
+        )
     }
 
     private fun listRoots(): List<SftpEntry> {

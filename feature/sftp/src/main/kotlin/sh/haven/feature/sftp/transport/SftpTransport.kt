@@ -119,6 +119,29 @@ class SftpTransport(
         channel.get(srcPath, output, monitor)
     }
 
+    /**
+     * Direct streaming download via JSch's `get(path, monitor, skip)`
+     * overload. Used by [SftpStreamServer]'s opener and by the MCP
+     * `serve_file` tool — both want a fresh InputStream at an arbitrary
+     * byte offset without the [download] callback overhead.
+     */
+    override suspend fun openInputStream(path: String, offset: Long): java.io.InputStream =
+        withContext(Dispatchers.IO) {
+            channelProvider().get(path, null as SftpProgressMonitor?, offset)
+        }
+
+    override suspend fun stat(path: String): SftpEntry = withContext(Dispatchers.IO) {
+        val attrs = channelProvider().stat(path)
+        SftpEntry(
+            name = path.substringAfterLast('/').ifEmpty { path },
+            path = path,
+            isDirectory = attrs.isDir,
+            size = attrs.size,
+            modifiedTime = attrs.mTime.toLong(),
+            permissions = attrs.permissionsString.orEmpty(),
+        )
+    }
+
     override suspend fun mkdir(path: String) = withContext(Dispatchers.IO) {
         channelProvider().mkdir(path)
     }

@@ -102,6 +102,7 @@ class McpServer @Inject constructor(
     private val terminalSessionRegistry: sh.haven.feature.terminal.agent.TerminalSessionRegistry,
     private val portKnocker: sh.haven.core.knock.PortKnocker,
     private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
+    private val servedFileTracker: sh.haven.core.data.agent.ServedFileTracker,
 ) : Closeable {
 
     /**
@@ -194,6 +195,7 @@ class McpServer @Inject constructor(
         terminalSessionRegistry = terminalSessionRegistry,
         portKnocker = portKnocker,
         connectionLogRepository = connectionLogRepository,
+        servedFileTracker = servedFileTracker,
     )
 
     /**
@@ -573,6 +575,25 @@ class McpServer @Inject constructor(
         val name = params.optString("name", "")
             .ifEmpty { throw McpError(-32602, "Missing tool name") }
         val arguments = params.optJSONObject("arguments") ?: JSONObject()
+
+        // Pre-consent capability gate. Some tools live behind an
+        // additional toggle in Settings on top of the global agent
+        // endpoint. Failing here means the user doesn't see a consent
+        // prompt for a tool that would then error anyway, and the
+        // audit log records the denial cleanly. Currently only
+        // `serve_file` (raw bytes off-device) is gated this way.
+        if (name == "serve_file") {
+            val allowed = runBlocking {
+                preferencesRepository.agentAllowFileRead.first()
+            }
+            if (!allowed) {
+                throw McpError(
+                    -32011,
+                    "agent file read is disabled — enable in Settings → Agent endpoint",
+                )
+            }
+        }
+
         // Look up consent metadata before invoking the handler. Unknown
         // tools fall through to tools.call() which will throw the right
         // error; treating them as NEVER avoids prompting on a typo.

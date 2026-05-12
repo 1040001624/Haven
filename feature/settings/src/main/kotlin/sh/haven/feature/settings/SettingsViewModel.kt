@@ -189,6 +189,9 @@ class SettingsViewModel @Inject constructor(
     val mcpAgentEndpointEnabled: StateFlow<Boolean> = preferencesRepository.mcpAgentEndpointEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val agentAllowFileRead: StateFlow<Boolean> = preferencesRepository.agentAllowFileRead
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     /**
      * SSH-family profiles eligible for the "Tunnel MCP through this
      * profile" shortcut. The shortcut creates a remote port-forward
@@ -438,6 +441,12 @@ class SettingsViewModel @Inject constructor(
     fun setMcpAgentEndpointEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setMcpAgentEndpointEnabled(enabled)
+        }
+    }
+
+    fun setAgentAllowFileRead(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAgentAllowFileRead(enabled)
         }
     }
 

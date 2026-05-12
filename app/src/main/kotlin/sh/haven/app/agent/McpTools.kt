@@ -71,6 +71,7 @@ internal class McpTools(
     private val terminalSessionRegistry: sh.haven.feature.terminal.agent.TerminalSessionRegistry,
     private val portKnocker: sh.haven.core.knock.PortKnocker,
     private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
+    private val servedFileTracker: sh.haven.core.data.agent.ServedFileTracker,
 ) {
 
     /**
@@ -191,6 +192,30 @@ internal class McpTools(
                 put("required", JSONArray().put("profileId").put("path"))
             },
         ) { args -> streamSftpFile(args) },
+
+        "serve_file" to ToolHandler(
+            description = "Publish a single file from any connected backend (local, SFTP, SMB, rclone) as a short-lived loopback HTTP URL the caller can curl to its own filesystem. Returns { url, size, mimeType }. Bytes are streamed over HTTP rather than returned inline through JSON-RPC. Gated by Settings → Agent endpoint → \"Allow agents to read file contents\" and confirmed per-call by a consent prompt.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Connection profile ID, or 'local' for the device filesystem.")
+                    })
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Absolute path of the file on the chosen backend.")
+                    })
+                })
+                put("required", JSONArray().put("profileId").put("path"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val pid = args.optString("profileId")
+                val p = args.optString("path")
+                "Let the agent download '$p' from '${profileLabel(pid)}' to its workstation"
+            },
+        ) { args -> serveFile(args) },
 
         "stop_stream" to ToolHandler(
             description = "Stop any currently running HLS stream started by stream_sftp_file or the UI.",
@@ -1363,6 +1388,72 @@ internal class McpTools(
     private fun stopStream(): JSONObject {
         hlsStreamServer.stop()
         return JSONObject().apply { put("stopped", true) }
+    }
+
+    /**
+     * Backend-agnostic file download bridge. Resolves the profile via
+     * [transportSelector], stats the path for size+mime, publishes a
+     * loopback HTTP entry on [sftpStreamServer], and returns the URL.
+     *
+     * The capability gate ([UserPreferencesRepository.agentAllowFileRead])
+     * is also enforced in [McpServer] *before* the consent prompt so a
+     * disabled call fails immediately. The check here is belt-and-braces
+     * for any in-process caller that might bypass the server dispatcher.
+     */
+    private suspend fun serveFile(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val path = args.optString("path").ifEmpty {
+            throw McpError(-32602, "Missing required argument: path")
+        }
+
+        if (!preferencesRepository.agentAllowFileRead.first()) {
+            throw McpError(
+                -32011,
+                "agent file read is disabled — enable in Settings → Agent endpoint",
+            )
+        }
+
+        val resolution = transportSelector.resolveFileBackend(profileId)
+            ?: throw McpError(-32603, "No connected backend for profile $profileId")
+        val backend = resolution.backend
+
+        val entry = try {
+            backend.stat(path)
+        } catch (t: Throwable) {
+            throw McpError(-32603, "Failed to stat $path: ${t.message}")
+        }
+        if (entry.isDirectory) {
+            throw McpError(-32602, "$path is a directory; serve_file is for single files")
+        }
+        val contentType = guessContentType(path)
+
+        val port = sftpStreamServer.start()
+        val urlPath = sftpStreamServer.publish(
+            path = path,
+            size = entry.size,
+            contentType = contentType,
+            opener = { offset ->
+                // Re-resolve on each Range request so a reconnected
+                // session picks up the fresh client/channel rather than
+                // capturing a stale one from publish-time.
+                val live = kotlinx.coroutines.runBlocking {
+                    transportSelector.resolveFileBackend(profileId)?.backend
+                } ?: throw java.io.IOException("Backend disconnected for $profileId")
+                kotlinx.coroutines.runBlocking { live.openInputStream(path, offset) }
+            },
+        )
+        servedFileTracker.register(profileId, path)
+
+        JSONObject().apply {
+            put("profileId", profileId)
+            put("backend", backend.label)
+            put("path", path)
+            put("size", entry.size)
+            put("mimeType", contentType)
+            put("url", "http://127.0.0.1:$port$urlPath")
+        }
     }
 
     private fun guessContentType(name: String): String =

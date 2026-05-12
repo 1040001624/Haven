@@ -119,6 +119,7 @@ class McpDragSelectionTest {
             terminalSessionRegistry = registry,
             portKnocker = mockk<sh.haven.core.knock.PortKnocker>(relaxed = true),
             connectionLogRepository = mockk<sh.haven.core.data.repository.ConnectionLogRepository>(relaxed = true),
+            servedFileTracker = sh.haven.core.data.agent.ServedFileTracker(),
         )
     }
 

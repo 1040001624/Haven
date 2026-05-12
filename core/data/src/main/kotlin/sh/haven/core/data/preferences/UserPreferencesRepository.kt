@@ -73,6 +73,11 @@ class UserPreferencesRepository @Inject constructor(
     private val mcpAgentEndpointEnabledKey = booleanPreferencesKey("mcp_agent_endpoint_enabled")
     private val lastViewedAgentAuditTimestampKey = longPreferencesKey("last_viewed_agent_audit_timestamp")
     private val requireAgentConsentForWritesKey = booleanPreferencesKey("require_agent_consent_for_writes")
+    // Per-tool capability gate: when off, the MCP `serve_file` tool fails
+    // fast with a JSON-RPC error before any consent prompt fires. Default
+    // off — agent-driven raw-file reads are a separate, opt-in capability
+    // on top of the endpoint toggle.
+    private val agentAllowFileReadKey = booleanPreferencesKey("agent_allow_file_read")
     // MCP client allowlist — clientInfo.name values the user has approved
     // via the pairing prompt on first connect. Empty by default; the
     // McpServer rejects any initialize from a name not in this set.
@@ -458,6 +463,25 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setRequireAgentConsentForWrites(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[requireAgentConsentForWritesKey] = enabled
+        }
+    }
+
+    /**
+     * Whether the MCP `serve_file` tool is enabled. Off by default —
+     * the toggle is the second factor above per-call consent: even with
+     * the agent endpoint enabled, raw file reads stay disabled until
+     * the user explicitly opts in. The toggle gates the dispatcher
+     * before any consent prompt, so a disabled call fails immediately
+     * with a clear "enable in Settings" error rather than flashing a
+     * deny-then-error prompt.
+     */
+    val agentAllowFileRead: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[agentAllowFileReadKey] ?: false
+    }
+
+    suspend fun setAgentAllowFileRead(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[agentAllowFileReadKey] = enabled
         }
     }
 

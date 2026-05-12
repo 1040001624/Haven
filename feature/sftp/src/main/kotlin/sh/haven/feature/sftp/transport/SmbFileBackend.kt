@@ -6,6 +6,7 @@ import sh.haven.core.smb.SmbClient
 import sh.haven.feature.sftp.SftpEntry
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /**
  * [FileBackend] over a connected [SmbClient]. Constructed per-resolution
@@ -53,5 +54,30 @@ class SmbFileBackend(
         ByteArrayInputStream(data).use { input ->
             client.upload(input, path, data.size.toLong()) { _, _ -> }
         }
+    }
+
+    override suspend fun openInputStream(path: String, offset: Long): InputStream =
+        withContext(Dispatchers.IO) {
+            client.openInputStream(path, offset)
+        }
+
+    override suspend fun stat(path: String): SftpEntry = withContext(Dispatchers.IO) {
+        // smbj doesn't ship a single-entry stat, but listing the parent
+        // and filtering by name is a single round-trip server-side. SMB
+        // paths use forward slashes after toSmbPath normalisation.
+        val parent = path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
+        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty {
+            throw java.io.FileNotFoundException("Cannot derive name from path: $path")
+        }
+        client.listDirectory(parent).firstOrNull { it.name == name }?.let { entry ->
+            SftpEntry(
+                name = entry.name,
+                path = entry.path,
+                isDirectory = entry.isDirectory,
+                size = entry.size,
+                modifiedTime = entry.modifiedTime,
+                permissions = entry.permissions,
+            )
+        } ?: throw java.io.FileNotFoundException(path)
     }
 }

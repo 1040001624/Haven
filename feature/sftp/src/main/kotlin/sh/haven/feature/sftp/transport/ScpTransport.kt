@@ -107,6 +107,53 @@ class ScpTransport(
         }
     }
 
+    override suspend fun stat(path: String): SftpEntry {
+        // Reuse the existing listing path: ls the parent directory and
+        // pick the matching name. SCP has no native single-entry stat.
+        val parent = path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
+        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty {
+            throw java.io.FileNotFoundException("Cannot derive name from path: $path")
+        }
+        return list(parent).firstOrNull { it.name == name }
+            ?: throw java.io.FileNotFoundException(path)
+    }
+
+    /**
+     * SCP doesn't natively support resume — to honour an offset we'd
+     * have to spool the whole file then skip. For the MCP `serve_file`
+     * tool that would defeat the streaming-URL design, so we accept
+     * `offset = 0` (the common case) and decline non-zero offsets with
+     * a clear error rather than silently buffering megabytes.
+     */
+    override suspend fun openInputStream(path: String, offset: Long): InputStream {
+        if (offset > 0) {
+            throw UnsupportedOperationException(
+                "SCP transport doesn't support byte-range reads. Connect via SFTP for offset > 0."
+            )
+        }
+        return withContext(Dispatchers.IO) {
+            val spool = File(cacheDir, "scp_open_${UUID.randomUUID()}")
+            scp.downloadFile(
+                remotePath = path,
+                localFile = spool,
+                preserveTimes = false,
+            ) { _, _ -> }
+            // Caller closes the stream; we delete the spool on close so
+            // the cache doesn't grow unbounded under heavy use.
+            object : InputStream() {
+                private val inner = spool.inputStream()
+                override fun read(): Int = inner.read()
+                override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
+                override fun available(): Int = inner.available()
+                override fun close() {
+                    try { inner.close() } finally {
+                        if (!spool.delete()) Log.w(TAG, "Failed to delete spool $spool")
+                    }
+                }
+            }
+        }
+    }
+
     override suspend fun mkdir(path: String) {
         val cmd = "mkdir -p -- ${shellQuote(path)}"
         val r = sshClient.execCommand(cmd)

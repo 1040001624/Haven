@@ -159,6 +159,7 @@ fun SettingsScreen(
     val connectionLoggingEnabled by viewModel.connectionLoggingEnabled.collectAsState()
     val verboseLoggingEnabled by viewModel.verboseLoggingEnabled.collectAsState()
     val mcpAgentEndpointEnabled by viewModel.mcpAgentEndpointEnabled.collectAsState()
+    val agentAllowFileRead by viewModel.agentAllowFileRead.collectAsState()
     val unseenAgentActivity by viewModel.unseenAgentActivity.collectAsState()
     val requireAgentConsentForWrites by viewModel.requireAgentConsentForWrites.collectAsState()
     val mouseInputEnabled by viewModel.mouseInputEnabled.collectAsState()
@@ -719,6 +720,23 @@ fun SettingsScreen(
             onCheckedChange = viewModel::setMcpAgentEndpointEnabled,
         )
         if (mcpAgentEndpointEnabled) {
+            // Per-capability gate above per-call consent. Enabling the
+            // endpoint isn't enough on its own — raw file reads need
+            // this extra opt-in, because they let an agent exfiltrate
+            // any file in one call where other tools are scoped to
+            // narrower surfaces (terminal scrollback, list-only, etc.).
+            SettingsToggleItem(
+                icon = Icons.Filled.Hub,
+                title = "Allow agents to read file contents",
+                subtitle = if (agentAllowFileRead) {
+                    "Enabled — `serve_file` returns a single-use download URL after per-call consent"
+                } else {
+                    "Disabled — `serve_file` requests fail immediately, no prompt"
+                },
+                checked = agentAllowFileRead,
+                onCheckedChange = viewModel::setAgentAllowFileRead,
+            )
+
             // Endpoint URL is always the canonical port range start —
             // the server binds to the first free port in 8730..8739
             val endpointUrl = "http://127.0.0.1:8730/mcp"

@@ -113,6 +113,45 @@ class SmbClient : Closeable {
         }
     }
 
+    /**
+     * Open a streaming [InputStream] over [remotePath], skipping the
+     * first [offset] bytes. Caller owns the stream and must close it;
+     * closing it releases the underlying smbj File handle.
+     *
+     * Used by the MCP `serve_file` tool (via `SmbFileBackend.openInputStream`).
+     */
+    fun openInputStream(remotePath: String, offset: Long = 0): InputStream {
+        val diskShare = share ?: throw IllegalStateException("Not connected")
+        val smbPath = toSmbPath(remotePath)
+        val file = diskShare.openFile(
+            smbPath,
+            EnumSet.of(AccessMask.GENERIC_READ),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null,
+        )
+        val inner = file.inputStream
+        if (offset > 0) {
+            var remaining = offset
+            while (remaining > 0) {
+                val skipped = inner.skip(remaining)
+                if (skipped <= 0) break
+                remaining -= skipped
+            }
+        }
+        // Wrap so closing the returned stream also closes the SMB file
+        // handle — otherwise the share would leak open files.
+        return object : InputStream() {
+            override fun read(): Int = inner.read()
+            override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
+            override fun available(): Int = inner.available()
+            override fun close() {
+                try { inner.close() } finally { file.close() }
+            }
+        }
+    }
+
     fun upload(
         input: InputStream,
         remotePath: String,
