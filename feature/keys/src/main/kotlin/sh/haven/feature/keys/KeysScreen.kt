@@ -203,44 +203,55 @@ fun KeysScreen(
             }
         },
     ) { innerPadding ->
-        if (keys.isEmpty() && passwordEntries.isEmpty() && stepCaSectionConfigs.isEmpty() && !generating) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(
-                    Icons.Filled.VpnKey,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(R.string.keys_no_ssh_keys),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-                Text(
-                    stringResource(R.string.keys_tap_to_add),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+        // The CA section must always be reachable. Earlier this branched
+        // on a "nothing here" condition and rendered a centered empty-
+        // state instead — but the empty-state hid the Certificate
+        // authorities section too, so a fresh-install user who wanted
+        // to start with a step-ca-issued key had no way to register a
+        // CA first (#133). Now the LazyColumn always renders, with the
+        // empty-state hint as an item below the CA section when there
+        // are no keys, passwords, or CA configs yet.
+        val nothingButCa = keys.isEmpty() && passwordEntries.isEmpty() &&
+            stepCaSectionConfigs.isEmpty() && !generating
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            item(key = "stepca-ca-section") {
+                StepCaConfigsSectionContent(viewModel = stepCaConfigsViewModel)
+                HorizontalDivider()
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
-                item(key = "stepca-ca-section") {
-                    StepCaConfigsSectionContent(viewModel = stepCaConfigsViewModel)
-                    HorizontalDivider()
+            if (nothingButCa) {
+                item(key = "empty-state") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Filled.VpnKey,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            stringResource(R.string.keys_no_ssh_keys),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 16.dp),
+                        )
+                        Text(
+                            stringResource(R.string.keys_tap_to_add),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
-                if (keys.isNotEmpty()) {
+            }
+            if (keys.isNotEmpty()) {
                     item(key = "ssh-header") {
                         SectionHeader(stringResource(R.string.keys_section_ssh, keys.size))
                     }
@@ -277,8 +288,7 @@ fun KeysScreen(
                         HorizontalDivider()
                     }
                 }
-                item(key = "footer-spacer") { Spacer(Modifier.height(80.dp)) }
-            }
+            item(key = "footer-spacer") { Spacer(Modifier.height(80.dp)) }
         }
     }
 
