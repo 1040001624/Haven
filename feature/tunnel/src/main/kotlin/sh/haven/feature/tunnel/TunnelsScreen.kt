@@ -72,6 +72,7 @@ fun TunnelsScreen(
 ) {
     val tunnels by viewModel.tunnels.collectAsState()
     val error by viewModel.error.collectAsState()
+    val cfTestResult by viewModel.cfTestResult.collectAsState()
     val message by viewModel.message.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -122,7 +123,10 @@ fun TunnelsScreen(
 
     if (showAddDialog) {
         AddTunnelDialog(
-            onDismiss = { showAddDialog = false },
+            onDismiss = {
+                showAddDialog = false
+                viewModel.resetCfTestResult()
+            },
             onSubmitWireguard = { label, configText ->
                 viewModel.addWireguardConfig(label, configText)
                 showAddDialog = false
@@ -131,9 +135,12 @@ fun TunnelsScreen(
                 viewModel.addTailscaleConfig(label, authKey, controlUrl)
                 showAddDialog = false
             },
+            cfTestResult = cfTestResult,
+            onTestCfAccess = { hostname, jwt -> viewModel.testCloudflareAccess(hostname, jwt) },
             onSubmitCloudflareAccess = { label, hostname, teamDomain, jwt, expiresAt ->
                 viewModel.addCloudflareAccessConfig(label, hostname, teamDomain, jwt, expiresAt)
                 showAddDialog = false
+                viewModel.resetCfTestResult()
             },
         )
     }
@@ -255,6 +262,8 @@ private fun AddTunnelDialog(
     onDismiss: () -> Unit,
     onSubmitWireguard: (label: String, configText: String) -> Unit,
     onSubmitTailscale: (label: String, authKey: String, controlUrl: String) -> Unit,
+    cfTestResult: TunnelViewModel.CloudflareAccessTestResult,
+    onTestCfAccess: (hostname: String, jwt: String) -> Unit,
     onSubmitCloudflareAccess: (
         label: String,
         hostname: String,
@@ -445,7 +454,10 @@ private fun AddTunnelDialog(
                             val host = cfHostname.trim()
                             if (host.isNotEmpty()) {
                                 cfLoginLauncher.launch(
-                                    CloudflareAccessLoginContract.Input(hostname = host),
+                                    CloudflareAccessLoginContract.Input(
+                                        hostname = host,
+                                        teamDomain = cfTeamDomain.trim(),
+                                    ),
                                 )
                             }
                         },
@@ -455,6 +467,8 @@ private fun AddTunnelDialog(
                             cfJwt = pasted
                             cfExpiresAt = expiresAt
                         },
+                        testResult = cfTestResult,
+                        onTestClick = { onTestCfAccess(cfHostname.trim(), cfJwt.trim()) },
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 }
@@ -509,6 +523,8 @@ private fun CloudflareAccessForm(
     advancedOpen: Boolean,
     onAdvancedToggle: () -> Unit,
     onJwtPaste: (jwt: String, expiresAtSeconds: Long) -> Unit,
+    testResult: TunnelViewModel.CloudflareAccessTestResult,
+    onTestClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
@@ -584,6 +600,58 @@ private fun CloudflareAccessForm(
             enabled = hostname.isNotBlank(),
         ) {
             Text(if (jwt.isBlank()) "Sign in via Cloudflare Access" else "Re-authenticate")
+        }
+
+        // Test the gateway handshake without creating an SSH profile.
+        // The button is intentionally placed below the auth flow so the
+        // happy path (sign-in → test → save) reads top-to-bottom.
+        OutlinedButton(
+            onClick = onTestClick,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = hostname.isNotBlank() && jwt.isNotBlank() &&
+                testResult !is TunnelViewModel.CloudflareAccessTestResult.Running,
+        ) {
+            Text(
+                if (testResult is TunnelViewModel.CloudflareAccessTestResult.Running) {
+                    "Testing…"
+                } else {
+                    "Test connection"
+                },
+            )
+        }
+        when (testResult) {
+            TunnelViewModel.CloudflareAccessTestResult.Idle,
+            TunnelViewModel.CloudflareAccessTestResult.Running -> Unit
+            is TunnelViewModel.CloudflareAccessTestResult.Success -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        testResult.message,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+            is TunnelViewModel.CloudflareAccessTestResult.Failure -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        testResult.message,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
         }
 
         TextButton(onClick = onAdvancedToggle) {

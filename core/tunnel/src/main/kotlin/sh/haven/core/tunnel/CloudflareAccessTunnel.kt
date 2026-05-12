@@ -55,6 +55,26 @@ class CloudflareAccessTunnel internal constructor(
     private val gatewayUrlOverride: String? = null,
 ) : Tunnel {
 
+    companion object {
+        /**
+         * Public factory for callers outside `:core:tunnel` (the
+         * production path goes through [DefaultTunnelFactory] and never
+         * needs this). Used by the Settings "Test connection" button to
+         * build a transient tunnel without going through [TunnelManager]
+         * — the test deliberately isn't ref-counted into any live
+         * session.
+         */
+        fun forTest(
+            hostname: String,
+            jwt: String,
+            httpClient: OkHttpClient,
+        ): CloudflareAccessTunnel = CloudflareAccessTunnel(
+            hostname = hostname,
+            jwt = jwt,
+            httpClient = httpClient,
+        )
+    }
+
     private val live = CopyOnWriteArraySet<WebSocketTunneledConnection>()
 
     override fun dial(host: String, port: Int, timeoutMs: Int): TunneledConnection {
@@ -196,23 +216,77 @@ private class WebSocketTunneledConnection(
      * exception. HTTP 401/403 from the upgrade response usually means an
      * expired or wrong-audience JWT — surface that explicitly rather
      * than the bare "Expected HTTP 101" message OkHttp emits.
+     *
+     * We're flying without a documented spec for the SSH-gateway wire
+     * format (the protocol is reverse-engineered from cloudflared), so
+     * the diagnostic line gets aggressive: every failure carries the
+     * status code, the Cloudflare-specific debug headers we can find
+     * (cf-ray for support correlation, cf-mitigated for WAF blocks,
+     * Server, Sec-WebSocket-Protocol negotiation, WWW-Authenticate),
+     * and the first 256 bytes of any HTML/text response body. The
+     * point is that the *first* test against a real Access tenant
+     * (issue #154) yields actionable info, not a generic
+     * "Expected HTTP 101" round-trip.
      */
     private fun mapFailure(t: Throwable, response: Response?): Throwable {
         val code = response?.code
-        return when (code) {
-            401, 403 -> IOException(
-                "Cloudflare Access rejected the JWT for $hostname (HTTP $code) — re-authenticate",
-                t,
-            )
-            in 500..599 -> IOException(
-                "Cloudflare Access gateway error for $hostname (HTTP $code)",
-                t,
-            )
-            else -> IOException(
-                "Cloudflare Access WebSocket to $hostname failed: ${t.message}",
-                t,
-            )
+        val detail = buildDiagnostics(response)
+        val base = when (code) {
+            401, 403 -> "Cloudflare Access rejected the JWT for $hostname (HTTP $code) — re-authenticate"
+            in 500..599 -> "Cloudflare Access gateway error for $hostname (HTTP $code)"
+            null -> "Cloudflare Access WebSocket to $hostname failed: ${t.message}"
+            else -> "Cloudflare Access WebSocket to $hostname failed: HTTP $code ${t.message ?: ""}".trim()
         }
+        return IOException(if (detail.isEmpty()) base else "$base — $detail", t)
+    }
+
+    /**
+     * Build a `key=value; key=value` diagnostic string from the upgrade
+     * response. Empty if [response] is null. Body excerpt is included
+     * only if the content-type looks textual and the body is small.
+     */
+    private fun buildDiagnostics(response: Response?): String {
+        if (response == null) return ""
+        val parts = mutableListOf<String>()
+        for (name in DIAG_HEADERS) {
+            response.header(name)?.let { parts += "$name=${redact(it)}" }
+        }
+        // Body excerpt — guarded by content-type and length. OkHttp
+        // peekBody buffers without consuming the upstream source, so
+        // we don't break any downstream consumer of `response`.
+        val contentType = response.header("Content-Type").orEmpty()
+        val textual = contentType.startsWith("text/", ignoreCase = true) ||
+            contentType.contains("html", ignoreCase = true) ||
+            contentType.contains("json", ignoreCase = true) ||
+            contentType.isEmpty()
+        if (textual) {
+            runCatching {
+                val peeked = response.peekBody(BODY_PEEK_BYTES)
+                val excerpt = peeked.string().take(BODY_EXCERPT_CHARS).replace(Regex("\\s+"), " ").trim()
+                if (excerpt.isNotEmpty()) parts += "body=\"$excerpt\""
+            }
+        }
+        return parts.joinToString("; ")
+    }
+
+    /** Redact JWT-shaped values so debug strings don't leak credentials. */
+    private fun redact(value: String): String {
+        if (value.length > 40 && value.contains('.')) return "<redacted ${value.length} chars>"
+        return value
+    }
+
+    private companion object {
+        /** Headers we want in the diagnostic line, in priority order. */
+        val DIAG_HEADERS = listOf(
+            "cf-ray",
+            "cf-mitigated",
+            "Server",
+            "Sec-WebSocket-Protocol",
+            "WWW-Authenticate",
+            "Location",
+        )
+        const val BODY_PEEK_BYTES = 1024L
+        const val BODY_EXCERPT_CHARS = 256
     }
 
     override fun close() {

@@ -3,15 +3,22 @@ package sh.haven.feature.tunnel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.TunnelConfig
 import sh.haven.core.data.db.entities.TunnelConfigType
+import sh.haven.core.data.repository.ConnectionLogRepository
 import sh.haven.core.data.repository.TunnelConfigRepository
+import sh.haven.core.tunnel.CloudflareAccessTunnel
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
@@ -22,7 +29,95 @@ import javax.inject.Inject
 @HiltViewModel
 class TunnelViewModel @Inject constructor(
     private val repository: TunnelConfigRepository,
+    private val connectionLogRepository: ConnectionLogRepository,
+    private val httpClient: OkHttpClient,
 ) : ViewModel() {
+
+    /**
+     * Result of a [testCloudflareAccess] call, surfaced inline next to
+     * the "Test connection" button.
+     */
+    sealed class CloudflareAccessTestResult {
+        data object Idle : CloudflareAccessTestResult()
+        data object Running : CloudflareAccessTestResult()
+        data class Success(val message: String) : CloudflareAccessTestResult()
+        data class Failure(val message: String) : CloudflareAccessTestResult()
+    }
+
+    private val _cfTestResult = MutableStateFlow<CloudflareAccessTestResult>(
+        CloudflareAccessTestResult.Idle,
+    )
+    val cfTestResult: StateFlow<CloudflareAccessTestResult> = _cfTestResult.asStateFlow()
+
+    fun resetCfTestResult() {
+        _cfTestResult.value = CloudflareAccessTestResult.Idle
+    }
+
+    /**
+     * Build a transient [CloudflareAccessTunnel] from the form's current
+     * state and try a single dial+close against the Access gateway.
+     *
+     * Success means the WebSocket upgrade completed and the gateway
+     * accepted the JWT. Failure carries the diagnostic detail produced
+     * by `CloudflareAccessTunnel.mapFailure` — typically status code +
+     * `cf-ray` + a body excerpt for Cloudflare error pages.
+     *
+     * Writes a row to the Connection Log either way so the user has a
+     * persistent record after the inline UI clears. The
+     * synthetic profileId `cf-access-test:<hostname>` keeps the row
+     * out of the per-profile log lookups but visible in the global
+     * summary view.
+     */
+    fun testCloudflareAccess(hostname: String, jwt: String) {
+        val trimmedHost = hostname.trim()
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .substringBefore('/')
+        if (trimmedHost.isEmpty() || jwt.isBlank()) {
+            _cfTestResult.value = CloudflareAccessTestResult.Failure(
+                "Need both a hostname and a captured JWT",
+            )
+            return
+        }
+        _cfTestResult.value = CloudflareAccessTestResult.Running
+        viewModelScope.launch {
+            val syntheticId = "cf-access-test:$trimmedHost"
+            val started = System.currentTimeMillis()
+            try {
+                withContext(Dispatchers.IO) {
+                    val tunnel = CloudflareAccessTunnel.forTest(
+                        hostname = trimmedHost,
+                        jwt = jwt.trim(),
+                        httpClient = httpClient.newBuilder()
+                            .callTimeout(8, TimeUnit.SECONDS)
+                            .build(),
+                    )
+                    try {
+                        tunnel.dial(trimmedHost, 22, 8_000).close()
+                    } finally {
+                        tunnel.close()
+                    }
+                }
+                val msg = "Gateway reachable; WebSocket upgrade succeeded."
+                _cfTestResult.value = CloudflareAccessTestResult.Success(msg)
+                connectionLogRepository.logEvent(
+                    profileId = syntheticId,
+                    status = ConnectionLog.Status.CONNECTED,
+                    durationMs = System.currentTimeMillis() - started,
+                    details = "Cloudflare Access test connection: $msg",
+                )
+            } catch (e: Throwable) {
+                val msg = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                _cfTestResult.value = CloudflareAccessTestResult.Failure(msg)
+                connectionLogRepository.logEvent(
+                    profileId = syntheticId,
+                    status = ConnectionLog.Status.FAILED,
+                    durationMs = System.currentTimeMillis() - started,
+                    details = "Cloudflare Access test connection failed: $msg",
+                )
+            }
+        }
+    }
 
     val tunnels: StateFlow<List<TunnelConfig>> = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

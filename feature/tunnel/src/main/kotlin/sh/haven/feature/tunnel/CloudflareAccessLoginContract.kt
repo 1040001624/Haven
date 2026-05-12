@@ -15,10 +15,17 @@ import androidx.activity.result.contract.ActivityResultContract
 class CloudflareAccessLoginContract :
     ActivityResultContract<CloudflareAccessLoginContract.Input, CloudflareAccessLoginContract.Result>() {
 
-    data class Input(val hostname: String)
+    data class Input(val hostname: String, val teamDomain: String = "")
+
+    /** Which cookie domain produced the captured JWT — used for diagnostics. */
+    enum class CookieSource { APP, TEAM, UNKNOWN }
 
     sealed class Result {
-        data class Success(val jwt: String, val expiresAtSeconds: Long) : Result()
+        data class Success(
+            val jwt: String,
+            val expiresAtSeconds: Long,
+            val cookieSource: CookieSource = CookieSource.UNKNOWN,
+        ) : Result()
         data object Cancelled : Result()
         data class Failed(val reason: String) : Result()
     }
@@ -26,6 +33,7 @@ class CloudflareAccessLoginContract :
     override fun createIntent(context: Context, input: Input): Intent =
         Intent(context, CloudflareAccessLoginActivity::class.java).apply {
             putExtra(CloudflareAccessLoginActivity.EXTRA_HOSTNAME, input.hostname)
+            putExtra(CloudflareAccessLoginActivity.EXTRA_TEAM_DOMAIN, input.teamDomain)
         }
 
     override fun parseResult(resultCode: Int, intent: Intent?): Result {
@@ -34,11 +42,17 @@ class CloudflareAccessLoginContract :
         }
         val jwt = intent?.getStringExtra(CloudflareAccessLoginActivity.EXTRA_JWT)
         if (jwt != null && jwt.isNotBlank()) {
+            val source = when (intent.getStringExtra(CloudflareAccessLoginActivity.EXTRA_COOKIE_SOURCE)) {
+                CloudflareAccessLoginActivity.COOKIE_SOURCE_APP -> CookieSource.APP
+                CloudflareAccessLoginActivity.COOKIE_SOURCE_TEAM -> CookieSource.TEAM
+                else -> CookieSource.UNKNOWN
+            }
             return Result.Success(
                 jwt = jwt,
                 expiresAtSeconds = intent.getLongExtra(
                     CloudflareAccessLoginActivity.EXTRA_EXPIRES_AT, 0L,
                 ),
+                cookieSource = source,
             )
         }
         val reason = intent?.getStringExtra(CloudflareAccessLoginActivity.EXTRA_ERROR)

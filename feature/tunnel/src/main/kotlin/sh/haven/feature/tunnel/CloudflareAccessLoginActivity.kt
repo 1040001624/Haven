@@ -43,21 +43,33 @@ class CloudflareAccessLoginActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_HOSTNAME = "sh.haven.feature.tunnel.HOSTNAME"
+        const val EXTRA_TEAM_DOMAIN = "sh.haven.feature.tunnel.TEAM_DOMAIN"
         const val EXTRA_JWT = "sh.haven.feature.tunnel.JWT"
         const val EXTRA_EXPIRES_AT = "sh.haven.feature.tunnel.EXPIRES_AT"
+        const val EXTRA_COOKIE_SOURCE = "sh.haven.feature.tunnel.COOKIE_SOURCE"
         const val EXTRA_ERROR = "sh.haven.feature.tunnel.ERROR"
 
         private const val TAG = "CFAccessLogin"
         private const val COOKIE_NAME = "CF_Authorization"
+
+        const val COOKIE_SOURCE_APP = "app"
+        const val COOKIE_SOURCE_TEAM = "team"
     }
 
     private lateinit var webView: WebView
     private lateinit var hostname: String
+    private var teamDomain: String = ""
     @Volatile private var resolved = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         hostname = intent.getStringExtra(EXTRA_HOSTNAME)
+            ?.trim()
+            ?.removePrefix("https://")
+            ?.removePrefix("http://")
+            ?.substringBefore('/')
+            .orEmpty()
+        teamDomain = intent.getStringExtra(EXTRA_TEAM_DOMAIN)
             ?.trim()
             ?.removePrefix("https://")
             ?.removePrefix("http://")
@@ -124,20 +136,48 @@ class CloudflareAccessLoginActivity : ComponentActivity() {
 
     private fun tryCaptureJwt() {
         if (resolved) return
-        val cookies = CookieManager.getInstance().getCookie("https://$hostname") ?: return
-        val jwt = parseAccessCookie(cookies) ?: return
+        val cm = CookieManager.getInstance()
+
+        // Cloudflare Access sets CF_Authorization on TWO domains: the
+        // protected application (`<hostname>`) and the team domain
+        // (`<team>.cloudflareaccess.com`). Per cloudflared's behaviour
+        // the per-app cookie is the one the gateway expects on the WS
+        // upgrade, but we capture both so the failure mode is visible
+        // if the per-app cookie is missing.
+        val appCookies = cm.getCookie("https://$hostname")
+        val teamCookies = if (teamDomain.isNotEmpty()) cm.getCookie("https://$teamDomain") else null
+
+        val appJwt = appCookies?.let { parseAccessCookie(it) }
+        val teamJwt = teamCookies?.let { parseAccessCookie(it) }
+
+        // Diagnostics: log what we saw on each domain. Length only,
+        // never the JWT itself.
+        Log.d(
+            TAG,
+            "cookie scan: app=${describeJwt(appJwt)} team=${describeJwt(teamJwt)}",
+        )
+
+        val (jwt, source) = when {
+            appJwt != null -> appJwt to COOKIE_SOURCE_APP
+            teamJwt != null -> teamJwt to COOKIE_SOURCE_TEAM
+            else -> return  // neither cookie present yet; keep waiting
+        }
         resolved = true
 
         val expiresAt = JwtPayload.parse(jwt)?.expiresAtSeconds ?: 0L
-        Log.d(TAG, "captured CF_Authorization JWT (exp=$expiresAt)")
+        Log.d(TAG, "captured CF_Authorization JWT from $source (exp=$expiresAt)")
 
         val data = Intent().apply {
             putExtra(EXTRA_JWT, jwt)
             putExtra(EXTRA_EXPIRES_AT, expiresAt)
+            putExtra(EXTRA_COOKIE_SOURCE, source)
         }
         setResult(RESULT_OK, data)
         finish()
     }
+
+    private fun describeJwt(jwt: String?): String =
+        if (jwt == null) "absent" else "${jwt.length} chars"
 
     /**
      * Extract the `CF_Authorization` value from a `Cookie:` header string

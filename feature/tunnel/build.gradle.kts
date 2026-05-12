@@ -29,6 +29,9 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:tunnel"))
     implementation(project(":core:security"))
+    // OkHttp shared client is provided by :core:tunnel's Hilt module; we
+    // need the dep at compile time so the @Inject ctor parameter resolves.
+    implementation(libs.okhttp)
 
     implementation(libs.activity.compose)
     implementation(libs.hilt.android)

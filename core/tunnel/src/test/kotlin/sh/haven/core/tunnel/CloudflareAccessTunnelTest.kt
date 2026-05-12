@@ -126,6 +126,63 @@ class CloudflareAccessTunnelTest {
     }
 
     @Test
+    fun `403 on upgrade surfaces status + cf-ray + body excerpt in the failure message`() {
+        // When the gateway rejects the JWT we want the IOException to
+        // carry enough context that a connection-log row tells us
+        // exactly what happened — not just "Expected HTTP 101".
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("cf-ray", "8c34abcde1234567-LHR")
+                .setHeader("Server", "cloudflare")
+                .setHeader("Content-Type", "text/html; charset=UTF-8")
+                .setBody("<html><body>Access denied — invalid JWT</body></html>"),
+        )
+        val tunnel = CloudflareAccessTunnel(
+            hostname = "ssh.example.com",
+            jwt = "stale",
+            httpClient = client,
+            gatewayUrlOverride = server.url("/cdn-cgi/access/ssh-gateway").toString(),
+        )
+        val ex = assertThrows(java.io.IOException::class.java) {
+            tunnel.dial("ssh.example.com", 22, 3_000)
+        }
+        val msg = ex.message ?: ""
+        assertTrue("expected re-authenticate hint, got: $msg", msg.contains("re-authenticate"))
+        assertTrue("expected HTTP 403 in message, got: $msg", msg.contains("403"))
+        assertTrue("expected cf-ray in message, got: $msg", msg.contains("8c34abcde1234567-LHR"))
+        assertTrue(
+            "expected body excerpt in message, got: $msg",
+            msg.contains("Access denied"),
+        )
+        tunnel.close()
+    }
+
+    @Test
+    fun `5xx on upgrade surfaces gateway error message`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(502)
+                .setHeader("cf-ray", "abc-IAD")
+                .setBody("Bad Gateway"),
+        )
+        val tunnel = CloudflareAccessTunnel(
+            hostname = "ssh.example.com",
+            jwt = "j",
+            httpClient = client,
+            gatewayUrlOverride = server.url("/cdn-cgi/access/ssh-gateway").toString(),
+        )
+        val ex = assertThrows(java.io.IOException::class.java) {
+            tunnel.dial("ssh.example.com", 22, 3_000)
+        }
+        val msg = ex.message ?: ""
+        assertTrue("expected HTTP 502 in message, got: $msg", msg.contains("502"))
+        assertTrue("expected gateway-error phrasing, got: $msg", msg.contains("gateway error"))
+        assertTrue("expected cf-ray in message, got: $msg", msg.contains("abc-IAD"))
+        tunnel.close()
+    }
+
+    @Test
     fun `tunnel close tears down active connections`() {
         echoOnce()
         val tunnel = CloudflareAccessTunnel(
