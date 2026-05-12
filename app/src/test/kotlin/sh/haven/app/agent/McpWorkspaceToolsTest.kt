@@ -42,12 +42,21 @@ import sh.haven.feature.sftp.SftpStreamServer
  */
 class McpWorkspaceToolsTest {
 
+    private val testClientName = "test-host"
+
     private fun newServer(
         workspaceRepository: WorkspaceRepository = mockk(relaxed = true),
         workspaceLauncher: WorkspaceLauncher = mockk(relaxed = true),
         consentManager: AgentConsentManager = AgentConsentManager(),
     ): McpServer {
-        return McpServer(
+        // Pre-seed the prefs allowlist with the test client so the
+        // initialize call in pair() short-circuits the pairing gate
+        // and dispatch-time checks pass.
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        every { prefs.mcpAllowedClients } returns flowOf(setOf(testClientName))
+        coEvery { prefs.addMcpAllowedClient(any()) } returns Unit
+
+        val server = McpServer(
             context = mockk<Context>(relaxed = true),
             connectionRepository = mockk<ConnectionRepository>(relaxed = true),
             portForwardRepository = mockk<PortForwardRepository>(relaxed = true),
@@ -57,7 +66,7 @@ class McpWorkspaceToolsTest {
             sftpStreamServer = mockk<SftpStreamServer>(relaxed = true),
             hlsStreamServer = mockk<HlsStreamServer>(relaxed = true),
             ffmpegExecutor = mockk<FfmpegExecutor>(relaxed = true),
-            preferencesRepository = mockk<UserPreferencesRepository>(relaxed = true),
+            preferencesRepository = prefs,
             terminalFontInstaller = mockk<TerminalFontInstaller>(relaxed = true),
             localSessionManager = mockk<LocalSessionManager>(relaxed = true),
             auditRecorder = mockk(relaxed = true),
@@ -72,6 +81,22 @@ class McpWorkspaceToolsTest {
             portKnocker = mockk<sh.haven.core.knock.PortKnocker>(relaxed = true),
             connectionLogRepository = mockk<sh.haven.core.data.repository.ConnectionLogRepository>(relaxed = true),
         )
+        // All workspace verbs go through tools/call which is gated by
+        // the dispatch-time pairing check. Initialize first so the
+        // test client is recognised as paired.
+        server.handleJsonRpc(
+            JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", 0)
+                .put("method", "initialize")
+                .put("params", JSONObject()
+                    .put("protocolVersion", "2025-06-18")
+                    .put("clientInfo", JSONObject()
+                        .put("name", testClientName)
+                        .put("version", "1.0")))
+                .toString(),
+        )
+        return server
     }
 
     private fun toolsCallBody(name: String, args: JSONObject = JSONObject()): String =

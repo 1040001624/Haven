@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -72,6 +73,10 @@ class UserPreferencesRepository @Inject constructor(
     private val mcpAgentEndpointEnabledKey = booleanPreferencesKey("mcp_agent_endpoint_enabled")
     private val lastViewedAgentAuditTimestampKey = longPreferencesKey("last_viewed_agent_audit_timestamp")
     private val requireAgentConsentForWritesKey = booleanPreferencesKey("require_agent_consent_for_writes")
+    // MCP client allowlist — clientInfo.name values the user has approved
+    // via the pairing prompt on first connect. Empty by default; the
+    // McpServer rejects any initialize from a name not in this set.
+    private val mcpAllowedClientsKey = stringSetPreferencesKey("mcp_allowed_clients")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -453,6 +458,40 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setRequireAgentConsentForWrites(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[requireAgentConsentForWritesKey] = enabled
+        }
+    }
+
+    /**
+     * MCP clients the user has paired via the first-connect prompt
+     * fired from [sh.haven.app.agent.McpServer.handleInitialize].
+     * Stored by `clientInfo.name` exactly as the client sent it.
+     *
+     * Empty default — a fresh Haven install rejects every MCP client
+     * until one is paired. The pairing decision is the security
+     * boundary; `clientInfo.name` is not cryptographically unforgeable,
+     * but local-app sandboxing on Android plus the explicit user-tap
+     * confirmation is the threat model this set addresses.
+     */
+    val mcpAllowedClients: Flow<Set<String>> = dataStore.data.map { prefs ->
+        prefs[mcpAllowedClientsKey] ?: emptySet()
+    }
+
+    suspend fun addMcpAllowedClient(name: String) {
+        if (name.isBlank()) return
+        dataStore.edit { prefs ->
+            prefs[mcpAllowedClientsKey] = (prefs[mcpAllowedClientsKey] ?: emptySet()) + name
+        }
+    }
+
+    suspend fun removeMcpAllowedClient(name: String) {
+        dataStore.edit { prefs ->
+            prefs[mcpAllowedClientsKey] = (prefs[mcpAllowedClientsKey] ?: emptySet()) - name
+        }
+    }
+
+    suspend fun clearMcpAllowedClients() {
+        dataStore.edit { prefs ->
+            prefs.remove(mcpAllowedClientsKey)
         }
     }
 

@@ -1,9 +1,13 @@
 package sh.haven.app.agent
 
 import android.content.Context
+import io.mockk.clearMocks
+import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,10 +47,24 @@ import sh.haven.feature.sftp.SftpStreamServer
  */
 class McpServerConsentTest {
 
+    /**
+     * The client name every test in this suite uses for its `initialize`
+     * step. Pre-populated in the prefs mock so the pairing gate
+     * short-circuits and tests can focus on the per-tool consent flow.
+     */
+    private val testClientName = "test-host"
+
     private fun newServer(
         consentManager: AgentConsentManager = AgentConsentManager(),
         auditRecorder: AgentAuditRecorder = mockk(relaxed = true),
+        pairedClients: Set<String> = setOf(testClientName),
     ): Pair<McpServer, AgentAuditRecorder> {
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        // McpServer.handleInitialize reads this as the authoritative
+        // allowlist; a paired-on-disk client skips the pairing prompt.
+        every { prefs.mcpAllowedClients } returns flowOf(pairedClients)
+        coEvery { prefs.addMcpAllowedClient(any()) } returns Unit
+
         val server = McpServer(
             context = mockk<Context>(relaxed = true),
             connectionRepository = mockk<ConnectionRepository>(relaxed = true),
@@ -57,7 +75,7 @@ class McpServerConsentTest {
             sftpStreamServer = mockk<SftpStreamServer>(relaxed = true),
             hlsStreamServer = mockk<HlsStreamServer>(relaxed = true),
             ffmpegExecutor = mockk<FfmpegExecutor>(relaxed = true),
-            preferencesRepository = mockk<UserPreferencesRepository>(relaxed = true),
+            preferencesRepository = prefs,
             terminalFontInstaller = mockk<TerminalFontInstaller>(relaxed = true),
             localSessionManager = mockk<LocalSessionManager>(relaxed = true),
             auditRecorder = auditRecorder,
@@ -73,6 +91,28 @@ class McpServerConsentTest {
             connectionLogRepository = mockk<sh.haven.core.data.repository.ConnectionLogRepository>(relaxed = true),
         )
         return server to auditRecorder
+    }
+
+    /**
+     * Send a spec-shaped `initialize` request so the dispatch-time
+     * pairing gate sees the test client as paired. Most tests start
+     * with this; the pairing-gate tests below send their own variant
+     * to exercise the unpaired path.
+     */
+    private fun initBody(clientName: String = testClientName): String =
+        JSONObject()
+            .put("jsonrpc", "2.0")
+            .put("id", 0)
+            .put("method", "initialize")
+            .put("params", JSONObject()
+                .put("protocolVersion", "2025-06-18")
+                .put("clientInfo", JSONObject()
+                    .put("name", clientName)
+                    .put("version", "1.0")))
+            .toString()
+
+    private fun McpServer.pair(clientName: String = testClientName) {
+        handleJsonRpc(initBody(clientName))
     }
 
     private fun toolsCallBody(name: String, args: JSONObject): String {
@@ -95,6 +135,12 @@ class McpServerConsentTest {
             consentManager = AgentConsentManager(),
             auditRecorder = auditRecorder,
         )
+        // Pair first — the pairing gate would otherwise return -32001
+        // before the per-tool consent gate gets a chance to run. Drop
+        // the audit records left behind by `initialize` so the verify
+        // block below only sees the tools/call event.
+        server.pair()
+        clearMocks(auditRecorder, recordedCalls = true, answers = false)
 
         val response = server.handleJsonRpc(
             toolsCallBody(
@@ -136,6 +182,8 @@ class McpServerConsentTest {
         val consentManager = AgentConsentManager().apply { setForegroundActive(true) }
         val auditRecorder = mockk<AgentAuditRecorder>(relaxed = true)
         val (server, _) = newServer(consentManager = consentManager, auditRecorder = auditRecorder)
+        server.pair()
+        clearMocks(auditRecorder, recordedCalls = true, answers = false)
 
         // Spawn the call on a background thread so we can race the
         // "user taps Deny" response against the dispatcher's blocking
@@ -191,6 +239,7 @@ class McpServerConsentTest {
     @Test
     fun `unknown method returns -32601`() {
         val (server, _) = newServer()
+        server.pair()
         val response = server.handleJsonRpc(
             JSONObject()
                 .put("jsonrpc", "2.0")
@@ -246,6 +295,9 @@ class McpServerConsentTest {
     fun `tools_list works without consent prompts`() {
         val consentManager = AgentConsentManager() // foreground=false on purpose
         val (server, _) = newServer(consentManager = consentManager)
+        // Pair first so the dispatch-time pairing gate doesn't block
+        // the listing — once paired, tools/list itself never prompts.
+        server.pair()
 
         val response = server.handleJsonRpc(
             JSONObject()
@@ -261,5 +313,172 @@ class McpServerConsentTest {
         )
         val tools = obj.getJSONObject("result").getJSONArray("tools")
         assertTrue("tools/list should advertise > 0 tools", tools.length() > 0)
+    }
+
+    // --- Pairing gate ---
+
+    @Test
+    fun `initialize from a paired client returns success without prompting`() {
+        val consentManager = AgentConsentManager() // foreground=false — would deny pairing if it ran
+        val (server, _) = newServer(consentManager = consentManager)
+
+        val response = server.handleJsonRpc(initBody())
+        val obj = JSONObject(response)
+        assertNull(
+            "paired client should initialize cleanly, got error: ${obj.optJSONObject("error")}",
+            obj.optJSONObject("error"),
+        )
+        val result = obj.getJSONObject("result")
+        assertEquals("haven-agent", result.getJSONObject("serverInfo").getString("name"))
+        // No prompt should have queued on the consent manager.
+        assertTrue(consentManager.pending.value.isEmpty())
+    }
+
+    @Test
+    fun `initialize from an unpaired client without foreground returns -32001`() {
+        val consentManager = AgentConsentManager() // foreground=false — pairing fails closed
+        val (server, _) = newServer(
+            consentManager = consentManager,
+            pairedClients = emptySet(),
+        )
+
+        val response = server.handleJsonRpc(initBody("rogue-client"))
+        val obj = JSONObject(response)
+        val error = obj.optJSONObject("error")
+            ?: error("expected error response, got: $response")
+        assertEquals(-32001, error.optInt("code"))
+        assertTrue(
+            "message should mention pairing, got: ${error.optString("message")}",
+            error.optString("message").contains("pair", ignoreCase = true),
+        )
+    }
+
+    @Test
+    fun `initialize with missing clientInfo name returns -32002`() {
+        val (server, _) = newServer()
+
+        val response = server.handleJsonRpc(
+            JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", 0)
+                .put("method", "initialize")
+                .put("params", JSONObject().put("protocolVersion", "2025-06-18"))
+                .toString(),
+        )
+        val error = JSONObject(response).optJSONObject("error")
+            ?: error("expected error, got: $response")
+        assertEquals(-32002, error.optInt("code"))
+    }
+
+    @Test
+    fun `tools_list before initialize returns -32001`() {
+        val (server, _) = newServer()
+
+        val response = server.handleJsonRpc(
+            JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", 2)
+                .put("method", "tools/list")
+                .toString(),
+        )
+        val error = JSONObject(response).optJSONObject("error")
+            ?: error("expected error, got: $response")
+        assertEquals(-32001, error.optInt("code"))
+    }
+
+    @Test
+    fun `tools_call before initialize returns -32001`() {
+        val (server, _) = newServer()
+
+        val response = server.handleJsonRpc(
+            toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")),
+        )
+        val error = JSONObject(response).optJSONObject("error")
+            ?: error("expected error, got: $response")
+        assertEquals(-32001, error.optInt("code"))
+    }
+
+    @Test
+    fun `ping is reachable before pairing`() {
+        // Lets a client probe the server without identifying itself.
+        // Stays cheap so it can't be used to enumerate state.
+        val (server, _) = newServer()
+
+        val response = server.handleJsonRpc(
+            JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", 9)
+                .put("method", "ping")
+                .toString(),
+        )
+        val obj = JSONObject(response)
+        assertNull(
+            "ping should succeed pre-pairing, got error: ${obj.optJSONObject("error")}",
+            obj.optJSONObject("error"),
+        )
+    }
+
+    @Test
+    fun `initialize with new clientName triggers pairing - ALLOW persists`() {
+        val consentManager = AgentConsentManager().apply { setForegroundActive(true) }
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        // Start with an empty allowlist — a fresh install scenario.
+        every { prefs.mcpAllowedClients } returns flowOf(emptySet())
+        coEvery { prefs.addMcpAllowedClient(any()) } returns Unit
+        val auditRecorder = mockk<AgentAuditRecorder>(relaxed = true)
+        val server = McpServer(
+            context = mockk<Context>(relaxed = true),
+            connectionRepository = mockk<ConnectionRepository>(relaxed = true),
+            portForwardRepository = mockk<PortForwardRepository>(relaxed = true),
+            sshSessionManager = mockk<SshSessionManager>(relaxed = true),
+            sessionManagerRegistry = mockk<SessionManagerRegistry>(relaxed = true),
+            rcloneClient = mockk<RcloneClient>(relaxed = true),
+            sftpStreamServer = mockk<SftpStreamServer>(relaxed = true),
+            hlsStreamServer = mockk<HlsStreamServer>(relaxed = true),
+            ffmpegExecutor = mockk<FfmpegExecutor>(relaxed = true),
+            preferencesRepository = prefs,
+            terminalFontInstaller = mockk<TerminalFontInstaller>(relaxed = true),
+            localSessionManager = mockk<LocalSessionManager>(relaxed = true),
+            auditRecorder = auditRecorder,
+            consentManager = consentManager,
+            agentUiCommandBus = sh.haven.core.data.agent.AgentUiCommandBus(),
+            transportSelector = mockk<sh.haven.feature.sftp.transport.TransportSelector>(relaxed = true),
+            workspaceRepository = mockk<sh.haven.core.data.repository.WorkspaceRepository>(relaxed = true),
+            workspaceLauncher = mockk<sh.haven.app.workspace.WorkspaceLauncher>(relaxed = true),
+            tunnelConfigRepository = mockk<sh.haven.core.data.repository.TunnelConfigRepository>(relaxed = true),
+            tunnelManager = mockk<sh.haven.core.tunnel.TunnelManager>(relaxed = true),
+            terminalSessionRegistry = sh.haven.feature.terminal.agent.TerminalSessionRegistry(),
+            portKnocker = mockk<sh.haven.core.knock.PortKnocker>(relaxed = true),
+            connectionLogRepository = mockk<sh.haven.core.data.repository.ConnectionLogRepository>(relaxed = true),
+        )
+
+        val responseFuture = java.util.concurrent.CompletableFuture.supplyAsync {
+            server.handleJsonRpc(initBody("fresh-client"))
+        }
+
+        // Wait for the pairing prompt to queue, then ALLOW it.
+        val deadline = System.currentTimeMillis() + 5_000
+        var pending = consentManager.pending.value
+        while (pending.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+            pending = consentManager.pending.value
+        }
+        assertFalse("pairing prompt never queued", pending.isEmpty())
+        val req = pending.first()
+        assertEquals(AgentConsentManager.PAIRING_TOOL_NAME, req.toolName)
+        kotlinx.coroutines.runBlocking {
+            consentManager.respond(req.id, sh.haven.core.data.agent.ConsentDecision.ALLOW)
+        }
+
+        val response = responseFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
+        val obj = JSONObject(response)
+        assertNull(
+            "initialize should succeed after pairing ALLOW, got error: ${obj.optJSONObject("error")}",
+            obj.optJSONObject("error"),
+        )
+        // And the persisted allowlist should have been written.
+        kotlinx.coroutines.runBlocking {
+            io.mockk.coVerify { prefs.addMcpAllowedClient("fresh-client") }
+        }
     }
 }

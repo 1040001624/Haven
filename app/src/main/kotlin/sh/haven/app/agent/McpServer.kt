@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.haven.core.data.agent.AgentConsentManager
@@ -114,6 +115,18 @@ class McpServer @Inject constructor(
     @Volatile
     private var lastClientHint: String? = null
 
+    /**
+     * In-memory mirror of [UserPreferencesRepository.mcpAllowedClients]
+     * read once at server start and updated when [handleInitialize]
+     * persists a new pairing. Lets every JSON-RPC dispatch check the
+     * allowlist without re-collecting the Flow on the hot path. Treat
+     * as authoritative within the lifetime of the running server;
+     * Settings changes that wipe the allowlist while the server is up
+     * are picked up on the next server restart.
+     */
+    @Volatile
+    private var allowedClients: Set<String> = emptySet()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -207,7 +220,10 @@ class McpServer @Inject constructor(
         port = ss.localPort
         isRunning = true
         _endpointUrl.value = "http://127.0.0.1:$port/mcp"
-        Log.i(TAG, "MCP server listening on ${_endpointUrl.value}")
+        // Seed the in-memory allowlist mirror from DataStore. Subsequent
+        // pairing approvals append to this on the dispatch thread.
+        allowedClients = runBlocking { preferencesRepository.mcpAllowedClients.first() }
+        Log.i(TAG, "MCP server listening on ${_endpointUrl.value} (paired clients: ${allowedClients.size})")
 
         serverThread = thread(name = "mcp-http", isDaemon = true) {
             while (isRunning && !ss.isClosed) {
@@ -446,18 +462,83 @@ class McpServer @Inject constructor(
     }
 
     /** Dispatch an MCP method to its handler. */
-    private fun dispatch(method: String, params: JSONObject): Any? = when (method) {
-        "initialize" -> handleInitialize(params)
-        "notifications/initialized" -> JSONObject() // ack
-        "tools/list" -> handleToolsList()
-        "tools/call" -> handleToolsCall(params)
-        "ping" -> JSONObject()
-        else -> throw McpError(-32601, "Method not found: $method")
+    private fun dispatch(method: String, params: JSONObject): Any? {
+        // Pairing gate: every method except the pair-or-fail path itself
+        // requires the calling client to be in the allowlist. `ping` is
+        // intentionally allowed unauthenticated so a client can probe
+        // for the server's existence without committing to identifying
+        // itself. `notifications/initialized` is a spec-required ack
+        // sent right after `initialize` and is exempt so a paired client
+        // that just finished its handshake doesn't silently fail it.
+        if (method != "initialize" && method != "ping" && method != "notifications/initialized") {
+            val client = lastClientHint
+            if (client.isNullOrBlank() || client !in allowedClients) {
+                throw McpError(
+                    -32001,
+                    "MCP client not paired with Haven. Send `initialize` first; " +
+                        "if the prompt was denied, open Haven and approve a fresh attempt.",
+                )
+            }
+        }
+        return when (method) {
+            "initialize" -> handleInitialize(params)
+            "notifications/initialized" -> JSONObject() // ack
+            "tools/list" -> handleToolsList()
+            "tools/call" -> handleToolsCall(params)
+            "ping" -> JSONObject()
+            else -> throw McpError(-32601, "Method not found: $method")
+        }
     }
 
     private fun handleInitialize(params: JSONObject): JSONObject {
         val clientProtoVersion = params.optString("protocolVersion", "2025-06-18")
-        Log.i(TAG, "MCP client connected, protocolVersion=$clientProtoVersion")
+        val clientInfo = params.optJSONObject("clientInfo")
+        val clientName = clientInfo?.optString("name")?.takeIf { it.isNotBlank() }
+        val clientVersion = clientInfo?.optString("version")?.takeIf { it.isNotBlank() }
+        Log.i(TAG, "MCP initialize from name=${clientName ?: "<anonymous>"} v=${clientVersion ?: "?"} protocolVersion=$clientProtoVersion")
+
+        // Pairing gate. An empty / unknown name has no way to pair (the
+        // user would tap Allow on "MCP client '' wants to connect" with
+        // no idea who's behind it), so refuse outright.
+        if (clientName.isNullOrBlank()) {
+            throw McpError(
+                -32002,
+                "MCP initialize must include clientInfo.name. Anonymous clients " +
+                    "cannot be paired and are rejected.",
+            )
+        }
+        // Read the authoritative allowlist from DataStore on every
+        // initialize — the in-memory `allowedClients` mirror is only
+        // populated by pairings that happen during this server's
+        // lifetime, so a paired-on-disk client whose name predates this
+        // server instance would otherwise be re-prompted on every
+        // restart. Refresh the cache here so the dispatch hot path
+        // doesn't have to round-trip to DataStore.
+        val persistedAllowlist = runBlocking { preferencesRepository.mcpAllowedClients.first() }
+        if (clientName in persistedAllowlist) {
+            if (clientName !in allowedClients) {
+                allowedClients = allowedClients + clientName
+            }
+        } else {
+            val decision = runBlocking {
+                consentManager.requestClientPairing(clientName, clientVersion)
+            }
+            when (decision) {
+                ConsentDecision.ALLOW -> {
+                    runBlocking { preferencesRepository.addMcpAllowedClient(clientName) }
+                    allowedClients = allowedClients + clientName
+                    Log.i(TAG, "MCP client '$clientName' paired with Haven (allowlist size=${allowedClients.size})")
+                }
+                ConsentDecision.DENY -> {
+                    throw McpError(
+                        -32001,
+                        "MCP client '$clientName' is not paired with Haven. " +
+                            "The pairing prompt was denied or no Haven activity was visible. " +
+                            "Open Haven and retry to surface a fresh pairing prompt.",
+                    )
+                }
+            }
+        }
         return JSONObject().apply {
             put("protocolVersion", "2025-06-18")
             put("serverInfo", JSONObject().apply {

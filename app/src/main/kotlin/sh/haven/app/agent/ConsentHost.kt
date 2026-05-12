@@ -1,5 +1,6 @@
 package sh.haven.app.agent
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,8 +8,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -18,7 +21,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,8 +57,8 @@ internal class ConsentHostViewModel @Inject constructor(
 
     val pending: StateFlow<List<ConsentRequest>> = consentManager.pending
 
-    fun respond(requestId: Long, decision: ConsentDecision) {
-        viewModelScope.launch { consentManager.respond(requestId, decision) }
+    fun respond(requestId: Long, decision: ConsentDecision, bypassClient: Boolean = false) {
+        viewModelScope.launch { consentManager.respond(requestId, decision, bypassClient) }
     }
 }
 
@@ -83,10 +89,23 @@ internal fun ConsentHost(viewModel: ConsentHostViewModel = hiltViewModel()) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
+    val isPairing = current.toolName == AgentConsentManager.PAIRING_TOOL_NAME
+    val clientHint = current.clientHint?.takeIf { it.isNotBlank() }
+
+    // "Allow all MCP requests from this client until app restart" — an
+    // opt-in escape hatch for sessions where the user is iterating with
+    // an agent and is happy to skip per-call prompts. Suppressed on
+    // pairing requests (the user hasn't authorised the client at all
+    // yet — bypass on the same dialog would be a contradiction) and
+    // when there's no clientHint to key the bypass against.
+    val canOfferBypass = !isPairing && clientHint != null
+    var bypassChecked by remember(current.id) { mutableStateOf(false) }
+
     // Treat any dismissal that isn't an explicit Allow as a Deny so the
     // wheel-stays-with-the-user invariant holds even on edge cases.
     fun resolve(decision: ConsentDecision) {
-        viewModel.respond(current.id, decision)
+        val bypass = canOfferBypass && bypassChecked && decision == ConsentDecision.ALLOW
+        viewModel.respond(current.id, decision, bypass)
         scope.launch { sheetState.hide() }
     }
 
@@ -105,28 +124,61 @@ internal fun ConsentHost(viewModel: ConsentHostViewModel = hiltViewModel()) {
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
             Text(
-                text = "Agent action requested",
+                text = if (isPairing) "Pair MCP client?" else "Agent action requested",
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(8.dp))
-            current.clientHint?.takeIf { it.isNotBlank() }?.let { hint ->
-                Text(
-                    text = "From: $hint",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
+            // For non-pairing requests show the "From: <client>" line —
+            // pairing requests already have the client name in their
+            // summary body so it'd be redundant.
+            if (!isPairing) {
+                clientHint?.let { hint ->
+                    Text(
+                        text = "From: $hint",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
             Text(
                 text = current.summary,
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Tool: ${current.toolName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!isPairing) {
+                Text(
+                    text = "Tool: ${current.toolName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (canOfferBypass) {
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { bypassChecked = !bypassChecked },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = bypassChecked,
+                        onCheckedChange = { bypassChecked = it },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Allow all MCP requests from '$clientHint' until Haven restarts",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = "Includes destructive operations (terminal input, file write/delete, APK install). Cleared on app kill.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(24.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -139,7 +191,9 @@ internal fun ConsentHost(viewModel: ConsentHostViewModel = hiltViewModel()) {
                     onClick = { resolve(ConsentDecision.ALLOW) },
                     colors = ButtonDefaults.buttonColors(),
                 ) {
-                    Text(stringResource(R.string.common_allow))
+                    Text(
+                        if (isPairing) "Pair" else stringResource(R.string.common_allow),
+                    )
                 }
             }
             Spacer(Modifier.height(16.dp))

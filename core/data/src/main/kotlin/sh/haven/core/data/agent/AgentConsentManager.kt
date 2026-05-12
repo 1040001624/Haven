@@ -71,8 +71,30 @@ class AgentConsentManager @Inject constructor() {
 
     private val nextId = AtomicLong(1)
     private val mutex = Mutex()
-    private val pendingDeferreds = mutableMapOf<Long, CompletableDeferred<ConsentDecision>>()
+
+    /**
+     * Per-pending-request bundle: the deferred the caller is awaiting,
+     * plus the `clientHint` carried with the request. The hint is needed
+     * at respond-time so the bypass checkbox can attribute the bypass to
+     * the right client. Replaces a plain `Map<Long, CompletableDeferred>`.
+     */
+    private data class PendingEntry(
+        val deferred: CompletableDeferred<ConsentDecision>,
+        val clientHint: String?,
+    )
+
+    private val pendingEntries = mutableMapOf<Long, PendingEntry>()
     private val sessionAllowed = mutableSetOf<String>()
+
+    /**
+     * Clients that the user has elected to bypass per-call prompts for
+     * (the "Allow all MCP requests from 'X' until app restart" checkbox
+     * on the consent sheet). Process-scoped, never persisted —
+     * specifically cleared on app kill so a misclick can't survive an
+     * unattended reboot. `clearMemoised()` also wipes this so Settings
+     * → Forget remembered allows fully resets agent trust.
+     */
+    private val sessionBypassClients = mutableSetOf<String>()
 
     @Volatile
     private var foregroundActive: Boolean = false
@@ -108,6 +130,17 @@ class AgentConsentManager @Inject constructor() {
     ): ConsentDecision {
         if (level == ConsentLevel.NEVER) return ConsentDecision.ALLOW
 
+        // Session-wide bypass: if the user has previously checked
+        // "Allow all MCP requests from '<client>' until app restart",
+        // skip prompts for any non-NEVER tool from that client. Applies
+        // to EVERY_CALL too — that's the "ill-advised" part the UX copy
+        // warns about.
+        if (clientHint != null) {
+            mutex.withLock {
+                if (clientHint in sessionBypassClients) return ConsentDecision.ALLOW
+            }
+        }
+
         val memoKey = memoKey(clientHint, toolName)
         if (level == ConsentLevel.ONCE_PER_SESSION) {
             mutex.withLock {
@@ -128,14 +161,14 @@ class AgentConsentManager @Inject constructor() {
         val request = ConsentRequest(id = id, toolName = toolName, clientHint = clientHint, summary = summary)
 
         mutex.withLock {
-            pendingDeferreds[id] = deferred
+            pendingEntries[id] = PendingEntry(deferred, clientHint)
             _pending.value = _pending.value + request
         }
 
         val decision = withTimeoutOrNull(timeoutMs) { deferred.await() } ?: ConsentDecision.DENY
 
         mutex.withLock {
-            pendingDeferreds.remove(id)
+            pendingEntries.remove(id)
             _pending.value = _pending.value.filterNot { it.id == id }
             if (decision == ConsentDecision.ALLOW && level == ConsentLevel.ONCE_PER_SESSION) {
                 sessionAllowed.add(memoKey)
@@ -144,18 +177,91 @@ class AgentConsentManager @Inject constructor() {
         return decision
     }
 
-    /** Called by the bottom-sheet UI when the user taps allow/deny. */
-    suspend fun respond(requestId: Long, decision: ConsentDecision) {
+    /**
+     * Suspend until the user resolves a pairing prompt for a new MCP
+     * client, or [timeoutMs] elapses. Distinct from [requestConsent] —
+     * a paired client is a *connection-time* gate (in `initialize`),
+     * not a *per-tool* gate. Returns DENY on timeout / background.
+     *
+     * The caller (McpServer) is responsible for persisting the client
+     * name on ALLOW; this manager doesn't touch DataStore.
+     */
+    suspend fun requestClientPairing(
+        clientName: String,
+        clientVersion: String?,
+        timeoutMs: Long = 60_000,
+    ): ConsentDecision {
+        if (!foregroundActive) return ConsentDecision.DENY
+
+        val id = nextId.getAndIncrement()
+        val deferred = CompletableDeferred<ConsentDecision>()
+        val versionSuffix = clientVersion?.takeIf { it.isNotBlank() }?.let { " v$it" } ?: ""
+        val request = ConsentRequest(
+            id = id,
+            toolName = PAIRING_TOOL_NAME,
+            clientHint = clientName,
+            summary = "MCP client '$clientName'$versionSuffix wants to connect to Haven. " +
+                "Once paired, it will be able to call tools — each tool still asks for " +
+                "consent unless you elect to bypass that with the per-call checkbox.",
+        )
+
         mutex.withLock {
-            pendingDeferreds[requestId]?.complete(decision)
+            pendingEntries[id] = PendingEntry(deferred, clientName)
+            _pending.value = _pending.value + request
+        }
+
+        val decision = withTimeoutOrNull(timeoutMs) { deferred.await() } ?: ConsentDecision.DENY
+
+        mutex.withLock {
+            pendingEntries.remove(id)
+            _pending.value = _pending.value.filterNot { it.id == id }
+        }
+        return decision
+    }
+
+    /**
+     * Called by the bottom-sheet UI when the user taps Allow / Deny.
+     * When [bypassClient] is true and the decision is ALLOW, the
+     * pending request's clientHint is added to [sessionBypassClients]
+     * so subsequent per-tool prompts from that client short-circuit
+     * to ALLOW. The flag is ignored on DENY or when the request had no
+     * clientHint (e.g. an `_pairing` request — bypass on pairing is a
+     * contradiction the UI prevents at render time).
+     */
+    suspend fun respond(
+        requestId: Long,
+        decision: ConsentDecision,
+        bypassClient: Boolean = false,
+    ) {
+        mutex.withLock {
+            val entry = pendingEntries[requestId] ?: return
+            if (decision == ConsentDecision.ALLOW && bypassClient && entry.clientHint != null) {
+                sessionBypassClients.add(entry.clientHint)
+            }
+            entry.deferred.complete(decision)
         }
     }
 
     /** Used by Settings → "Forget remembered allows". */
     suspend fun clearMemoised() {
-        mutex.withLock { sessionAllowed.clear() }
+        mutex.withLock {
+            sessionAllowed.clear()
+            sessionBypassClients.clear()
+        }
     }
 
     private fun memoKey(clientHint: String?, toolName: String): String =
         "${clientHint ?: "unknown"}::$toolName"
+
+    companion object {
+        /**
+         * Sentinel tool name carried by client-pairing prompts so the UI
+         * can render a "Pair MCP client?" header instead of an
+         * "Agent action requested" one, and so the bypass checkbox can
+         * be suppressed on the pairing prompt itself (the user isn't
+         * agreeing to specific calls yet — they're agreeing to let this
+         * client even speak).
+         */
+        const val PAIRING_TOOL_NAME = "_pairing"
+    }
 }
