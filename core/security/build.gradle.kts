@@ -18,6 +18,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -30,6 +33,10 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
+    // Android's android.jar stubs out org.json.JSONObject in unit tests
+    // (returns defaults). Add the real impl so JwtPayloadTest can parse
+    // base64-decoded JWT claims.
+    testImplementation("org.json:json:20240303")
 }
 
 kotlin {

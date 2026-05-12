@@ -64,6 +64,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Cloudflare Access SSH login WebView (#154). Hosts the IdP
+             auth flow and captures the CF_Authorization JWT cookie. -->
+        <activity
+            android:name="sh.haven.feature.tunnel.CloudflareAccessLoginActivity"
+            android:exported="false"
+            android:label="Cloudflare Access sign in"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <service
             android:name="sh.haven.core.ssh.SshConnectionService"
             android:exported="false"

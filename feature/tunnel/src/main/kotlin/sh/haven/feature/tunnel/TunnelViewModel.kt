@@ -58,6 +58,49 @@ class TunnelViewModel @Inject constructor(
     }
 
     /**
+     * Create a Cloudflare Access SSH tunnel config (#154). [jwt] is the
+     * `CF_Authorization` JWT obtained either from the in-app WebView
+     * login flow or pasted from a desktop `cloudflared access token`
+     * run. [expiresAtSeconds] is the JWT's `exp` claim — used by the
+     * list view to flag stale rows; pass 0 if it couldn't be parsed
+     * (we then skip expiry-aware UX for that row).
+     *
+     * The config is **per-hostname**: dial() on the resulting tunnel
+     * only accepts the configured hostname. This is a deliberate
+     * limitation of how `cloudflared access ssh` itself works.
+     */
+    fun addCloudflareAccessConfig(
+        label: String,
+        hostname: String,
+        teamDomain: String,
+        jwt: String,
+        expiresAtSeconds: Long,
+    ) {
+        if (label.isBlank()) {
+            _error.value = "Label is required"
+            return
+        }
+        if (hostname.isBlank()) {
+            _error.value = "Hostname is required"
+            return
+        }
+        if (jwt.isBlank()) {
+            _error.value = "Sign in to capture a Cloudflare Access JWT, or paste one in Advanced"
+            return
+        }
+        val blob = sh.haven.core.tunnel.CloudflareAccessConfigBlob(
+            hostname = hostname.trim()
+                .removePrefix("https://")
+                .removePrefix("http://")
+                .substringBefore('/'),
+            teamDomain = teamDomain.trim().removePrefix("https://").removePrefix("http://"),
+            jwt = jwt.trim(),
+            jwtExpiresAt = expiresAtSeconds,
+        )
+        save(label, TunnelConfigType.CLOUDFLARE_ACCESS, blob.encode())
+    }
+
+    /**
      * Create a Tailscale tunnel config. The authkey joins the tailnet on
      * first use; tsnet persists node state under a per-config dir so
      * subsequent starts don't re-consume it.

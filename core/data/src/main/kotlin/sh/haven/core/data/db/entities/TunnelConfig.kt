@@ -22,8 +22,9 @@ data class TunnelConfig(
      *  values correspond to [TunnelConfigType] names. */
     val type: String,
     /** Encrypted-at-rest payload. For [TunnelConfigType.WIREGUARD] this is
-     *  the raw `.conf` text; for [TunnelConfigType.TAILSCALE] (follow-up)
-     *  it'll be the tsnet authkey + state JSON. */
+     *  the raw `.conf` text; for [TunnelConfigType.TAILSCALE] it's the
+     *  tsnet authkey + control-URL JSON; for [TunnelConfigType.CLOUDFLARE_ACCESS]
+     *  it's the Access hostname + cached IdP JWT JSON. */
     val configText: ByteArray,
     val createdAt: Long = System.currentTimeMillis(),
 ) {
@@ -39,6 +40,13 @@ data class TunnelConfig(
 enum class TunnelConfigType {
     WIREGUARD,
     TAILSCALE,
+
+    /** Cloudflare Access SSH gateway. Per-hostname proxy that wraps SSH
+     *  bytes in a WebSocket to `wss://<hostname>/cdn-cgi/access/ssh-gateway`
+     *  with a `CF_Authorization` JWT obtained via the team's IdP. The wire
+     *  protocol is reverse-engineered from cloudflared; flagged Experimental
+     *  in the UI until verified against multiple tenants. See GH #154. */
+    CLOUDFLARE_ACCESS,
     ;
 
     companion object {

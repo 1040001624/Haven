@@ -5,6 +5,7 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.OkHttpClient
 import sh.haven.core.data.db.entities.TunnelConfig
 import sh.haven.core.data.db.entities.TunnelConfigType
 import sh.haven.core.data.db.entities.typeEnum
@@ -166,6 +167,7 @@ data class LiveTunnelEntry(
 @Singleton
 class DefaultTunnelFactory @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val httpClient: OkHttpClient,
 ) : TunnelFactory {
     override fun create(config: TunnelConfig): Tunnel = when (config.typeEnum) {
         TunnelConfigType.WIREGUARD -> WireguardTunnel(String(config.configText))
@@ -176,6 +178,14 @@ class DefaultTunnelFactory @Inject constructor(
                 stateDir = File(context.filesDir, "tailscale-${config.id}").also { it.mkdirs() },
                 hostname = deriveHostname(config.label),
                 controlURL = parsed.controlURL,
+            )
+        }
+        TunnelConfigType.CLOUDFLARE_ACCESS -> {
+            val parsed = CloudflareAccessConfigBlob.parse(config.configText)
+            CloudflareAccessTunnel(
+                hostname = parsed.hostname,
+                jwt = parsed.jwt,
+                httpClient = httpClient,
             )
         }
     }

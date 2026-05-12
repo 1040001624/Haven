@@ -35,11 +35,15 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
     implementation(libs.hilt.android)
+    // OkHttp WebSocket client for the Cloudflare Access SSH gateway (#154).
+    implementation(libs.okhttp)
+    implementation(project(":core:security"))
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
     // Android's android.jar stubs out org.json.JSONObject in unit tests
     // (returns defaults), so add the real JSON lib for tests that
     // exercise TailscaleConfigBlob's JSON envelope. Same package, same

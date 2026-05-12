@@ -2571,7 +2571,10 @@ internal class McpTools(
         val type = when (typeRaw) {
             "WIREGUARD" -> TunnelConfigType.WIREGUARD
             "TAILSCALE" -> TunnelConfigType.TAILSCALE
-            else -> throw IllegalArgumentException("type must be WIREGUARD or TAILSCALE")
+            "CLOUDFLARE_ACCESS" -> TunnelConfigType.CLOUDFLARE_ACCESS
+            else -> throw IllegalArgumentException(
+                "type must be WIREGUARD, TAILSCALE, or CLOUDFLARE_ACCESS"
+            )
         }
         val configBytes: ByteArray = when (type) {
             TunnelConfigType.WIREGUARD -> {
@@ -2580,6 +2583,39 @@ internal class McpTools(
                     throw IllegalArgumentException("configText required for WIREGUARD type")
                 }
                 wgQuick.toByteArray()
+            }
+            TunnelConfigType.CLOUDFLARE_ACCESS -> {
+                // MCP path only supports the paste-JWT mode; the in-app
+                // WebView login is interactive and can't be driven by an
+                // agent. Agents that want a Cloudflare Access tunnel must
+                // already hold a JWT (e.g. from `cloudflared access token
+                // --app <host>` on a desktop).
+                val hostname = args.optString("accessHostname")
+                if (hostname.isBlank()) {
+                    throw IllegalArgumentException(
+                        "accessHostname required for CLOUDFLARE_ACCESS type"
+                    )
+                }
+                val jwt = args.optString("accessJwt")
+                if (jwt.isBlank()) {
+                    throw IllegalArgumentException(
+                        "accessJwt required for CLOUDFLARE_ACCESS type"
+                    )
+                }
+                val teamDomain = args.optString("accessTeamDomain")
+                val explicitExpiry = args.optLong("accessExpiresAt", 0L)
+                val derivedExpiry = if (explicitExpiry > 0) {
+                    explicitExpiry
+                } else {
+                    sh.haven.core.security.JwtPayload.parse(jwt)
+                        ?.expiresAtSeconds ?: 0L
+                }
+                sh.haven.core.tunnel.CloudflareAccessConfigBlob(
+                    hostname = hostname,
+                    teamDomain = teamDomain,
+                    jwt = jwt,
+                    jwtExpiresAt = derivedExpiry,
+                ).encode()
             }
             TunnelConfigType.TAILSCALE -> {
                 val authKey = args.optString("tailscaleAuthKey")

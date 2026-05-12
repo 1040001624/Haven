@@ -131,6 +131,10 @@ fun TunnelsScreen(
                 viewModel.addTailscaleConfig(label, authKey, controlUrl)
                 showAddDialog = false
             },
+            onSubmitCloudflareAccess = { label, hostname, teamDomain, jwt, expiresAt ->
+                viewModel.addCloudflareAccessConfig(label, hostname, teamDomain, jwt, expiresAt)
+                showAddDialog = false
+            },
         )
     }
 
@@ -186,16 +190,45 @@ private fun TunnelRow(
     onDelete: () -> Unit,
 ) {
     val formatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    // For Cloudflare Access rows, decode the blob to surface a stale-JWT
+    // hint inline; for other types this is skipped entirely.
+    val cfExpired = remember(tunnel.id, tunnel.configText) {
+        runCatching {
+            if (tunnel.typeEnum == sh.haven.core.data.db.entities.TunnelConfigType.CLOUDFLARE_ACCESS) {
+                sh.haven.core.tunnel.CloudflareAccessConfigBlob.parse(tunnel.configText)
+                    .isJwtExpired()
+            } else false
+        }.getOrDefault(false)
+    }
     ListItem(
         headlineContent = {
-            Text(
-                tunnel.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    tunnel.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (cfExpired) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            "Sign in again",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
         },
         supportingContent = {
-            val kind = runCatching { tunnel.typeEnum.name }.getOrDefault("unknown")
+            val kind = runCatching { tunnelTypeLabel(tunnel.typeEnum) }.getOrDefault("unknown")
             Text(
                 "$kind · added ${formatter.format(Date(tunnel.createdAt))}",
                 style = MaterialTheme.typography.bodySmall,
@@ -222,12 +255,38 @@ private fun AddTunnelDialog(
     onDismiss: () -> Unit,
     onSubmitWireguard: (label: String, configText: String) -> Unit,
     onSubmitTailscale: (label: String, authKey: String, controlUrl: String) -> Unit,
+    onSubmitCloudflareAccess: (
+        label: String,
+        hostname: String,
+        teamDomain: String,
+        jwt: String,
+        expiresAtSeconds: Long,
+    ) -> Unit,
 ) {
     var type by remember { mutableStateOf(sh.haven.core.data.db.entities.TunnelConfigType.WIREGUARD) }
     var label by remember { mutableStateOf("") }
     var configText by remember { mutableStateOf("") }
     var authKey by remember { mutableStateOf("") }
     var controlUrl by remember { mutableStateOf("") }
+    // Cloudflare Access form state — survives type-switch in case user
+    // flips back and forth before saving.
+    var cfHostname by remember { mutableStateOf("") }
+    var cfTeamDomain by remember { mutableStateOf("") }
+    var cfJwt by remember { mutableStateOf("") }
+    var cfExpiresAt by remember { mutableStateOf(0L) }
+    var cfAdvancedOpen by remember { mutableStateOf(false) }
+    val cfLoginLauncher = rememberLauncherForActivityResult(
+        contract = CloudflareAccessLoginContract(),
+    ) { result ->
+        when (result) {
+            is CloudflareAccessLoginContract.Result.Success -> {
+                cfJwt = result.jwt
+                cfExpiresAt = result.expiresAtSeconds
+            }
+            is CloudflareAccessLoginContract.Result.Failed,
+            CloudflareAccessLoginContract.Result.Cancelled -> Unit
+        }
+    }
     val context = LocalContext.current
 
     // Use OpenDocument (SAF) rather than GetContent so the user can pick
@@ -278,16 +337,14 @@ private fun AddTunnelDialog(
                 style = MaterialTheme.typography.headlineSmall,
             )
 
-            // Type picker — FilterChip row over the two backends. Each
+            // Type picker — FilterChip row over the backends. Each
             // toggles the fields below; label persists across flips.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 sh.haven.core.data.db.entities.TunnelConfigType.entries.forEach { t ->
                     androidx.compose.material3.FilterChip(
                         selected = type == t,
                         onClick = { type = t },
-                        label = {
-                            Text(t.name.lowercase().replaceFirstChar { it.titlecase() })
-                        },
+                        label = { Text(tunnelTypeLabel(t)) },
                     )
                 }
             }
@@ -376,6 +433,31 @@ private fun AddTunnelDialog(
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 }
+                sh.haven.core.data.db.entities.TunnelConfigType.CLOUDFLARE_ACCESS -> {
+                    CloudflareAccessForm(
+                        hostname = cfHostname,
+                        onHostnameChange = { cfHostname = it; cfJwt = ""; cfExpiresAt = 0L },
+                        teamDomain = cfTeamDomain,
+                        onTeamDomainChange = { cfTeamDomain = it },
+                        jwt = cfJwt,
+                        jwtExpiresAt = cfExpiresAt,
+                        onSignInClick = {
+                            val host = cfHostname.trim()
+                            if (host.isNotEmpty()) {
+                                cfLoginLauncher.launch(
+                                    CloudflareAccessLoginContract.Input(hostname = host),
+                                )
+                            }
+                        },
+                        advancedOpen = cfAdvancedOpen,
+                        onAdvancedToggle = { cfAdvancedOpen = !cfAdvancedOpen },
+                        onJwtPaste = { pasted, expiresAt ->
+                            cfJwt = pasted
+                            cfExpiresAt = expiresAt
+                        },
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                }
             }
 
             Row(
@@ -386,6 +468,8 @@ private fun AddTunnelDialog(
                 val canSubmit = label.isNotBlank() && when (type) {
                     sh.haven.core.data.db.entities.TunnelConfigType.WIREGUARD -> configText.isNotBlank()
                     sh.haven.core.data.db.entities.TunnelConfigType.TAILSCALE -> authKey.isNotBlank()
+                    sh.haven.core.data.db.entities.TunnelConfigType.CLOUDFLARE_ACCESS ->
+                        cfHostname.isNotBlank() && cfJwt.isNotBlank()
                 }
                 Button(
                     onClick = {
@@ -394,12 +478,141 @@ private fun AddTunnelDialog(
                                 onSubmitWireguard(label, configText)
                             sh.haven.core.data.db.entities.TunnelConfigType.TAILSCALE ->
                                 onSubmitTailscale(label, authKey, controlUrl)
+                            sh.haven.core.data.db.entities.TunnelConfigType.CLOUDFLARE_ACCESS ->
+                                onSubmitCloudflareAccess(label, cfHostname, cfTeamDomain, cfJwt, cfExpiresAt)
                         }
                     },
                     enabled = canSubmit,
                 ) { Text("Save") }
             }
             }
+        }
+    }
+}
+
+private fun tunnelTypeLabel(t: sh.haven.core.data.db.entities.TunnelConfigType): String =
+    when (t) {
+        sh.haven.core.data.db.entities.TunnelConfigType.WIREGUARD -> "WireGuard"
+        sh.haven.core.data.db.entities.TunnelConfigType.TAILSCALE -> "Tailscale"
+        sh.haven.core.data.db.entities.TunnelConfigType.CLOUDFLARE_ACCESS -> "Cloudflare Access"
+    }
+
+@Composable
+private fun CloudflareAccessForm(
+    hostname: String,
+    onHostnameChange: (String) -> Unit,
+    teamDomain: String,
+    onTeamDomainChange: (String) -> Unit,
+    jwt: String,
+    jwtExpiresAt: Long,
+    onSignInClick: () -> Unit,
+    advancedOpen: Boolean,
+    onAdvancedToggle: () -> Unit,
+    onJwtPaste: (jwt: String, expiresAtSeconds: Long) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            color = MaterialTheme.colorScheme.tertiaryContainer,
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text(
+                "Experimental — wire protocol is reverse-engineered from cloudflared; may break with Cloudflare edge updates.",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        }
+
+        Text(
+            "Route SSH for a single Access-protected hostname through Cloudflare's edge — the in-app equivalent of `cloudflared access ssh --hostname <host>`. Tap Sign in to authenticate with your team's identity provider; the resulting JWT is stored encrypted alongside the config.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        OutlinedTextField(
+            value = hostname,
+            onValueChange = onHostnameChange,
+            label = { Text("Access hostname (e.g. ssh.example.com)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = FontFamily.Monospace,
+            ),
+        )
+
+        OutlinedTextField(
+            value = teamDomain,
+            onValueChange = onTeamDomainChange,
+            label = { Text("Team domain (optional)") },
+            placeholder = {
+                Text(
+                    "myteam.cloudflareaccess.com",
+                    fontFamily = FontFamily.Monospace,
+                )
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = FontFamily.Monospace,
+            ),
+        )
+
+        val now = remember { System.currentTimeMillis() / 1000 }
+        val jwtStatus = when {
+            jwt.isBlank() -> "Not signed in"
+            jwtExpiresAt in 1 until now -> "JWT expired — sign in again"
+            jwtExpiresAt > 0 -> {
+                val secs = jwtExpiresAt - now
+                val hours = secs / 3600
+                if (hours > 0) "Signed in · expires in ~${hours}h" else "Signed in · expires in <1h"
+            }
+            else -> "Signed in"
+        }
+        Text(
+            jwtStatus,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (jwt.isBlank() || (jwtExpiresAt in 1 until now)) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+        )
+
+        OutlinedButton(
+            onClick = onSignInClick,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = hostname.isNotBlank(),
+        ) {
+            Text(if (jwt.isBlank()) "Sign in via Cloudflare Access" else "Re-authenticate")
+        }
+
+        TextButton(onClick = onAdvancedToggle) {
+            Text(if (advancedOpen) "Hide advanced" else "Advanced (paste JWT)")
+        }
+        if (advancedOpen) {
+            Text(
+                "For headless setups: run `cloudflared access token --app https://<hostname>` on another machine and paste the JWT here. Expiry is parsed from the token automatically.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = jwt,
+                onValueChange = { pasted ->
+                    val expiry = sh.haven.core.security.JwtPayload.parse(pasted)
+                        ?.expiresAtSeconds ?: 0L
+                    onJwtPaste(pasted, expiry)
+                },
+                label = { Text("Cloudflare Access JWT") },
+                singleLine = false,
+                minLines = 3,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 80.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                ),
+            )
         }
     }
 }
