@@ -49,6 +49,7 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -261,7 +262,16 @@ fun ConnectionEditDialog(
     var useAndroidShell by rememberSaveable { mutableStateOf(existing?.useAndroidShell ?: false) }
     // Backed by a port-forward rule, not a profile field — see onSave's
     // third argument and ConnectionsViewModel.reconcileMcpReverseTunnel.
+    // The caller queries hasMcpReverseTunnel asynchronously and the value
+    // arrives after the first composition, so a plain rememberSaveable on
+    // the initial parameter would lock in the pre-query default (false)
+    // and the dialog would render OFF for a profile that actually has the
+    // rule — saving then deletes it. Sync from mcpReverseTunnelEnabled
+    // whenever it changes so the first non-default value seeds the state.
     var mcpReverseTunnel by rememberSaveable { mutableStateOf(mcpReverseTunnelEnabled) }
+    LaunchedEffect(mcpReverseTunnelEnabled) {
+        mcpReverseTunnel = mcpReverseTunnelEnabled
+    }
     var forwardAgent by rememberSaveable { mutableStateOf(existing?.forwardAgent ?: false) }
     var addressFamily by rememberSaveable { mutableStateOf(existing?.addressFamily ?: "AUTO") }
     var selectedSessionManager by rememberSaveable { mutableStateOf(existing?.sessionManager) }
