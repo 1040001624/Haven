@@ -453,8 +453,9 @@ fun ConnectionsScreen(
                 viewModel.testKnock(host, sequence, delayMs)
             },
             onDismiss = { showAddDialog = false },
-            onSave = { profile, cfTunnel ->
+            onSave = { profile, cfTunnel, mcpTunnel ->
                 viewModel.saveProfileWithEmbeddedCloudflareTunnel(profile, cfTunnel)
+                viewModel.reconcileMcpReverseTunnel(profile.id, mcpTunnel)
                 showAddDialog = false
             },
         )
@@ -543,6 +544,9 @@ fun ConnectionsScreen(
         ) {
             value = viewModel.embeddedCloudflareTunnelFor(profile.id)
         }
+        val mcpReverseTunnel = produceState(initialValue = false, key1 = profile.id) {
+            value = viewModel.hasMcpReverseTunnel(profile.id)
+        }
         ConnectionEditDialog(
             existing = profile,
             discoveredDestinations = discoveredDestinations,
@@ -553,6 +557,7 @@ fun ConnectionsScreen(
             sshKeys = sshKeys,
             tunnelConfigs = tunnelConfigs,
             embeddedCloudflareTunnel = embeddedCf.value,
+            mcpReverseTunnelEnabled = mcpReverseTunnel.value,
             onManageTunnels = { preselect ->
                 pendingTunnelAddType = preselect
                 showTunnelsScreen = true
@@ -570,8 +575,9 @@ fun ConnectionsScreen(
                 viewModel.testKnock(host, sequence, delayMs)
             },
             onDismiss = { editingProfileId = null },
-            onSave = { updated, cfTunnel ->
+            onSave = { updated, cfTunnel, mcpTunnel ->
                 viewModel.saveProfileWithEmbeddedCloudflareTunnel(updated, cfTunnel)
+                viewModel.reconcileMcpReverseTunnel(updated.id, mcpTunnel)
                 editingProfileId = null
             },
         )

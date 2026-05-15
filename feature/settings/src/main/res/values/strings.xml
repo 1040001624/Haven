@@ -229,7 +229,6 @@
     <string name="settings_keyboard_mode_title">Keyboard mode</string>
     <string name="settings_dev_install_title">Dev Install</string>
     <string name="settings_dev_install_apk_url">APK URL</string>
-    <string name="settings_mcp_tunnel_title">Tunnel MCP through which profile?</string>
     <string name="settings_font_install_title">Install font from URL</string>
     <string name="settings_ime_flags_title">IME flags</string>
     <!-- #133 phase 2b: SSH host CA pubkey field -->

@@ -178,7 +178,6 @@ fun SettingsScreen(
     val mediaExtensions by viewModel.mediaExtensions.collectAsState()
     var showAuditLog by remember { mutableStateOf(false) }
     var showAgentActivity by remember { mutableStateOf(false) }
-    var showMcpTunnelPicker by remember { mutableStateOf(false) }
     var showFontUrlDialog by remember { mutableStateOf(false) }
     // Lifted to SettingsScreen scope so a dialog's confirm handler can
     // dismiss the dialog AND still complete its async work + show the
@@ -292,25 +291,6 @@ fun SettingsScreen(
     if (showAgentActivity) {
         AgentActivityScreen(onBack = { showAgentActivity = false })
         return
-    }
-    if (showMcpTunnelPicker) {
-        McpTunnelPickerDialog(
-            profiles = viewModel.sshProfilesForTunnel.collectAsState().value,
-            onPick = { profileId ->
-                showMcpTunnelPicker = false
-                settingsScope.launch {
-                    val result = viewModel.createMcpReverseTunnel(profileId)
-                    val msg = if (result.activated) {
-                        val portSuffix = result.actualBoundPort?.let { " — bound on remote :$it" } ?: ""
-                        "Reverse tunnel active$portSuffix"
-                    } else {
-                        "Reverse-tunnel rule saved — reconnect the profile to activate"
-                    }
-                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                }
-            },
-            onDismiss = { showMcpTunnelPicker = false },
-        )
     }
     if (showFontUrlDialog) {
         FontFromUrlDialog(
@@ -784,12 +764,6 @@ fun SettingsScreen(
                 title = "Also available in PRoot",
                 subtitle = "~/.config/haven/mcp-servers.json",
                 onClick = {},
-            )
-            SettingsItem(
-                icon = Icons.Filled.SwapVert,
-                title = "Tunnel to a remote SSH profile…",
-                subtitle = "Add a -R 8730 → 127.0.0.1:8730 rule so an MCP client running on the SSH server can reach Haven via localhost",
-                onClick = { showMcpTunnelPicker = true },
             )
             SettingsItem(
                 icon = Icons.Filled.History,
@@ -2556,62 +2530,6 @@ private fun DevInstallDialog(
                 onClick = onDismiss,
                 enabled = !installing,
             ) { Text(stringResource(R.string.common_cancel)) }
-        },
-    )
-}
-
-/**
- * Profile-picker dialog for "Tunnel to a remote SSH profile…" — the
- * one-tap shortcut that adds a `-R 8730:127.0.0.1:8730` rule on the
- * chosen profile so an MCP client running on the SSH server can reach
- * Haven's loopback endpoint via the tunnel.
- */
-@Composable
-private fun McpTunnelPickerDialog(
-    profiles: List<sh.haven.core.data.db.entities.ConnectionProfile>,
-    onPick: (profileId: String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sshProfiles = profiles.filter { it.isSsh }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_mcp_tunnel_title)) },
-        text = {
-            if (sshProfiles.isEmpty()) {
-                Text(
-                    "No SSH profiles. Create one in Connections, then come back here to add the reverse tunnel.",
-                )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Text(
-                        "Saving a -R 8730:127.0.0.1:8730 rule on the chosen profile. Reconnect the profile to apply. From an MCP client on the remote host the endpoint is the same http://127.0.0.1:8730/mcp.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                    )
-                    sshProfiles.forEach { profile ->
-                        ListItem(
-                            headlineContent = { Text(profile.label) },
-                            supportingContent = {
-                                Text(
-                                    "${profile.username.ifEmpty { "(prompt)" }}@${profile.host}:${profile.port}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPick(profile.id) },
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

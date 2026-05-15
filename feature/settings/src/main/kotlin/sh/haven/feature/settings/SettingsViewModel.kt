@@ -16,22 +16,12 @@ import kotlinx.coroutines.flow.combine
 import sh.haven.core.data.agent.AgentConsentManager
 import sh.haven.core.data.backup.BackupService
 import sh.haven.core.data.db.AgentAuditEventDao
-import sh.haven.core.data.db.entities.ConnectionProfile
-import sh.haven.core.data.db.entities.PortForwardRule
 import sh.haven.core.data.font.TerminalFontInstaller
 import sh.haven.core.data.preferences.NavBlockMode
 import sh.haven.core.data.preferences.ToolbarLayout
 import sh.haven.core.data.preferences.UserPreferencesRepository
-import sh.haven.core.data.repository.ConnectionRepository
-import sh.haven.core.data.repository.PortForwardRepository
 import sh.haven.core.security.BiometricAuthenticator
-import sh.haven.core.ssh.SshSessionManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-/** Loopback port the MCP server prefers; matches `McpServer.bindLoopback`. */
-private const val MCP_PORT = 8730
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -40,9 +30,6 @@ class SettingsViewModel @Inject constructor(
     private val authenticator: BiometricAuthenticator,
     private val backupService: BackupService,
     private val agentAuditEventDao: AgentAuditEventDao,
-    private val connectionRepository: ConnectionRepository,
-    private val portForwardRepository: PortForwardRepository,
-    private val sshSessionManager: SshSessionManager,
     private val agentConsentManager: AgentConsentManager,
     private val terminalFontInstaller: TerminalFontInstaller,
 ) : ViewModel() {
@@ -79,19 +66,6 @@ class SettingsViewModel @Inject constructor(
     fun clearCustomTerminalFont() {
         viewModelScope.launch { terminalFontInstaller.reset() }
     }
-
-    /** Outcome of a "Tunnel MCP through this profile" tap. */
-    data class McpTunnelResult(
-        /** True if the rule was live-applied to a connected session. */
-        val activated: Boolean,
-        /**
-         * Server-side bound port reported by the live session, if
-         * activated. May differ from [MCP_PORT] when the rule was saved
-         * with `bindPort=0` (OS-pick) or when the server retried a
-         * conflicting bind.
-         */
-        val actualBoundPort: Int? = null,
-    )
 
     /**
      * Drop every memoised ONCE_PER_SESSION consent so the next call to
@@ -191,59 +165,6 @@ class SettingsViewModel @Inject constructor(
 
     val agentAllowFileRead: StateFlow<Boolean> = preferencesRepository.agentAllowFileRead
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    /**
-     * SSH-family profiles eligible for the "Tunnel MCP through this
-     * profile" shortcut. The shortcut creates a remote port-forward
-     * (`-R`) on the chosen session, binding [MCP_PORT] on the server
-     * back to phone-side `127.0.0.1:[MCP_PORT]`. From an MCP client
-     * running on the remote host this looks like a plain
-     * `http://127.0.0.1:8730/mcp` endpoint — no MCP-server change
-     * needed.
-     */
-    val sshProfilesForTunnel: StateFlow<List<ConnectionProfile>> = connectionRepository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /**
-     * Save a `-R [MCP_PORT]:127.0.0.1:[MCP_PORT]` rule on [profileId]
-     * and, if the profile has a connected SSH session, install it on
-     * the live channel immediately so the user doesn't have to
-     * reconnect. Mirrors `ConnectionsViewModel.savePortForwardRule`'s
-     * live-apply path; on a fresh (unconnected) profile the rule is
-     * still persisted and will activate on the next connect.
-     */
-    suspend fun createMcpReverseTunnel(profileId: String): McpTunnelResult {
-        val rule = PortForwardRule(
-            profileId = profileId,
-            type = PortForwardRule.Type.REMOTE,
-            bindAddress = "127.0.0.1",
-            bindPort = MCP_PORT,
-            targetHost = "127.0.0.1",
-            targetPort = MCP_PORT,
-            enabled = true,
-        )
-        portForwardRepository.save(rule)
-
-        val session = sshSessionManager.getSessionsForProfile(profileId)
-            .firstOrNull { it.status == SshSessionManager.SessionState.Status.CONNECTED }
-            ?: return McpTunnelResult(activated = false)
-        val info = SshSessionManager.PortForwardInfo(
-            ruleId = rule.id,
-            type = SshSessionManager.PortForwardType.REMOTE,
-            bindAddress = rule.bindAddress,
-            bindPort = rule.bindPort,
-            targetHost = rule.targetHost,
-            targetPort = rule.targetPort,
-        )
-        withContext(Dispatchers.IO) {
-            sshSessionManager.applyPortForwards(session.sessionId, listOf(info))
-        }
-        val bound = sshSessionManager.getSession(session.sessionId)
-            ?.activeForwards
-            ?.firstOrNull { it.ruleId == rule.id }
-            ?.actualBoundPort
-        return McpTunnelResult(activated = true, actualBoundPort = bound)
-    }
 
     /**
      * True when there is at least one agent audit event the user

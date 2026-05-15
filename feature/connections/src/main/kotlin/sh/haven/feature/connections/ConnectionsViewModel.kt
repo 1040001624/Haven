@@ -70,6 +70,13 @@ import javax.inject.Inject
 
 private const val TAG = "ConnectionsVM"
 
+/**
+ * Port the MCP server binds (first free in 8730..8739). The reverse-tunnel
+ * rule maps this 1:1 so an MCP client on the SSH server reaches Haven at
+ * `http://127.0.0.1:8730/mcp`.
+ */
+private const val MCP_REVERSE_TUNNEL_PORT = 8730
+
 /** Unified connection status that maps both SSH and Reticulum states. */
 enum class ProfileStatus { CONNECTING, CONNECTED, RECONNECTING, DISCONNECTED, ERROR }
 
@@ -3085,6 +3092,50 @@ class ConnectionsViewModel @Inject constructor(
                 }
             }
             portForwardRepository.delete(ruleId)
+        }
+    }
+
+    /**
+     * Identifies the MCP reverse-tunnel rule: a `-R` forward mapping
+     * [MCP_REVERSE_TUNNEL_PORT] on the server back to the same port on
+     * the phone's loopback.
+     */
+    private fun PortForwardRule.isMcpReverseTunnel(): Boolean =
+        type == PortForwardRule.Type.REMOTE &&
+            bindPort == MCP_REVERSE_TUNNEL_PORT &&
+            targetPort == MCP_REVERSE_TUNNEL_PORT &&
+            targetHost == "127.0.0.1"
+
+    /** True if [profileId] carries the MCP reverse-tunnel port-forward rule. */
+    suspend fun hasMcpReverseTunnel(profileId: String): Boolean =
+        portForwardRepository.observeForProfile(profileId).first()
+            .any { it.isMcpReverseTunnel() }
+
+    /**
+     * Bring [profileId]'s MCP reverse-tunnel rule in line with [enabled]:
+     * create the `-R 8730:127.0.0.1:8730` rule when enabling and it's
+     * missing, delete it when disabling. Reuses [savePortForwardRule] /
+     * [deletePortForwardRule] so a connected session is updated live.
+     */
+    fun reconcileMcpReverseTunnel(profileId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val existing = portForwardRepository.observeForProfile(profileId).first()
+                .firstOrNull { it.isMcpReverseTunnel() }
+            when {
+                enabled && existing == null -> savePortForwardRule(
+                    PortForwardRule(
+                        profileId = profileId,
+                        type = PortForwardRule.Type.REMOTE,
+                        bindAddress = "127.0.0.1",
+                        bindPort = MCP_REVERSE_TUNNEL_PORT,
+                        targetHost = "127.0.0.1",
+                        targetPort = MCP_REVERSE_TUNNEL_PORT,
+                        enabled = true,
+                    ),
+                )
+                !enabled && existing != null ->
+                    deletePortForwardRule(existing.id, profileId)
+            }
         }
     }
 
