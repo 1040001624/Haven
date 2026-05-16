@@ -306,6 +306,11 @@ fun TerminalScreen(
         viewModel.consumeScanInjection()
     }
 
+    // Read at composition time — stringResource is @Composable and so
+    // can't be invoked from inside the click-time launchCameraScan
+    // callback below. Lint also bans context.getString from a Compose
+    // tree (LocalContextGetResourceValueCall).
+    val noCameraMessage = stringResource(R.string.terminal_scan_no_camera)
     fun launchCameraScan(mode: TerminalViewModel.ScanMode) {
         val cacheRoot = java.io.File(context.cacheDir, "scan").apply { mkdirs() }
         val file = java.io.File(cacheRoot, "scan_${System.currentTimeMillis()}.jpg")
@@ -323,7 +328,7 @@ fun TerminalScreen(
             pendingScanMode = null
             android.widget.Toast.makeText(
                 context,
-                context.getString(R.string.terminal_scan_no_camera),
+                noCameraMessage,
                 android.widget.Toast.LENGTH_LONG,
             ).show()
         }
