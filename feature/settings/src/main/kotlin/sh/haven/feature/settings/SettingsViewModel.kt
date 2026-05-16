@@ -166,6 +166,10 @@ class SettingsViewModel @Inject constructor(
     val agentAllowFileRead: StateFlow<Boolean> = preferencesRepository.agentAllowFileRead
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val agentAllowQueueSelfMessage: StateFlow<Boolean> =
+        preferencesRepository.agentAllowQueueSelfMessage
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     /**
      * True when there is at least one agent audit event the user
      * hasn't visited the activity screen since. Drives the unseen
@@ -368,6 +372,12 @@ class SettingsViewModel @Inject constructor(
     fun setAgentAllowFileRead(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setAgentAllowFileRead(enabled)
+        }
+    }
+
+    fun setAgentAllowQueueSelfMessage(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAgentAllowQueueSelfMessage(enabled)
         }
     }
 

@@ -71,6 +71,8 @@ internal class McpTools(
     private val portKnocker: sh.haven.core.knock.PortKnocker,
     private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
     private val servedFileTracker: sh.haven.core.data.agent.ServedFileTracker,
+    private val syncProfileRepository: sh.haven.core.data.repository.SyncProfileRepository,
+    private val outOfTurnMessageQueue: OutOfTurnMessageQueue,
 ) {
 
     /**
@@ -227,6 +229,80 @@ internal class McpTools(
             inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> resetRcloneStats() },
+
+        "list_saved_sync_profiles" to ToolHandler(
+            description = "List the user's saved rclone sync configurations (#159) — the named src/dst/mode/filters bundles surfaced in the SFTP folder-sync dialog's dropdown. Returns id, name, srcFs, dstFs, mode (copy/sync/move), include/exclude patterns, optional minSize/maxSize/bandwidthLimit, createdAt, lastRunAt. Sorted most-recently-run first.",
+            inputSchema = emptyObjectSchema(),
+        ) { _ -> listSavedSyncProfiles() },
+
+        "save_sync_profile" to ToolHandler(
+            description = "Create or update a named rclone sync configuration (#159). Pass an `id` to overwrite an existing one; omit it to create. mode accepts copy/sync/move (or \"mirror\" as a sync alias). includePatterns/excludePatterns are arrays of glob strings. Returns the saved profile's id and the full resolved fields. Mutates Haven state, gated by EVERY_CALL consent.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("id", JSONObject().apply { put("type", "string"); put("description", "Existing profile id to overwrite. Omit to create a new one.") })
+                    put("name", JSONObject().apply { put("type", "string"); put("description", "Display name shown in the dropdown.") })
+                    put("srcFs", JSONObject().apply { put("type", "string"); put("description", "Source remote path, e.g. \"gdrive:Backup/Photos\".") })
+                    put("dstFs", JSONObject().apply { put("type", "string"); put("description", "Destination remote path.") })
+                    put("mode", JSONObject().apply {
+                        put("type", "string")
+                        put("enum", JSONArray().put("copy").put("sync").put("move"))
+                        put("description", "copy/sync/move; \"mirror\" is accepted as a sync alias.")
+                    })
+                    put("includePatterns", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().put("type", "string"))
+                    })
+                    put("excludePatterns", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().put("type", "string"))
+                    })
+                    put("minSize", JSONObject().apply { put("type", "string") })
+                    put("maxSize", JSONObject().apply { put("type", "string") })
+                    put("bandwidthLimit", JSONObject().apply { put("type", "string") })
+                })
+                put("required", JSONArray().put("name").put("srcFs").put("dstFs").put("mode"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val name = args.optString("name", "?")
+                val mode = args.optString("mode", "?")
+                val verb = if (args.has("id") && !args.isNull("id")) "Update" else "Save"
+                "$verb \"$name\" ($mode: ${args.optString("srcFs", "?")} → ${args.optString("dstFs", "?")})?"
+            },
+        ) { args -> saveSyncProfile(args) },
+
+        "queue_self_message" to ToolHandler(
+            description = "Power-user: queue text to be typed into a Claude Code (or other REPL) session running over the SSH session that's carrying the MCP reverse tunnel — i.e. the very session this MCP traffic is flowing through. Haven watches that session's terminal output for a prompt pattern (default: `>\\s*\$` matching Claude Code's REPL prompt), then types the queued text + ENTER as if the user typed it. Lets an agent inject follow-up *user* input from inside its own turn — useful for slash commands like `/mcp reconnect haven` that only fire from user input. Returns immediately with a queueId; delivery happens out-of-turn whenever the next matching prompt appears (or the queue times out). Caveat: within one SSH session, only the *foreground* tmux pane receives the typed text — if multiple Claude REPLs share an SSH session via tmux panes, set sessionId explicitly and make sure the right pane is foreground. Gated by Settings → Agent endpoint → \"Allow agents to queue follow-up user input\" *and* per-call consent (it's a real keystroke-injection capability).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("text", JSONObject().apply { put("type", "string"); put("description", "Text to type. ENTER is appended automatically.") })
+                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "SSH session id from list_sessions. Optional — defaults to the session carrying the MCP reverse tunnel on port 8730.") })
+                    put("promptPattern", JSONObject().apply { put("type", "string"); put("description", "Regex to match at the tail of the SSH scrollback that triggers delivery. Default `>\\s*\$` (Claude Code's empty REPL prompt). Multiline-enabled; ANSI escapes are stripped before matching.") })
+                    put("timeoutSeconds", JSONObject().apply { put("type", "integer"); put("description", "Give up if the prompt hasn't appeared in this many seconds. Default 60.") })
+                })
+                put("required", JSONArray().put("text"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val text = args.optString("text", "").take(80)
+                "Queue \"$text\" to be typed into the SSH session's REPL on the next prompt?"
+            },
+        ) { args -> queueSelfMessage(args) },
+
+        "delete_sync_profile" to ToolHandler(
+            description = "Delete a saved rclone sync configuration by id. The dialog's dropdown updates immediately. EVERY_CALL consent because it's destructive (the user's saved config is gone after).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("id", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_saved_sync_profiles.") })
+                })
+                put("required", JSONArray().put("id"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Delete saved sync configuration ${args.optString("id")}?" },
+        ) { args -> deleteSyncProfile(args) },
 
         "list_sftp_directory" to ToolHandler(
             description = "DEPRECATED: prefer list_directory(profileId=..., path=...). List files at a path on a connected SFTP profile. Requires an already-connected SSH/SFTP session for the profile.",
@@ -1480,6 +1556,124 @@ internal class McpTools(
         } catch (e: Exception) {
             throw McpError(-32603, "Failed to reset rclone stats: ${e.message}")
         }
+    }
+
+    private suspend fun listSavedSyncProfiles(): JSONObject = withContext(Dispatchers.IO) {
+        val rows = syncProfileRepository.observeAll().first()
+        val arr = JSONArray()
+        for (p in rows) {
+            arr.put(syncProfileToJson(p))
+        }
+        JSONObject().apply {
+            put("count", rows.size)
+            put("profiles", arr)
+        }
+    }
+
+    private suspend fun saveSyncProfile(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val name = args.optString("name").ifBlank {
+            throw McpError(-32602, "Missing required argument: name")
+        }
+        val srcFs = args.optString("srcFs").ifBlank {
+            throw McpError(-32602, "Missing required argument: srcFs")
+        }
+        val dstFs = args.optString("dstFs").ifBlank {
+            throw McpError(-32602, "Missing required argument: dstFs")
+        }
+        val modeStr = args.optString("mode").ifBlank {
+            throw McpError(-32602, "Missing required argument: mode")
+        }
+        val mode = when (modeStr.lowercase()) {
+            "copy" -> "COPY"
+            "sync", "mirror" -> "SYNC"
+            "move" -> "MOVE"
+            else -> throw McpError(-32602, "Unknown mode: $modeStr (expected copy/sync/move)")
+        }
+        val includes = args.optJSONArray("includePatterns")?.let { a ->
+            List(a.length()) { a.optString(it) }.filter { it.isNotBlank() }
+        } ?: emptyList()
+        val excludes = args.optJSONArray("excludePatterns")?.let { a ->
+            List(a.length()) { a.optString(it) }.filter { it.isNotBlank() }
+        } ?: emptyList()
+        val existingId = if (args.has("id") && !args.isNull("id")) args.optString("id").ifBlank { null } else null
+        val existing = existingId?.let { syncProfileRepository.getById(it) }
+        val profile = sh.haven.core.data.db.entities.SyncProfile(
+            id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+            name = name.trim(),
+            srcFs = srcFs,
+            dstFs = dstFs,
+            mode = mode,
+            includePatterns = includes.joinToString("\n"),
+            excludePatterns = excludes.joinToString("\n"),
+            minSize = args.optString("minSize").ifBlank { null },
+            maxSize = args.optString("maxSize").ifBlank { null },
+            bandwidthLimit = args.optString("bandwidthLimit").ifBlank { null },
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+            lastRunAt = existing?.lastRunAt,
+        )
+        syncProfileRepository.save(profile)
+        syncProfileToJson(profile)
+    }
+
+    private suspend fun queueSelfMessage(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val text = args.optString("text").also {
+            if (it.isEmpty()) throw McpError(-32602, "Missing required argument: text")
+        }
+        val explicitSessionId = args.optString("sessionId").ifEmpty { null }
+        val sessionId = explicitSessionId
+            ?: sshSessionManager.findRemoteForwardSession(MCP_REVERSE_TUNNEL_PORT)
+            ?: throw McpError(
+                -32603,
+                "No SSH session carries the MCP reverse tunnel on port $MCP_REVERSE_TUNNEL_PORT; " +
+                    "pass sessionId explicitly (list_sessions). The MCP reverse-tunnel toggle " +
+                    "on the profile must be on and the session must be connected.",
+            )
+        val promptPattern = args.optString("promptPattern").ifEmpty { DEFAULT_PROMPT_PATTERN }
+        val timeoutSeconds = args.optInt("timeoutSeconds", 60).coerceIn(1, 600)
+        val queueId = outOfTurnMessageQueue.enqueue(
+            sessionId = sessionId,
+            text = text,
+            promptPattern = promptPattern,
+            timeoutSeconds = timeoutSeconds,
+        )
+        JSONObject().apply {
+            put("queueId", queueId)
+            put("sessionId", sessionId)
+            put("promptPattern", promptPattern)
+            put("timeoutSeconds", timeoutSeconds)
+            put("textLength", text.length)
+        }
+    }
+
+    private suspend fun deleteSyncProfile(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val id = args.optString("id").ifBlank {
+            throw McpError(-32602, "Missing required argument: id")
+        }
+        val existed = syncProfileRepository.getById(id) != null
+        syncProfileRepository.delete(id)
+        JSONObject().apply {
+            put("deleted", existed)
+            put("id", id)
+        }
+    }
+
+    private fun syncProfileToJson(p: sh.haven.core.data.db.entities.SyncProfile): JSONObject = JSONObject().apply {
+        put("id", p.id)
+        put("name", p.name)
+        put("srcFs", p.srcFs)
+        put("dstFs", p.dstFs)
+        put("mode", p.mode.lowercase())
+        put("includePatterns", JSONArray().apply {
+            p.includePatterns.split("\n").filter { it.isNotBlank() }.forEach { put(it) }
+        })
+        put("excludePatterns", JSONArray().apply {
+            p.excludePatterns.split("\n").filter { it.isNotBlank() }.forEach { put(it) }
+        })
+        p.minSize?.let { put("minSize", it) }
+        p.maxSize?.let { put("maxSize", it) }
+        p.bandwidthLimit?.let { put("bandwidthLimit", it) }
+        put("createdAt", p.createdAt)
+        p.lastRunAt?.let { put("lastRunAt", it) }
     }
 
     /**
@@ -3436,6 +3630,22 @@ internal class McpTools(
                 "Connect dispatched asynchronously through the same path a UI tap uses. Poll list_sessions for status."
             )
         }
+    }
+
+    companion object {
+        /**
+         * Port the MCP HTTP server binds on the device and the matching
+         * `-R` forward Haven installs on the SSH session. Kept in sync
+         * with `feature/connections`'s MCP_REVERSE_TUNNEL_PORT (`#161`).
+         */
+        internal const val MCP_REVERSE_TUNNEL_PORT = 8730
+
+        /**
+         * Default regex matching Claude Code's REPL prompt (a `>` near
+         * the end of the scrollback, possibly with trailing whitespace).
+         * Multiline + ANSI-stripped before matching in [OutOfTurnMessageQueue].
+         */
+        internal const val DEFAULT_PROMPT_PATTERN = ">\\s*\$"
     }
 }
 

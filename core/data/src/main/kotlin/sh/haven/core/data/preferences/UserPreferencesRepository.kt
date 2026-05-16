@@ -78,6 +78,13 @@ class UserPreferencesRepository @Inject constructor(
     // off — agent-driven raw-file reads are a separate, opt-in capability
     // on top of the endpoint toggle.
     private val agentAllowFileReadKey = booleanPreferencesKey("agent_allow_file_read")
+    // Per-tool capability gate for `queue_self_message`: when off, the
+    // MCP tool fails fast with a JSON-RPC error before any consent
+    // prompt. Power-user feature — lets the agent inject follow-up
+    // user input into the very Claude Code (or other REPL) session
+    // that's driving the MCP traffic, by watching the SSH session's
+    // output for a prompt and typing the queued text. Default off.
+    private val agentAllowQueueSelfMessageKey = booleanPreferencesKey("agent_allow_queue_self_message")
     // MCP client allowlist — clientInfo.name values the user has approved
     // via the pairing prompt on first connect. Empty by default; the
     // McpServer rejects any initialize from a name not in this set.
@@ -482,6 +489,24 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setAgentAllowFileRead(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[agentAllowFileReadKey] = enabled
+        }
+    }
+
+    /**
+     * Whether the MCP `queue_self_message` tool is enabled. Off by
+     * default — gives the agent a way to inject follow-up "user" input
+     * into the very Claude Code (or other REPL) session that's driving
+     * the MCP traffic, by watching the SSH terminal output for a
+     * prompt and typing the queued text. Power-user; off until the
+     * user explicitly opts in.
+     */
+    val agentAllowQueueSelfMessage: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[agentAllowQueueSelfMessageKey] ?: false
+    }
+
+    suspend fun setAgentAllowQueueSelfMessage(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[agentAllowQueueSelfMessageKey] = enabled
         }
     }
 

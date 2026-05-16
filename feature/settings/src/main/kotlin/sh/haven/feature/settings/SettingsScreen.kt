@@ -717,6 +717,24 @@ fun SettingsScreen(
                 onCheckedChange = viewModel::setAgentAllowFileRead,
             )
 
+            // Power-user gate for `queue_self_message` — lets agents
+            // inject follow-up user input into the very REPL session
+            // that's driving the MCP traffic, by watching the SSH
+            // session output for a prompt and typing the queued text.
+            // Off by default; this is real keystroke injection.
+            val agentAllowQueueSelfMessage by viewModel.agentAllowQueueSelfMessage.collectAsState()
+            SettingsToggleItem(
+                icon = Icons.Filled.Hub,
+                title = "Allow agents to queue follow-up user input",
+                subtitle = if (agentAllowQueueSelfMessage) {
+                    "Enabled — `queue_self_message` watches the SSH REPL's output and types the queued text on the next prompt (per-call consent)"
+                } else {
+                    "Disabled — `queue_self_message` requests fail immediately, no prompt"
+                },
+                checked = agentAllowQueueSelfMessage,
+                onCheckedChange = viewModel::setAgentAllowQueueSelfMessage,
+            )
+
             // Endpoint URL is always the canonical port range start —
             // the server binds to the first free port in 8730..8739
             val endpointUrl = "http://127.0.0.1:8730/mcp"

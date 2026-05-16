@@ -527,6 +527,21 @@ class SshSessionManager @Inject constructor(
     }
 
     /**
+     * Identify the SSH session, if any, carrying a remote port-forward
+     * for [bindPort] on the loopback. By convention Haven uses 8730 for
+     * the MCP reverse tunnel — i.e. the session running the Claude Code
+     * REPL on the workstation. Used by the `queue_self_message` MCP
+     * tool to auto-detect which session to watch + type into. Returns
+     * the first match (there should be at most one in practice). (#161)
+     */
+    fun findRemoteForwardSession(bindPort: Int): String? =
+        _sessions.value.values.firstOrNull { state ->
+            state.activeForwards.any {
+                it.type == PortForwardType.REMOTE && it.bindPort == bindPort
+            }
+        }?.sessionId
+
+    /**
      * Send [text] as UTF-8 bytes to the active terminal session for
      * [sessionId]. Throws [IllegalStateException] if there is no
      * connected session with an attached terminal session — the agent

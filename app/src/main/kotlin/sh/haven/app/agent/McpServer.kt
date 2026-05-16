@@ -103,6 +103,8 @@ class McpServer @Inject constructor(
     private val portKnocker: sh.haven.core.knock.PortKnocker,
     private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
     private val servedFileTracker: sh.haven.core.data.agent.ServedFileTracker,
+    private val syncProfileRepository: sh.haven.core.data.repository.SyncProfileRepository,
+    private val outOfTurnMessageQueue: OutOfTurnMessageQueue,
 ) : Closeable {
 
     /**
@@ -196,6 +198,8 @@ class McpServer @Inject constructor(
         portKnocker = portKnocker,
         connectionLogRepository = connectionLogRepository,
         servedFileTracker = servedFileTracker,
+        syncProfileRepository = syncProfileRepository,
+        outOfTurnMessageQueue = outOfTurnMessageQueue,
     )
 
     /**
@@ -590,6 +594,22 @@ class McpServer @Inject constructor(
                 throw McpError(
                     -32011,
                     "agent file read is disabled — enable in Settings → Agent endpoint",
+                )
+            }
+        }
+        // queue_self_message is a keystroke-injection capability (the
+        // agent typing into the very REPL it's running in). Gated by a
+        // separate power-user toggle on top of the endpoint switch, in
+        // the same shape as serve_file's gate above. (#161)
+        if (name == "queue_self_message") {
+            val allowed = runBlocking {
+                preferencesRepository.agentAllowQueueSelfMessage.first()
+            }
+            if (!allowed) {
+                throw McpError(
+                    -32011,
+                    "queue_self_message is disabled — enable in Settings → Agent endpoint → " +
+                        "Allow agents to queue follow-up user input",
                 )
             }
         }
