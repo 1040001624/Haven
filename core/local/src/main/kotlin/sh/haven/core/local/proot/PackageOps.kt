@@ -278,20 +278,17 @@ object Xbps : PackageOps {
             "$CLEAR_LOCK xbps-install -uy"
 
     /**
-     * `-U` (unpack-only) skips per-package INSTALL scripts during
-     * unpack. The scripts try to `chroot()` into the rootfs to run
-     * their pre/post actions, and nested chroot inside our outer
-     * proot fails with ENOENT (proot's chroot interception doesn't
-     * recurse cleanly). With -U the files land but no scripts
-     * fire; `xbps-reconfigure -af` then runs the config phase in a
-     * single global pass that doesn't need per-pkg chroot. Best-
-     * effort — reconfigure errors are non-fatal because many
-     * packages' scripts are only needed for hardware setup we
-     * don't have in proot anyway (devd rules, runit services).
+     * Plain `xbps-install -Sy` runs pre/post INSTALL scripts
+     * correctly under proot — provided the `xbps-triggers` package
+     * is installed so the helpers under `/usr/libexec/xbps-triggers/`
+     * exist (fontconfig's pre-INSTALL calls one of them). The
+     * bootstrap hook installs xbps-triggers as part of the
+     * post-extract setup; without it, package INSTALL scripts fail
+     * with the misleading ENOENT that drove the earlier (now
+     * removed) `-Uy + xbps-reconfigure` workaround.
      */
     override fun installCmd(pkgs: List<String>): String =
-        "$CLEAR_LOCK xbps-install -Uy ${pkgs.joinToString(" ")} && " +
-            "(xbps-reconfigure -af 2>&1 || true)"
+        "$CLEAR_LOCK xbps-install -Sy ${pkgs.joinToString(" ")}"
 
     override fun removeCmd(pkgs: List<String>): String =
         "$CLEAR_LOCK xbps-remove -y ${pkgs.joinToString(" ")}"

@@ -366,6 +366,20 @@ object DistroCatalog {
                             sed -i "s|<string>libcrypto3-[0-9._]\\+</string>|<string>libcrypto3-${'$'}{NEW_LIBCRYPTO}</string>|g" "${'$'}PKGDB"
                         echo "patched ${'$'}PKGDB"
                     fi
+
+                    # (4) Install xbps-triggers. The proot-distro Void
+                    # tarball omits it, but most package INSTALL scripts
+                    # (fontconfig, dbus, gtk-update-icon-cache, …) call
+                    # /usr/libexec/xbps-triggers/<helper> during their
+                    # pre-install phase. Without xbps-triggers those
+                    # helpers don't exist, the kernel reports ENOENT,
+                    # and xbps surfaces it as "INSTALL script failed to
+                    # execute pre ACTION: No such file or directory" —
+                    # the symptom that drove months of incorrect
+                    # speculation about nested-chroot semantics. With
+                    # xbps-triggers installed, plain `xbps-install -Sy`
+                    # runs cleanly inside proot.
+                    xbps-install -Sy xbps-triggers
                 """.trimIndent(),
             ),
             RootfsHook(
@@ -413,14 +427,6 @@ object DesktopCatalog {
             startCommands = "xsetroot -solid '#2e3440'; openbox & xterm &",
         ),
         sizeEstimateMb = 10,
-        compatibility = mapOf(
-            PackageFamily.XBPS to Compatibility.Experimental,
-        ),
-        compatibilityNote = mapOf(
-            PackageFamily.XBPS to "Void's xbps runs per-package INSTALL scripts in a nested " +
-                "chroot that proot can't satisfy. CLI works; X11 desktop install may fail on " +
-                "fontconfig. Nested-Wayland DEs (planned in Phase 4) sidestep this.",
-        ),
     )
 
     val XFCE4 = DesktopEnvironmentSpec(
@@ -451,14 +457,6 @@ object DesktopCatalog {
             startCommands = "xfwm4 & xfce4-panel & xfdesktop &",
         ),
         sizeEstimateMb = 100,
-        compatibility = mapOf(
-            PackageFamily.XBPS to Compatibility.Experimental,
-        ),
-        compatibilityNote = mapOf(
-            PackageFamily.XBPS to "Void's xbps runs per-package INSTALL scripts in a nested " +
-                "chroot that proot can't satisfy. CLI works; X11 desktop install may fail on " +
-                "fontconfig. Nested-Wayland DEs (planned in Phase 4) sidestep this.",
-        ),
     )
 
     val LABWC_NATIVE = DesktopEnvironmentSpec(
