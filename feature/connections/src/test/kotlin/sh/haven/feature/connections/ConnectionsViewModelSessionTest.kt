@@ -108,6 +108,7 @@ class ConnectionsViewModelSessionTest {
             smb = smbSessionManager,
             local = localSessionManager,
             rdp = rdpSessionManager,
+            keepAlives = emptySet(),
         )
 
         viewModel = ConnectionsViewModel(
