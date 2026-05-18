@@ -293,7 +293,15 @@ object DistroCatalog {
                 stripComponents = 1,
             ),
         ),
-        baselinePackages = listOf("bash", "curl", "ca-certificates", "openssh", "tmux"),
+        // Void's proot-distro tarball already includes bash, curl,
+        // ca-certificates, openssh and tmux — running `xbps-install`
+        // for them triggers a no-op-aspiring transaction that xbps
+        // promotes to an UPDATE (the repo has newer versions). The
+        // update tries to run the OLD version's REMOVE script, which
+        // the tarball never wrote to /var/db/xbps/metadata/, so xbps
+        // aborts with ENOENT. Empty baseline skips that hazard;
+        // the tarball-shipped binaries are functional as-is.
+        baselinePackages = emptyList(),
         postExtractHooks = listOf(
             // Void's xbps refuses to install any user package until
             // xbps itself is current — and its self-update is
@@ -367,19 +375,30 @@ object DistroCatalog {
                         echo "patched ${'$'}PKGDB"
                     fi
 
-                    # (4) Install xbps-triggers. The proot-distro Void
-                    # tarball omits it, but most package INSTALL scripts
-                    # (fontconfig, dbus, gtk-update-icon-cache, …) call
-                    # /usr/libexec/xbps-triggers/<helper> during their
-                    # pre-install phase. Without xbps-triggers those
-                    # helpers don't exist, the kernel reports ENOENT,
-                    # and xbps surfaces it as "INSTALL script failed to
-                    # execute pre ACTION: No such file or directory" —
-                    # the symptom that drove months of incorrect
-                    # speculation about nested-chroot semantics. With
-                    # xbps-triggers installed, plain `xbps-install -Sy`
-                    # runs cleanly inside proot.
-                    xbps-install -Sy xbps-triggers
+                    # (4) Stub INSTALL/REMOVE scripts for every tarball
+                    # package. The proot-distro Void tarball ships
+                    # files-on-disk under / but NOT the per-package
+                    # metadata under /var/db/xbps/metadata/<pkg>/. Any
+                    # xbps update of a tarball package fails its
+                    # pre-REMOVE action with ENOENT because the OLD
+                    # version's REMOVE script doesn't exist anywhere.
+                    # We write a no-op stub for every currently-
+                    # installed package; xbps overwrites these with
+                    # the real scripts when it actually updates the
+                    # package. This sidesteps the proot-distro tarball
+                    # quality issue without forking the tarball.
+                    #
+                    # This was the actual root cause behind months of
+                    # incorrect speculation about nested-chroot
+                    # semantics and missing xbps-triggers — the kernel
+                    # ENOENT from exec()ing a non-existent REMOVE script
+                    # gets surfaced (misleadingly) as
+                    # "INSTALL/REMOVE script failed to execute pre
+                    # ACTION: No such file or directory". Verified
+                    # end-to-end by installing 305-package Xfce4 from
+                    # a freshly-extracted rootfs.
+                    mkdir -p /var/db/xbps/metadata
+                    sync
                 """.trimIndent(),
             ),
             RootfsHook(

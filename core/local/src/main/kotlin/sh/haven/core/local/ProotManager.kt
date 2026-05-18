@@ -997,20 +997,74 @@ class ProotManager @Inject constructor(
     suspend fun runCommandInProot(command: String): Pair<String, Int> = withContext(Dispatchers.IO) {
         val prootBin = prootBinary ?: throw IllegalStateException("PRoot not available")
         val loaderPath = File(context.applicationInfo.nativeLibraryDir, "libproot_loader.so").absolutePath
-        val process = ProcessBuilder(
-            prootBin, "-0", "--link2symlink",
-            "-r", activeRootfsDir.absolutePath,
-            "-b", "/dev", "-b", "/proc", "-b", "/sys",
-            "-b", "${context.cacheDir.absolutePath}:/tmp",
-            "-w", "/root",
-            // Use /bin/sh — works on both Alpine (symlink to busybox)
-            // and Debian (symlink to dash). Avoid hardcoding busybox
-            // since Debian and other glibc distros don't ship it.
-            "/bin/sh", "-c", command,
-        ).apply {
+        // Mirror termux/proot-distro v4.29.0's `run_proot_cmd` invocation
+        // (distro-plugins runner). Empirically that's the proven pattern
+        // for running xbps-install / apt-get / pacman inside this exact
+        // Void tarball — Termux users install Xfce4 on Void daily via
+        // `proot-distro login void` + `xbps-install -Sy xfce4`. The
+        // missing /dev/fd, /dev/std{in,out,err}, /dev/random bindings
+        // and the fake /proc files are what breaks fontconfig's
+        // pre-INSTALL when invoked via the bare ProcessBuilder we used
+        // before. See proot-distro/proot-distro.sh:run_proot_cmd().
+        val procDir = File(activeRootfsDir, "proc").apply { mkdirs() }
+        val sysEmpty = File(activeRootfsDir, "sys/.empty").apply { mkdirs() }
+        // Write minimal fake /proc replacements once per rootfs. proot
+        // can't read the host's real /proc/{loadavg,stat,uptime,…}
+        // through its bind mount, so apps that parse them (rpm post-
+        // install, locale generation, etc.) need plausible-looking
+        // values to make progress.
+        fun writeIfMissing(name: String, content: String) {
+            val f = File(procDir, name)
+            if (!f.exists()) f.writeText(content)
+        }
+        writeIfMissing(".loadavg", "0.12 0.07 0.02 2/165 765\n")
+        writeIfMissing(".uptime", "284.83 1391.42\n")
+        writeIfMissing(".version", "Linux version 6.2.1 (proot@haven) #1 SMP PREEMPT_DYNAMIC\n")
+        writeIfMissing(".vmstat", "nr_free_pages 1000\n")
+        writeIfMissing(".stat", "cpu  1957 0 2877 93280 262 342 254 87 0 0\nbtime 1680020856\n")
+        writeIfMissing(".sysctl_entry_cap_last_cap", "40\n")
+        writeIfMissing(".sysctl_inotify_max_user_watches", "65536\n")
+
+        val rootfsPath = activeRootfsDir.absolutePath
+        val args = mutableListOf(
+            prootBin,
+            "-L",
+            "--kernel-release=6.2.1",
+            "--link2symlink",
+            "--kill-on-exit",
+            "--rootfs=$rootfsPath",
+            "--root-id",
+            "--cwd=/root",
+            "--bind=/dev",
+            "--bind=/dev/urandom:/dev/random",
+            "--bind=/proc",
+            "--bind=/proc/self/fd:/dev/fd",
+            "--bind=/proc/self/fd/0:/dev/stdin",
+            "--bind=/proc/self/fd/1:/dev/stdout",
+            "--bind=/proc/self/fd/2:/dev/stderr",
+            "--bind=/sys",
+            "--bind=$rootfsPath/proc/.loadavg:/proc/loadavg",
+            "--bind=$rootfsPath/proc/.stat:/proc/stat",
+            "--bind=$rootfsPath/proc/.uptime:/proc/uptime",
+            "--bind=$rootfsPath/proc/.version:/proc/version",
+            "--bind=$rootfsPath/proc/.vmstat:/proc/vmstat",
+            "--bind=$rootfsPath/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap",
+            "--bind=$rootfsPath/proc/.sysctl_inotify_max_user_watches:/proc/sys/fs/inotify/max_user_watches",
+            "--bind=${sysEmpty.absolutePath}:/sys/fs/selinux",
+            "--bind=${context.cacheDir.absolutePath}:/tmp",
+            "/usr/bin/env", "-i",
+            "HOME=/root",
+            "LANG=C.UTF-8",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "TERM=xterm-256color",
+            "TMPDIR=/tmp",
+            "/bin/sh", "-lc", command,
+        )
+        val process = ProcessBuilder(args).apply {
+            // proot/PROOT_LOADER vars must live in the OUTER env so
+            // the proot binary itself finds its loader. The tracee's
+            // env is reset by `env -i` inside proot.
             environment().apply {
-                put("HOME", "/root")
-                put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
                 put("PROOT_TMP_DIR", context.cacheDir.absolutePath)
                 put("PROOT_LOADER", loaderPath)
             }

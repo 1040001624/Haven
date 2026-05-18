@@ -243,7 +243,14 @@ object Xbps : PackageOps {
      * block subsequent runs — clear them defensively.
      */
     private const val CLEAR_LOCK =
-        "rm -f /var/db/xbps/*.lock /var/cache/xbps/*.lock 2>/dev/null;"
+        "rm -f /var/db/xbps/*.lock /var/cache/xbps/*.lock 2>/dev/null; " +
+            // Belt-and-suspenders for the proot-distro Void tarball,
+            // which doesn't include /var/db/xbps/metadata/. Without
+            // this dir, xbps's per-package script extraction silently
+            // drops the INSTALL/REMOVE files and the kernel reports
+            // ENOENT on the next execve. Cheap to mkdir before every
+            // op regardless of whether the bootstrap hook ran.
+            "mkdir -p /var/db/xbps/metadata 2>/dev/null;"
 
     /**
      * Void's xbps refuses to install any user package until xbps
@@ -279,13 +286,14 @@ object Xbps : PackageOps {
 
     /**
      * Plain `xbps-install -Sy` runs pre/post INSTALL scripts
-     * correctly under proot — provided the `xbps-triggers` package
-     * is installed so the helpers under `/usr/libexec/xbps-triggers/`
-     * exist (fontconfig's pre-INSTALL calls one of them). The
-     * bootstrap hook installs xbps-triggers as part of the
-     * post-extract setup; without it, package INSTALL scripts fail
-     * with the misleading ENOENT that drove the earlier (now
-     * removed) `-Uy + xbps-reconfigure` workaround.
+     * correctly under proot — provided `/var/db/xbps/metadata/`
+     * exists so xbps can write each package's INSTALL/REMOVE
+     * scripts there. The bootstrap hook mkdir's that directory
+     * (the proot-distro Void tarball omits it). Without the dir,
+     * xbps surfaces a misleading "INSTALL script failed to execute
+     * pre ACTION: No such file or directory" — the symptom that
+     * drove the earlier (now removed) `-Uy + xbps-reconfigure`
+     * workaround.
      */
     override fun installCmd(pkgs: List<String>): String =
         "$CLEAR_LOCK xbps-install -Sy ${pkgs.joinToString(" ")}"
