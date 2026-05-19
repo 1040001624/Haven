@@ -46,6 +46,12 @@ type TunnelHandle struct {
 	closed   bool
 	socksLn  net.Listener
 	mu       sync.Mutex
+	// First IPv4 (preferred) or IPv6 address from the [Interface] block.
+	// Used as the bind address for unconnected UDP sockets — gVisor's
+	// netstack refuses to route from an unspecified source (0.0.0.0)
+	// because it can't pick a primary IP from the NIC, so UDP writes
+	// fail with ENETUNREACH unless we bind to a specific local IP.
+	bindAddr netip.Addr
 }
 
 // Conn is a TCP connection through a [TunnelHandle]. Bound to gomobile;
@@ -100,7 +106,21 @@ func StartTunnel(configText string) (*TunnelHandle, error) {
 		return nil, fmt.Errorf("wireguard Up: %w", err)
 	}
 
-	return &TunnelHandle{dev: dev, tnet: tnet}, nil
+	// Prefer the first IPv4 [Interface] Address for UDP binds — most
+	// wg-quick configs put IPv4 first, and IPv4 is the common case for
+	// peer-reachable destinations. Falls back to any address present.
+	var bindAddr netip.Addr
+	for _, a := range parsed.addresses {
+		if a.Is4() {
+			bindAddr = a
+			break
+		}
+	}
+	if !bindAddr.IsValid() && len(parsed.addresses) > 0 {
+		bindAddr = parsed.addresses[0]
+	}
+
+	return &TunnelHandle{dev: dev, tnet: tnet, bindAddr: bindAddr}, nil
 }
 
 // Dial opens a TCP connection through the tunnel. timeoutMs <= 0 uses a
@@ -131,14 +151,26 @@ func (t *TunnelHandle) Dial(host string, port int, timeoutMs int) (*Conn, error)
 }
 
 // ListenUDP opens an unconnected UDP socket inside the tunnel's netstack,
-// bound to an ephemeral local address. The netstack itself is what
-// guarantees the packets traverse the WireGuard tunnel rather than the
-// kernel's default route — this is the same path TCP [TunnelHandle.Dial]
-// uses, just for UDP.
+// bound to the tunnel's own [Interface] Address on an ephemeral port.
+// The netstack itself is what guarantees the packets traverse the
+// WireGuard tunnel rather than the kernel's default route — this is the
+// same path TCP [TunnelHandle.Dial] uses, just for UDP.
 //
-// Returns an error if the tunnel is closed. The returned [UDPConn] must
-// be closed by the caller (or implicitly by [TunnelHandle.Close], which
-// invalidates all outstanding handles).
+// Three traps in the bind addr — empirically observed on a Pixel 8 Pro
+// against a 10.0.0.0/24 wg-quick + 192.168.0.180 mosh-server:
+//
+//  1. netip.AddrPort{} (the zero value): netstack leaves its
+//     NetworkProtocolNumber unset, then gVisor SIGABRTs on endpoint
+//     creation. Don't.
+//  2. netip.IPv4Unspecified() (0.0.0.0): netstack accepts the bind but
+//     refuses to route on WriteTo because it can't resolve a primary IP
+//     from the NIC for the unspecified source. WriteTo returns
+//     "network is unreachable".
+//  3. The tunnel's [Interface] Address (e.g. 10.0.0.2): works — gVisor
+//     has a concrete source for routing.
+//
+// Returns an error if the tunnel is closed or has no usable interface
+// address (shouldn't happen — [parseConfig] requires Address).
 func (t *TunnelHandle) ListenUDP() (*UDPConn, error) {
 	t.mu.Lock()
 	if t.closed {
@@ -146,11 +178,16 @@ func (t *TunnelHandle) ListenUDP() (*UDPConn, error) {
 		return nil, errors.New("tunnel closed")
 	}
 	tnet := t.tnet
+	bindAddr := t.bindAddr
 	t.mu.Unlock()
 
-	pc, err := tnet.ListenUDPAddrPort(netip.AddrPort{})
+	if !bindAddr.IsValid() {
+		return nil, errors.New("tunnel has no usable Interface Address for UDP bind")
+	}
+	laddr := netip.AddrPortFrom(bindAddr, 0)
+	pc, err := tnet.ListenUDPAddrPort(laddr)
 	if err != nil {
-		return nil, fmt.Errorf("netstack ListenUDP: %w", err)
+		return nil, fmt.Errorf("netstack ListenUDP %s: %w", laddr, err)
 	}
 	return &UDPConn{c: pc}, nil
 }
