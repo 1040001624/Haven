@@ -364,40 +364,60 @@ class DesktopManager @Inject constructor(
         // the above; passing them is harmless and the niri-specific
         // setup (auto-detect headless when no Wayland/DRM is found)
         // does the rest.
-        val shellCmd =
-            "mkdir -p $xdgInProot && chmod 700 $xdgInProot && " +
-                "export XDG_RUNTIME_DIR=$xdgInProot && " +
-                "export HOME=/root && " +
-                "export WLR_BACKENDS=headless && " +
-                "export WLR_HEADLESS_OUTPUTS=1 && " +
-                "export WLR_LIBINPUT_NO_DEVICES=1 && " +
-                "export XKB_DEFAULT_LAYOUT=us && " +
-                "export XKB_DEFAULT_RULES=evdev && " +
-                "export XDG_SESSION_TYPE=wayland && " +
-                // Start the compositor in the background. Stderr is
-                // captured so a failure surfaces in logcat alongside
-                // wayvnc's own diagnostics; the parent process is wayvnc
-                // (foreground) so destroyForcibly() of the proot tree
-                // tears down both halves.
-                "(${launch.compositorCmd}) > $xdgInProot/compositor.log 2>&1 & " +
-                "comp_pid=\$! ; " +
-                // Wait up to 10 s for the wayland socket to appear. The
-                // headless backend creates `wayland-1` as the first free
-                // socket; we let the compositor pick the name and read
-                // it back here.
-                "i=0 ; while [ ! -e $xdgInProot/wayland-1 ] && [ \$i -lt 20 ]; do sleep 0.5; i=\$((i+1)); done ; " +
-                "if [ ! -e $xdgInProot/wayland-1 ]; then " +
-                    "echo '[haven] compositor did not create $xdgInProot/wayland-1 — log tail:' ; " +
-                    "tail -n 50 $xdgInProot/compositor.log 2>&1 ; " +
-                    "kill \$comp_pid 2>/dev/null ; " +
-                    "exit 1 ; " +
-                "fi ; " +
-                "export WAYLAND_DISPLAY=wayland-1 ; " +
-                // wayvnc 0.5 (Debian) doesn't accept --max-fps; pass only
-                // the universal args. `--gpu-rendering=off` and disable
-                // hardware encoding to avoid pulling on a non-existent
-                // GPU under proot. wayvnc exits when the compositor dies.
-                "exec wayvnc --render-cursor 0.0.0.0 $port"
+        //
+        // Script structure: statements are separated by `;`, NOT `&&`.
+        // An `&&`-chain that ends with `& ` (background operator) is
+        // parsed by POSIX sh as "background the whole list", which would
+        // background the env exports as well — so wayvnc would later run
+        // with no XDG_RUNTIME_DIR. The semicolons keep each statement in
+        // the foreground; only the compositor itself is backgrounded.
+        val shellCmd = buildString {
+            append("set -e ; ")
+            append("mkdir -p $xdgInProot ; chmod 700 $xdgInProot ; ")
+            append("export XDG_RUNTIME_DIR=$xdgInProot ; ")
+            append("export HOME=/root ; ")
+            append("export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ; ")
+            append("export WLR_BACKENDS=headless ; ")
+            append("export WLR_HEADLESS_OUTPUTS=1 ; ")
+            append("export WLR_LIBINPUT_NO_DEVICES=1 ; ")
+            // Proot environments don't have DRM nodes, so the GLES2
+            // renderer can't allocate DMA-buf-backed framebuffers and
+            // wayvnc fails with "No supported buffer formats were found"
+            // on the ext-image-copy-capture-v1 protocol. The pixman
+            // software renderer exposes plain SHM buffers (ARGB8888 /
+            // XRGB8888) that wayvnc can capture without GPU help.
+            append("export WLR_RENDERER=pixman ; ")
+            // Some wlroots versions also honour WLR_NO_HARDWARE_CURSORS
+            // and refuse to start without it when running headless on
+            // a system that lacks DRM nodes.
+            append("export WLR_NO_HARDWARE_CURSORS=1 ; ")
+            append("export XKB_DEFAULT_LAYOUT=us ; ")
+            append("export XKB_DEFAULT_RULES=evdev ; ")
+            append("export XDG_SESSION_TYPE=wayland ; ")
+            // Clean any stale wayland-1 from a previous launch so the
+            // wait loop polls for a fresh socket and the "did the
+            // compositor start?" branch is honest.
+            append("rm -f $xdgInProot/wayland-1 $xdgInProot/wayland-1.lock ; ")
+            // `set +e` around the compositor launch so a non-zero exit
+            // doesn't kill the script before the wait/diagnostic block.
+            append("set +e ; ")
+            append("${launch.compositorCmd} > $xdgInProot/compositor.log 2>&1 & ")
+            append("comp_pid=\$! ; ")
+            // Wait up to ~10 s for the wayland socket to appear.
+            append("i=0 ; while [ ! -e $xdgInProot/wayland-1 ] && [ \$i -lt 20 ]; do sleep 0.5; i=\$((i+1)); done ; ")
+            append("if [ ! -e $xdgInProot/wayland-1 ]; then ")
+            append("echo '[haven] compositor did not create $xdgInProot/wayland-1 — log tail:' ; ")
+            append("tail -n 50 $xdgInProot/compositor.log 2>&1 ; ")
+            append("kill \$comp_pid 2>/dev/null ; ")
+            append("exit 1 ; ")
+            append("fi ; ")
+            append("echo '[haven] compositor up, starting wayvnc on $port' ; ")
+            append("export WAYLAND_DISPLAY=wayland-1 ; ")
+            // wayvnc 0.5 (Debian Bookworm) doesn't accept --max-fps;
+            // restrict to flags supported across the version range
+            // 0.5–0.9. wayvnc exits when the compositor dies.
+            append("exec wayvnc --render-cursor 0.0.0.0 $port")
+        }
 
         val prootArgs = mutableListOf(
             prootBin, "-0", "--link2symlink",

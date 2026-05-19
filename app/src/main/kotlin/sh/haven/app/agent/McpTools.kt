@@ -1119,6 +1119,47 @@ internal class McpTools(
             },
         ) { args -> uninstallDesktopTool(args) },
 
+        "start_desktop" to ToolHandler(
+            description = "Start an installed desktop environment on the active distro. Calls DesktopManager.startDesktop; the launch is asynchronous. Returns the allocated display + vncPort so callers can connect a VNC client. Poll `inspect_proot.desktopEnvironments[].running` (or list_desktop_environments) to confirm RUNNING state. NestedWayland DEs (Sway, Hyprland, niri) bring up a wlroots/smithay compositor on the headless backend inside the rootfs and expose it via wayvnc on the returned port; X11Vnc DEs spawn Xvnc + the desktop; NativeCompositor runs the JNI labwc bridge.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("deId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Desktop environment id to start.")
+                    })
+                })
+                put("required", JSONArray().put("deId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val deId = args.optString("deId")
+                val de = sh.haven.core.local.ProotManager.DesktopEnvironment.entries.firstOrNull { it.spec.id == deId }
+                val active = localSessionManager.prootManager.activeDistro
+                "Start ${de?.label ?: deId} on ${active.label}?"
+            },
+        ) { args -> startDesktopTool(args) },
+
+        "stop_desktop" to ToolHandler(
+            description = "Stop a running desktop environment. Tears down the compositor / Xvnc process tree and releases the display number.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("deId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Desktop environment id to stop.")
+                    })
+                })
+                put("required", JSONArray().put("deId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val deId = args.optString("deId")
+                val de = sh.haven.core.local.ProotManager.DesktopEnvironment.entries.firstOrNull { it.spec.id == deId }
+                "Stop ${de?.label ?: deId}?"
+            },
+        ) { args -> stopDesktopTool(args) },
+
         "get_proot_install_log" to ToolHandler(
             description = "Return install-log events from the Room-backed ProotInstallLog table. Survives logcat rotation and app restarts. Filter by distroId and/or sinceMs (millis since epoch) to poll incrementally. Each event: id, timestamp, distroId, phase, deId?, exit?, ok, message?, logTail?.",
             inputSchema = JSONObject().apply {
@@ -4550,6 +4591,49 @@ internal class McpTools(
             put("deId", de.spec.id)
             put("label", de.label)
             put("status", "uninstalled")
+        }
+    }
+
+    private suspend fun startDesktopTool(args: JSONObject): JSONObject {
+        val deId = args.optString("deId").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "deId is required")
+        val de = sh.haven.core.local.ProotManager.DesktopEnvironment.entries
+            .firstOrNull { it.spec.id == deId }
+            ?: throw McpError(-32602, "Unknown deId: $deId")
+        if (de !in prootManager.installedDesktops) {
+            throw McpError(
+                -32602,
+                "${de.label} is not installed — call install_desktop first.",
+            )
+        }
+        val dm = localSessionManager.desktopManager
+        dm.startDesktop(de)
+        // startDesktop is synchronous up to the process spawn; the
+        // post-spawn state may still be STARTING when we read it back.
+        val instance = dm.desktops.value[de]
+        return JSONObject().apply {
+            put("deId", de.spec.id)
+            put("label", de.label)
+            put("state", instance?.state?.name ?: "UNKNOWN")
+            put("displayNumber", instance?.displayNumber ?: -1)
+            put("vncPort", instance?.vncPort ?: -1)
+            instance?.errorMessage?.let { put("errorMessage", it) }
+            put("launchKind", de.spec.launch::class.simpleName ?: "unknown")
+            put("poll", "list_desktop_environments[].running")
+        }
+    }
+
+    private fun stopDesktopTool(args: JSONObject): JSONObject {
+        val deId = args.optString("deId").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "deId is required")
+        val de = sh.haven.core.local.ProotManager.DesktopEnvironment.entries
+            .firstOrNull { it.spec.id == deId }
+            ?: throw McpError(-32602, "Unknown deId: $deId")
+        localSessionManager.desktopManager.stopDesktop(de)
+        return JSONObject().apply {
+            put("deId", de.spec.id)
+            put("label", de.label)
+            put("status", "stopped")
         }
     }
 
