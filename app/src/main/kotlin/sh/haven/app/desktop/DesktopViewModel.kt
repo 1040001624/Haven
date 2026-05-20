@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import sh.haven.core.data.agent.AgentUiCommand
 import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.preferences.UserPreferencesRepository
@@ -110,16 +109,31 @@ class DesktopViewModel @Inject constructor(
     }
 
     /**
+     * Local-shell open requests keyed by the resolved profile id. Collected
+     * by HavenNavHost (which is always composed, unlike TerminalScreen) so
+     * the request is never dropped while the user is on the Desktop tab.
+     * HavenNavHost sets a pending-profile state and animates to the Terminal
+     * page; TerminalScreen consumes it once composed and calls
+     * addLocalTabForProfile. SharedFlow with replay=0 — a screen rotation
+     * shouldn't re-open a shell. See GlassHaven/Haven#168.
+     */
+    private val _openLocalShellRequests = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val openLocalShellRequests: SharedFlow<String> = _openLocalShellRequests.asSharedFlow()
+
+    /**
      * Open a terminal tab into the given distro. Restores the entry-point
      * removed in v5.38.0 when the Connections topbar lost its "Alpine
      * console" icon — see GlassHaven/Haven#168. Reuses the single canonical
      * "Local Shell" profile (mirrors McpTools.openLocalShell so the agent
      * and the user reach the same place) and switches the active distro
-     * to [distroId] first, so the proot session boots into the right
-     * rootfs. The pager switch to the Terminal tab and the tab creation
-     * are driven by [AgentUiCommand.OpenTerminalSession] — HavenNavHost
-     * collects the bus and animates the page; TerminalViewModel collects
-     * the same bus and calls addLocalTabForProfile for the LOCAL profile.
+     * to [distroId] first, so the proot session boots into the right rootfs.
+     *
+     * Emits the resolved profile id on [openLocalShellRequests] rather than
+     * the AgentUiCommandBus: the bus is replay=0 and TerminalViewModel only
+     * collects it while TerminalScreen is composed, so a request fired from
+     * the Desktop tab (Terminal not in the pager's composition window) was
+     * silently dropped — the tab never opened (#168 regression). HavenNavHost
+     * is always composed, so routing through it is reliable.
      */
     fun openShellForDistro(distroId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -143,7 +157,7 @@ class DesktopViewModel @Inject constructor(
                     it.connectionType == "LOCAL" && it.label == "Local Shell" && !it.useAndroidShell
                 } ?: seeded
             }
-            agentUiCommandBus.emit(AgentUiCommand.OpenTerminalSession(profile.id))
+            _openLocalShellRequests.emit(profile.id)
         }
     }
 

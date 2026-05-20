@@ -128,6 +128,7 @@ private val TAB_GROUP_COLORS = listOf(
 fun TerminalScreen(
     navigateToProfileId: String? = null,
     newSessionProfileId: String? = null,
+    openLocalShellProfileId: String? = null,
     isActive: Boolean = false,
     terminalModifier: Modifier = Modifier,
     fontSize: Int = UserPreferencesRepository.DEFAULT_FONT_SIZE,
@@ -430,6 +431,18 @@ fun TerminalScreen(
     LaunchedEffect(newSessionProfileId) {
         if (newSessionProfileId != null) {
             viewModel.addSshTabForProfile(newSessionProfileId)
+        }
+    }
+
+    // Open a local-shell tab for the Desktop → Manage shell button (#168).
+    // Driven by a pending profile id from HavenNavHost rather than the
+    // AgentUiCommandBus: the bus is replay=0 and this ViewModel only collects
+    // it while this screen is composed, so a request fired from the Desktop
+    // tab was dropped before TerminalScreen existed. Consuming a pending id
+    // here runs once the screen is composed after the pager switch.
+    LaunchedEffect(openLocalShellProfileId) {
+        if (openLocalShellProfileId != null) {
+            viewModel.addLocalTabForProfile(openLocalShellProfileId)
         }
     }
 

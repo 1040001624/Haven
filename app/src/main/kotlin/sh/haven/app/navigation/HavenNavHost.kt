@@ -279,12 +279,29 @@ fun HavenNavHost(
     var pendingTerminalProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     // Profile ID for opening a new session (new tab) on an existing connection
     var pendingNewSessionProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Profile ID for opening a local-shell tab (Desktop → Manage shell button,
+    // #168). Routed through here rather than the AgentUiCommandBus because
+    // TerminalViewModel only collects the bus while TerminalScreen is composed,
+    // and the Desktop tab is outside the pager's composition window — the bus
+    // event was dropped and no tab opened. HavenNavHost is always composed.
+    var pendingLocalShellProfileId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // SMB auto-connect params
     var pendingSmbProfileId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Rclone auto-connect params
     var pendingRcloneProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Local-shell open requests from the Desktop → Manage shell button (#168).
+    // Always-composed HavenNavHost collects them, sets the pending profile,
+    // and animates to the Terminal page; TerminalScreen creates the tab once
+    // composed (see pendingLocalShellProfileId).
+    LaunchedEffect(desktopViewModel) {
+        desktopViewModel.openLocalShellRequests.collect { profileId ->
+            pendingLocalShellProfileId = profileId
+            pagerState.animateScrollToPage(pageOf(Screen.Terminal))
+        }
+    }
 
     // Disable pager swipe while terminal text selection is active
     var terminalSelectionActive by remember { mutableStateOf(false) }
@@ -404,6 +421,7 @@ fun HavenNavHost(
                     TerminalScreen(
                         navigateToProfileId = pendingTerminalProfileId,
                         newSessionProfileId = pendingNewSessionProfileId,
+                        openLocalShellProfileId = pendingLocalShellProfileId,
                         isActive = pagerState.settledPage == pageOf(Screen.Terminal),
                         fontSize = terminalFontSize,
                         terminalFontPath = terminalFontPath,
@@ -484,6 +502,12 @@ fun HavenNavHost(
                         if (pendingNewSessionProfileId != null) {
                             kotlinx.coroutines.delay(6000)
                             pendingNewSessionProfileId = null
+                        }
+                    }
+                    LaunchedEffect(pendingLocalShellProfileId) {
+                        if (pendingLocalShellProfileId != null) {
+                            kotlinx.coroutines.delay(6000)
+                            pendingLocalShellProfileId = null
                         }
                     }
                 }
