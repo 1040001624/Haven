@@ -1808,6 +1808,18 @@ fun ConnectionEditDialog(
                                 }
                             }
                         }
+                    } else {
+                        // No keys exist yet — surface the path instead of
+                        // hiding the whole control, so attaching a key is
+                        // discoverable from inside the connection editor
+                        // (#170). The Keys tab is now shown once an SSH
+                        // connection exists, so "the Keys tab" is reachable.
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.connections_ssh_key_none_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
 
                     // Saved VNC settings (shown when the SSH profile has had

@@ -203,6 +203,7 @@
     <string name="connections_helper_forward_agent">Exposes non-encrypted stored SSH keys to the remote host (for git push etc.). Encrypted keys are skipped.</string>
     <string name="connections_field_ssh_key">SSH Key</string>
     <string name="connections_ssh_key_any">Any (try all keys)</string>
+    <string name="connections_ssh_key_none_hint">No SSH keys yet — add or generate one in the Keys tab, then attach it here.</string>
     <string name="connections_field_vnc_port">VNC port</string>
     <string name="connections_field_vnc_password">VNC password</string>
     <string name="connections_field_vnc_color_depth">VNC colour depth</string>

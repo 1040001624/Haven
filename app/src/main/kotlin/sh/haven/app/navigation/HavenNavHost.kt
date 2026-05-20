@@ -119,7 +119,12 @@ fun HavenNavHost(
     val hasDesktopConnections = waylandRunning || desktopTabs.isNotEmpty() ||
         connections.any { it.isVnc || it.isRdp || it.isLocal }
     val hasTerminalProfiles = connections.any { it.isTerminal }
-    val hasKeysOrCaConfigs = sshKeys.isNotEmpty() || stepCaConfigs.isNotEmpty()
+    // Show Keys once the user has any key/CA config OR any SSH connection
+    // to attach a key to — otherwise there's a chicken-and-egg: a fresh
+    // SSH connection can't reach key management to generate/import a key
+    // (#170). isSsh covers the key-auth-capable profiles.
+    val hasKeysOrCaConfigs = sshKeys.isNotEmpty() || stepCaConfigs.isNotEmpty() ||
+        connections.any { it.isSsh }
 
     val screenOrderPref by preferencesRepository.screenOrder
         .collectAsState(initial = emptyList())
