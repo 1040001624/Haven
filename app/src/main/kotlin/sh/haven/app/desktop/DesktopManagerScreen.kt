@@ -365,6 +365,39 @@ private fun DesktopManagerSection(
                 Spacer(Modifier.height(8.dp))
             }
 
+            // In-progress desktop-install indicator. The DesktopSetupDialog
+            // normally shows this, but its "which DE" state is screen-local
+            // `remember` and is lost when the user navigates away (e.g. to
+            // the Terminal tab) and back while the install keeps running in
+            // the ViewModel scope — leaving the rows dimmed with no
+            // explanation, which reads as a silent failure. desktopSetupState
+            // lives in ProotManager so it survives navigation; drive a
+            // banner off it so the Manage screen always shows an install
+            // that's still going.
+            val deInstalling = desktopSetupState as? ProotManager.DesktopSetupState.Installing
+            if (deInstalling != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        deInstalling.step.ifBlank {
+                            stringResource(R.string.connections_desktop_installing)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
             val activeDistro = DistroCatalog.lookup(activeDistroId)
             val compatibleDes = ProotManager.DesktopEnvironment.entries
                 .filter { !it.hidden }
