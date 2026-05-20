@@ -237,20 +237,79 @@ fun WaylandDesktopView(
                     }
 
                     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-                        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT
+                        // Suppress the Android IME's composing region so each
+                        // keystroke is forwarded immediately. The labwc surface
+                        // sends raw evdev keycodes to the focused Wayland app —
+                        // an Android-side composing/autocorrect buffer only held
+                        // text back until space/close (#172). VISIBLE_PASSWORD +
+                        // NO_SUGGESTIONS is the signal Gboard et al. honour to
+                        // stop composing (same as the terminal's ImeInputView).
+                        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                            android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
+                            android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or
-                            EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                            EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                            EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
                         val view = this
                         return object : BaseInputConnection(view, false) {
+                            // Chars already forwarded as evdev for the current
+                            // composing region. IMEs that ignore the
+                            // no-suggestions hint (Samsung, CJK) still compose;
+                            // we dispatch each delta live and reconcile on commit
+                            // so nothing is double-sent. Empty on the common
+                            // flag-suppressed path (direct commitText).
+                            private var composing = ""
+
+                            private fun backspaces(n: Int) {
+                                repeat(n.coerceAtLeast(0)) {
+                                    WaylandBridge.nativeSendKey(14, 1) // KEY_BACKSPACE
+                                    WaylandBridge.nativeSendKey(14, 0)
+                                }
+                            }
+
+                            override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                                val new = text?.toString() ?: ""
+                                when {
+                                    new == composing -> {}
+                                    new.startsWith(composing) ->
+                                        new.substring(composing.length).forEach { sendCharAsEvdev(it) }
+                                    composing.startsWith(new) ->
+                                        backspaces(composing.length - new.length)
+                                    else -> {
+                                        backspaces(composing.length)
+                                        new.forEach { sendCharAsEvdev(it) }
+                                    }
+                                }
+                                composing = new
+                                return true
+                            }
+
+                            override fun finishComposingText(): Boolean {
+                                composing = ""
+                                return true
+                            }
+
                             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                                text?.forEach { ch -> sendCharAsEvdev(ch) }
+                                val committed = text?.toString() ?: ""
+                                when {
+                                    composing.isEmpty() -> committed.forEach { sendCharAsEvdev(it) }
+                                    committed == composing -> { /* already sent via composing deltas */ }
+                                    else -> {
+                                        backspaces(composing.length)
+                                        committed.forEach { sendCharAsEvdev(it) }
+                                    }
+                                }
+                                composing = ""
                                 return true
                             }
 
                             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                                repeat(beforeLength) {
-                                    WaylandBridge.nativeSendKey(14, 1) // KEY_BACKSPACE
-                                    WaylandBridge.nativeSendKey(14, 0)
+                                if (composing.isNotEmpty()) {
+                                    val n = beforeLength.coerceAtMost(composing.length)
+                                    backspaces(n)
+                                    composing = composing.dropLast(n)
+                                } else {
+                                    backspaces(beforeLength)
                                 }
                                 return true
                             }
