@@ -99,6 +99,10 @@ fun WaylandDesktopView(
     // permille = higher resolution / more workspace, higher = larger UI.
     var displayScalePermille by rememberSaveable { mutableIntStateOf(1000) }
     var scaleMenuOpen by remember { mutableStateOf(false) }
+    // Physical surface size (px), used to label the scale options with the
+    // actual logical resolution each one produces (#161).
+    var surfacePxW by remember { mutableIntStateOf(0) }
+    var surfacePxH by remember { mutableIntStateOf(0) }
     DisposableEffect(Unit) {
         onDispose {
             WaylandBridge.nativeSetSurface(null)
@@ -203,6 +207,8 @@ fun WaylandDesktopView(
                                 android.util.Log.i("WaylandTV", "TextureAvailable: ${w}x${h} view=${width}x${height}")
                                 initialWidth = w
                                 initialHeight = h
+                                surfacePxW = w
+                                surfacePxH = h
                                 st.setDefaultBufferSize(w, h)
                                 nativeSurface = Surface(st)
                                 WaylandBridge.nativeSetSurface(nativeSurface)
@@ -221,6 +227,8 @@ fun WaylandDesktopView(
                                 if (w != initialWidth) {
                                     initialWidth = w
                                     initialHeight = h
+                                    surfacePxW = w
+                                    surfacePxH = h
                                     st.setDefaultBufferSize(w, h)
                                 }
                             }
@@ -434,6 +442,8 @@ fun WaylandDesktopView(
                         }
                         ResolutionScaleButton(
                             currentPermille = displayScalePermille,
+                            surfacePxW = surfacePxW,
+                            surfacePxH = surfacePxH,
                             expanded = scaleMenuOpen,
                             onExpandedChange = { scaleMenuOpen = it },
                             onSelect = {
@@ -497,6 +507,8 @@ fun WaylandDesktopView(
                 }
                 ResolutionScaleButton(
                     currentPermille = displayScalePermille,
+                    surfacePxW = surfacePxW,
+                    surfacePxH = surfacePxH,
                     expanded = scaleMenuOpen,
                     onExpandedChange = { scaleMenuOpen = it },
                     onSelect = {
@@ -541,37 +553,61 @@ fun WaylandDesktopView(
     } // Column
 }
 
+/* Must match DPI_SCALE in wayland-android/jni_bridge.c — the compositor
+ * renders at physical_pixels / DPI_SCALE and Android upscales. Used only to
+ * label the scale options with the resolution they produce (#161). */
+private const val LABWC_DPI_SCALE = 3
+
 /**
- * Desktop-resolution / display-scale control for labwc-native (#161).
- * Each option is a zoom permille handed to [WaylandBridge.nativeSetZoom] with
- * commit=true, which rescales the compositor output mode and reflows windows
- * (a real resolution change, unlike the Compose-level pinch zoom). The
- * permille doubles as a UI-scale percentage: 1000 = 100% (surface default),
- * lower = more workspace / smaller UI, higher = larger UI / less workspace.
+ * Desktop-resolution control for labwc-native (#161). Each option is a zoom
+ * permille handed to [WaylandBridge.nativeSetZoom] with commit=true, which
+ * rescales the compositor output mode and reflows windows (a real resolution
+ * change, unlike the Compose-level pinch zoom). 1000 = the surface-derived
+ * default; lower = higher resolution / more workspace, higher = larger UI.
+ *
+ * Options are labelled with the actual resolution each produces — derived from
+ * the live surface size: mode = (surfacePx / DPI_SCALE) * 1000 / permille,
+ * matching the native nativeSetZoom maths. Falls back to a percent label
+ * before the surface size is known.
  */
 @Composable
 private fun ResolutionScaleButton(
     currentPermille: Int,
+    surfacePxW: Int,
+    surfacePxH: Int,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onSelect: (Int) -> Unit,
     buttonSizeDp: Int,
     iconSizeDp: Int,
 ) {
-    val options = listOf(50, 75, 100, 150, 200)
+    // nativeSetZoom clamps permille to [500, 4000]; offer the high-resolution
+    // end (500 = 2x the default) through to a large-UI low-resolution option.
+    val permilles = listOf(500, 650, 800, 1000, 1300, 1700)
+    val baseW = surfacePxW / LABWC_DPI_SCALE
+    val baseH = surfacePxH / LABWC_DPI_SCALE
+    fun label(permille: Int): String {
+        if (baseW <= 0 || baseH <= 0) return "${permille / 10}%"
+        val w = baseW * 1000 / permille
+        val h = baseH * 1000 / permille
+        val long = maxOf(w, h)
+        val short = minOf(w, h)
+        return "$long × $short"
+    }
     Box {
         IconButton(onClick = { onExpandedChange(true) }, modifier = Modifier.size(buttonSizeDp.dp)) {
             Icon(
                 Icons.Default.AspectRatio,
-                contentDescription = "Display scale",
+                contentDescription = "Desktop resolution",
                 modifier = Modifier.size(iconSizeDp.dp),
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { onExpandedChange(false) }) {
-            for (pct in options) {
-                val permille = pct * 10
+            for (permille in permilles) {
+                val suffix = if (permille == 1000) "  (default)" else ""
+                val check = if (permille == currentPermille) "  ✓" else ""
                 DropdownMenuItem(
-                    text = { Text(if (permille == currentPermille) "$pct%  ✓" else "$pct%") },
+                    text = { Text(label(permille) + suffix + check) },
                     onClick = { onSelect(permille); onExpandedChange(false) },
                 )
             }
