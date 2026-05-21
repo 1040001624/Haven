@@ -228,6 +228,66 @@ func (t *TunnelHandle) StartSocksListener() (int, error) {
 	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
+// BindAddr returns the tunnel's WireGuard interface IP (the first
+// [Interface] Address), as both the listen address for [ListenTCP] and
+// the host a peer dials to reach a server bound on it. Empty if unset.
+func (t *TunnelHandle) BindAddr() string {
+	if t.bindAddr.IsValid() {
+		return t.bindAddr.String()
+	}
+	return ""
+}
+
+// Listener accepts inbound TCP connections on the tunnel's WireGuard
+// interface address inside the gVisor netstack. Returned by
+// [TunnelHandle.ListenTCP]. Closing the tunnel also tears down the
+// underlying netstack, so a pending Accept then returns an error.
+type Listener struct {
+	ln net.Listener
+}
+
+// ListenTCP binds a TCP listener on the tunnel's WireGuard interface
+// address (the same specific [Interface] Address the UDP path binds to —
+// the netstack won't route from an unspecified 0.0.0.0). Lets an
+// on-device server accept connections from WireGuard peers, e.g. the MCP
+// endpoint reachable at <wg-interface-ip>:port and stable across roams.
+func (t *TunnelHandle) ListenTCP(port int) (*Listener, error) {
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return nil, errors.New("tunnel closed")
+	}
+	tnet := t.tnet
+	addr := netip.AddrPortFrom(t.bindAddr, uint16(port))
+	t.mu.Unlock()
+
+	ln, err := tnet.ListenTCPAddrPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("netstack ListenTCP %s: %w", addr, err)
+	}
+	return &Listener{ln: ln}, nil
+}
+
+// Accept blocks until a peer connects, returning the connection wrapped
+// as a [Conn]. A non-nil error means the listener (or tunnel) was closed.
+func (l *Listener) Accept() (*Conn, error) {
+	c, err := l.ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &Conn{c: c}, nil
+}
+
+// Addr returns the bound "ip:port" for diagnostics.
+func (l *Listener) Addr() string {
+	return l.ln.Addr().String()
+}
+
+// Close stops accepting. Idempotent.
+func (l *Listener) Close() error {
+	return l.ln.Close()
+}
+
 // Close tears down the tunnel. Idempotent.
 func (t *TunnelHandle) Close() {
 	t.mu.Lock()

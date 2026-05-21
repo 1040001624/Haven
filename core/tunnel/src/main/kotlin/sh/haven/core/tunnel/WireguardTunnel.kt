@@ -1,6 +1,7 @@
 package sh.haven.core.tunnel
 
 import sh.haven.rclone.binding.wgbridge.Conn as NativeConn
+import sh.haven.rclone.binding.wgbridge.Listener as NativeListener
 import sh.haven.rclone.binding.wgbridge.TunnelHandle as NativeHandle
 import sh.haven.rclone.binding.wgbridge.UDPConn as NativeUDPConn
 import sh.haven.rclone.binding.wgbridge.Wgbridge
@@ -62,11 +63,45 @@ class WireguardTunnel internal constructor(configText: String) : Tunnel {
         }
     }
 
+    override fun listenTcp(port: Int): TunneledServerSocket? {
+        val ln = try {
+            native.listenTCP(port.toLong())
+        } catch (e: Exception) {
+            throw IOException("WireGuard listenTCP $port failed: ${e.message}", e)
+        }
+        return NativeTunneledServerSocket(ln)
+    }
+
+    override fun localAddress(): String? = native.bindAddr().takeIf { it.isNotBlank() }
+
     override fun close() {
         try {
             native.close()
         } catch (_: Throwable) {
             // Best-effort teardown.
+        }
+    }
+}
+
+/** Wraps a native [NativeListener] as [TunneledServerSocket]. */
+private class NativeTunneledServerSocket(
+    private val listener: NativeListener,
+) : TunneledServerSocket {
+
+    override fun accept(): TunneledConnection {
+        val conn = try {
+            listener.accept()
+        } catch (e: Exception) {
+            throw IOException("WireGuard accept failed: ${e.message}", e)
+        }
+        return NativeTunneledConnection(conn)
+    }
+
+    override fun close() {
+        try {
+            listener.close()
+        } catch (_: Throwable) {
+            // Already-closed listeners raise here; ignore.
         }
     }
 }

@@ -100,6 +100,11 @@ class UserPreferencesRepository @Inject constructor(
     // reachable on-device or via a manual `adb forward`. See
     // McpTunnelManager.
     private val mcpTunnelEndpointProfileIdKey = stringPreferencesKey("mcp_tunnel_endpoint_profile_id")
+    // When on, the MCP server also binds a listener on whichever WireGuard
+    // tunnel is currently up (stable netstack address, reachable by WG peers
+    // across roams — no reverse forward). Off by default: a WG-reachable
+    // listener is a wider surface than the loopback bind. See McpServer (#176).
+    private val mcpWireguardEnabledKey = booleanPreferencesKey("mcp_wireguard_enabled")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -485,6 +490,21 @@ class UserPreferencesRepository @Inject constructor(
             } else {
                 prefs[mcpTunnelEndpointProfileIdKey] = profileId
             }
+        }
+    }
+
+    /**
+     * Whether the MCP server also exposes itself on the active WireGuard
+     * tunnel's interface address. Default **false** — opt-in because it
+     * widens the listener's reach from device-loopback to every WG peer.
+     */
+    val mcpWireguardEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[mcpWireguardEnabledKey] ?: false
+    }
+
+    suspend fun setMcpWireguardEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[mcpWireguardEnabledKey] = enabled
         }
     }
 

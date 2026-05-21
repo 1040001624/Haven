@@ -134,6 +134,26 @@ class TunnelManager @Inject constructor(
         return null
     }
 
+    /**
+     * Register [profileId] as a dependent of whichever WireGuard tunnel is
+     * currently live (the first, if several) and return it — or null if no
+     * WireGuard tunnel is up. Used by the MCP server (#176) to bind its
+     * endpoint listener on an already-active WG tunnel and keep that tunnel
+     * alive (via the refcount) for as long as MCP is bound, even after the
+     * profile that originally brought it up disconnects. Release with the
+     * same [profileId] via [release].
+     */
+    suspend fun acquireFirstWireguard(profileId: String): Tunnel? = mutex.withLock {
+        val entry = liveTunnels.entries.firstOrNull { it.value is WireguardTunnel }
+            ?: return@withLock null
+        val configId = entry.key
+        // A synthetic MCP profileId only ever holds this one tunnel, so the
+        // acquiredBy bookkeeping mirrors the normal acquire path.
+        dependents.getOrPut(configId) { mutableSetOf() }.add(profileId)
+        acquiredBy[profileId] = configId
+        entry.value
+    }
+
     /** Test / introspection — number of live dependents on the given config. */
     suspend fun dependentCount(configId: String): Int = mutex.withLock {
         dependents[configId]?.size ?: 0

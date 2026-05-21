@@ -135,6 +135,15 @@ class HavenApp : Application(), Configuration.Provider {
             }
             .launchIn(appScope)
 
+        // Bind/unbind the MCP WireGuard listener when the user toggles it
+        // while the server is running. drop(1): start() reads the initial
+        // value itself, so this only reacts to later changes.
+        preferencesRepository.mcpWireguardEnabled
+            .drop(1)
+            .distinctUntilChanged()
+            .onEach { mcpServer.setWireguardEnabled(it) }
+            .launchIn(appScope)
+
         // Schedule the daily step-ca cert-renewal check (#133 phase 2b).
         // Idempotent (KEEP policy); cheap when the user has no CAs
         // configured — the worker enumerates SshKeys and exits early.

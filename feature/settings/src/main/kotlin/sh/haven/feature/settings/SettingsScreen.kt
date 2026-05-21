@@ -801,6 +801,22 @@ fun SettingsScreen(
                 }
             }
 
+            // Expose the endpoint on the active WireGuard tunnel too — a
+            // stable netstack address WG peers can reach across roams, no
+            // reverse forward. Off by default (wider surface than loopback).
+            val mcpWireguardEnabled by viewModel.mcpWireguardEnabled.collectAsState()
+            SettingsToggleItem(
+                icon = Icons.Filled.Hub,
+                title = "Expose on WireGuard tunnel",
+                subtitle = if (mcpWireguardEnabled) {
+                    "Enabled — also reachable at <wg-ip>:8730 on the active WireGuard tunnel"
+                } else {
+                    "Disabled — turn on to reach the endpoint over an active WireGuard tunnel"
+                },
+                checked = mcpWireguardEnabled,
+                onCheckedChange = viewModel::setMcpWireguardEnabled,
+            )
+
             // Endpoint URL is always the canonical port range start —
             // the server binds to the first free port in 8730..8739
             val endpointUrl = "http://127.0.0.1:8730/mcp"

@@ -183,6 +183,16 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.mcpTunnelEndpointProfileId
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    /** Whether the MCP server also binds on the active WireGuard tunnel. */
+    val mcpWireguardEnabled: StateFlow<Boolean> = preferencesRepository.mcpWireguardEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setMcpWireguardEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setMcpWireguardEnabled(enabled)
+        }
+    }
+
     val agentAllowFileRead: StateFlow<Boolean> = preferencesRepository.agentAllowFileRead
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

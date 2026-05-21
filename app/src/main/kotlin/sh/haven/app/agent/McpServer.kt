@@ -5,7 +5,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -33,7 +36,9 @@ import sh.haven.feature.sftp.SftpStreamServer
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -49,6 +54,10 @@ private const val TAG = "McpServer"
  *  retryable error. Kept below the 10s socket timeout so the connection isn't
  *  dropped mid-wait. */
 private const val CONSENT_WAIT_MS: Long = 8_000L
+
+/** Backoff between WireGuard (re)bind attempts when no tunnel is up yet
+ *  or the listener dropped (roam re-handshake, tunnel released). */
+private const val WG_RETRY_MS: Long = 5_000L
 
 /**
  * Minimal Model Context Protocol (MCP) server for Haven.
@@ -196,6 +205,19 @@ class McpServer @Inject constructor(
     val endpointUrl: StateFlow<String?> = _endpointUrl.asStateFlow()
 
     /**
+     * URL the endpoint is reachable at over the active WireGuard tunnel
+     * (`http://<wg-interface-ip>:<port>/mcp`), or null when not bound on a
+     * WG tunnel. Stable across the device's WiFi/hotspot roams. (#176)
+     */
+    private val _wireguardEndpointUrl = MutableStateFlow<String?>(null)
+    val wireguardEndpointUrl: StateFlow<String?> = _wireguardEndpointUrl.asStateFlow()
+
+    /** Synthetic profile id under which the MCP listener holds a WG tunnel. */
+    private val wireguardProfileId = "mcp-wg-listener"
+    private var wireguardJob: Job? = null
+    @Volatile private var wireguardListener: sh.haven.core.tunnel.TunneledServerSocket? = null
+
+    /**
      * Standard MCP server registration JSON for the Haven endpoint.
      * Null when the server isn't running. Any MCP-aware client can
      * merge this into its own config; the shape is compatible with
@@ -301,9 +323,93 @@ class McpServer @Inject constructor(
             }
             Log.i(TAG, "MCP accept loop exited")
         }
+
+        // Optionally also expose the endpoint on the active WireGuard tunnel.
+        if (runBlocking { preferencesRepository.mcpWireguardEnabled.first() }) {
+            startWireguardBinderLocked()
+        }
     }
 
     override fun close() = stop()
+
+    /**
+     * Enable/disable the WireGuard-exposed listener at runtime (driven by
+     * the `mcpWireguardEnabled` preference). No-op when the server isn't
+     * running — [start] picks up the current pref value itself.
+     */
+    fun setWireguardEnabled(enabled: Boolean) = synchronized(lifecycleLock) {
+        if (!isRunning) return@synchronized
+        if (enabled) startWireguardBinderLocked() else stopWireguardBinderLocked()
+    }
+
+    /** Must hold [lifecycleLock]. Idempotent. */
+    private fun startWireguardBinderLocked() {
+        if (wireguardJob?.isActive == true) return
+        val boundPort = port
+        wireguardJob = scope.launch {
+            while (isActive) {
+                // Bind on whichever WireGuard tunnel is currently up; holding
+                // it as a dependent keeps it alive while MCP is bound.
+                val tunnel = tunnelManager.acquireFirstWireguard(wireguardProfileId)
+                if (tunnel == null) {
+                    delay(WG_RETRY_MS)
+                    continue
+                }
+                val ln = try {
+                    tunnel.listenTcp(boundPort)
+                } catch (e: Exception) {
+                    Log.w(TAG, "WG listen on $boundPort failed: ${e.message}")
+                    tunnelManager.release(wireguardProfileId)
+                    delay(WG_RETRY_MS)
+                    continue
+                }
+                if (ln == null) {
+                    tunnelManager.release(wireguardProfileId)
+                    delay(WG_RETRY_MS)
+                    continue
+                }
+                wireguardListener = ln
+                _wireguardEndpointUrl.value = tunnel.localAddress()?.let { "http://$it:$boundPort/mcp" }
+                Log.i(TAG, "MCP also listening on WireGuard ${_wireguardEndpointUrl.value ?: ":$boundPort"}")
+                try {
+                    while (isActive) {
+                        val conn = ln.accept()
+                        scope.launch {
+                            try {
+                                handleConnection(conn.inputStream, conn.outputStream)
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "WG worker crashed: ${e.message}")
+                            } finally {
+                                try { conn.close() } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // accept() throws when the listener or tunnel closes
+                    // (roam re-handshake, profile released the tunnel, or our
+                    // own stop closed it) — fall through to re-acquire.
+                    Log.i(TAG, "WG accept loop ended: ${e.message}")
+                } finally {
+                    wireguardListener = null
+                    _wireguardEndpointUrl.value = null
+                    tunnelManager.release(wireguardProfileId)
+                }
+                if (isActive) delay(WG_RETRY_MS)
+            }
+        }
+    }
+
+    /** Must hold [lifecycleLock]. Idempotent. */
+    private fun stopWireguardBinderLocked() {
+        wireguardJob?.cancel()
+        wireguardJob = null
+        // Close the listener to unblock a pending accept(), then drop our
+        // hold on the tunnel.
+        try { wireguardListener?.close() } catch (_: Exception) {}
+        wireguardListener = null
+        _wireguardEndpointUrl.value = null
+        scope.launch { tunnelManager.release(wireguardProfileId) }
+    }
 
     fun stop() = synchronized(lifecycleLock) {
         stopLocked()
@@ -312,6 +418,7 @@ class McpServer @Inject constructor(
     /** Must be called while holding [lifecycleLock]. */
     private fun stopLocked() {
         isRunning = false
+        stopWireguardBinderLocked()
         try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
         serverThread = null
@@ -362,78 +469,87 @@ class McpServer @Inject constructor(
     private fun handleClient(socket: Socket) {
         try {
             socket.soTimeout = 10_000
-            socket.use { s ->
-                val reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-                val requestLine = reader.readLine() ?: return
-                val parts = requestLine.split(" ")
-                if (parts.size < 3) {
-                    writeError(s, 400, "Bad Request")
-                    return
-                }
-                val method = parts[0]
-                val path = parts[1]
-
-                // Parse headers
-                var contentLength = 0
-                var mcpSessionIdHeader: String? = null
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    if (line.isEmpty()) break
-                    val colon = line.indexOf(':')
-                    if (colon > 0) {
-                        val name = line.substring(0, colon).trim().lowercase()
-                        val value = line.substring(colon + 1).trim()
-                        when (name) {
-                            "content-length" -> contentLength = value.toIntOrNull() ?: 0
-                            "mcp-session-id" -> mcpSessionIdHeader = value.takeIf { it.isNotEmpty() }
-                        }
-                    }
-                }
-
-                when {
-                    method == "POST" && (path == "/mcp" || path == "/") -> {
-                        val body = if (contentLength > 0) {
-                            val buf = CharArray(contentLength)
-                            var read = 0
-                            while (read < contentLength) {
-                                val n = reader.read(buf, read, contentLength - read)
-                                if (n < 0) break
-                                read += n
-                            }
-                            String(buf, 0, read)
-                        } else ""
-                        val outcome = handleJsonRpc(body, mcpSessionIdHeader)
-                        if (outcome.httpStatus == 404) {
-                            // Streamable-HTTP signal: presented session id
-                            // is unknown. Empty body — the client treats
-                            // this as "session expired, re-initialize".
-                            writeJson(s, 404, "", null)
-                        } else {
-                            writeJson(s, outcome.httpStatus, outcome.body, outcome.responseSessionId)
-                        }
-                    }
-                    method == "GET" && (path == "/mcp" || path == "/") -> {
-                        // SSE channel for server-initiated messages — not
-                        // supported in v1. Spec allows 405.
-                        writeError(s, 405, "Method Not Allowed")
-                    }
-                    method == "OPTIONS" -> {
-                        // CORS preflight — respond permissive for local use
-                        val headers = buildString {
-                            append("HTTP/1.1 204 No Content\r\n")
-                            append("Access-Control-Allow-Origin: *\r\n")
-                            append("Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n")
-                            append("Access-Control-Allow-Headers: Content-Type, Mcp-Session-Id, Mcp-Protocol-Version\r\n")
-                            append("Content-Length: 0\r\n")
-                            append("\r\n")
-                        }
-                        s.getOutputStream().write(headers.toByteArray(Charsets.UTF_8))
-                    }
-                    else -> writeError(s, 404, "Not Found")
-                }
-            }
+            socket.use { s -> handleConnection(s.getInputStream(), s.getOutputStream()) }
         } catch (e: Exception) {
             Log.w(TAG, "client handler error: ${e.message}")
+        }
+    }
+
+    /**
+     * Serve one HTTP/JSON-RPC request off a raw stream pair. Shared by the
+     * loopback [ServerSocket] path ([handleClient]) and the WireGuard
+     * netstack accept loop ([wireguardAcceptLoop]) so both transports run
+     * identical request handling + pairing checks (#176).
+     */
+    private fun handleConnection(input: InputStream, output: OutputStream) {
+        val reader = BufferedReader(InputStreamReader(input, Charsets.UTF_8))
+        val requestLine = reader.readLine() ?: return
+        val parts = requestLine.split(" ")
+        if (parts.size < 3) {
+            writeError(output, 400, "Bad Request")
+            return
+        }
+        val method = parts[0]
+        val path = parts[1]
+
+        // Parse headers
+        var contentLength = 0
+        var mcpSessionIdHeader: String? = null
+        while (true) {
+            val line = reader.readLine() ?: break
+            if (line.isEmpty()) break
+            val colon = line.indexOf(':')
+            if (colon > 0) {
+                val name = line.substring(0, colon).trim().lowercase()
+                val value = line.substring(colon + 1).trim()
+                when (name) {
+                    "content-length" -> contentLength = value.toIntOrNull() ?: 0
+                    "mcp-session-id" -> mcpSessionIdHeader = value.takeIf { it.isNotEmpty() }
+                }
+            }
+        }
+
+        when {
+            method == "POST" && (path == "/mcp" || path == "/") -> {
+                val body = if (contentLength > 0) {
+                    val buf = CharArray(contentLength)
+                    var read = 0
+                    while (read < contentLength) {
+                        val n = reader.read(buf, read, contentLength - read)
+                        if (n < 0) break
+                        read += n
+                    }
+                    String(buf, 0, read)
+                } else ""
+                val outcome = handleJsonRpc(body, mcpSessionIdHeader)
+                if (outcome.httpStatus == 404) {
+                    // Streamable-HTTP signal: presented session id is
+                    // unknown. Empty body — the client treats this as
+                    // "session expired, re-initialize".
+                    writeJson(output, 404, "", null)
+                } else {
+                    writeJson(output, outcome.httpStatus, outcome.body, outcome.responseSessionId)
+                }
+            }
+            method == "GET" && (path == "/mcp" || path == "/") -> {
+                // SSE channel for server-initiated messages — not supported
+                // in v1. Spec allows 405.
+                writeError(output, 405, "Method Not Allowed")
+            }
+            method == "OPTIONS" -> {
+                // CORS preflight — respond permissive for local use
+                val headers = buildString {
+                    append("HTTP/1.1 204 No Content\r\n")
+                    append("Access-Control-Allow-Origin: *\r\n")
+                    append("Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n")
+                    append("Access-Control-Allow-Headers: Content-Type, Mcp-Session-Id, Mcp-Protocol-Version\r\n")
+                    append("Content-Length: 0\r\n")
+                    append("\r\n")
+                }
+                output.write(headers.toByteArray(Charsets.UTF_8))
+                output.flush()
+            }
+            else -> writeError(output, 404, "Not Found")
         }
     }
 
@@ -842,7 +958,7 @@ class McpServer @Inject constructor(
     // --- HTTP response helpers ---
 
     private fun writeJson(
-        socket: Socket,
+        out: OutputStream,
         status: Int,
         body: String,
         sessionId: String? = null,
@@ -866,13 +982,12 @@ class McpServer @Inject constructor(
             if (sessionId != null) append("Mcp-Session-Id: $sessionId\r\n")
             append("\r\n")
         }
-        val out = socket.getOutputStream()
         out.write(headers.toByteArray(Charsets.UTF_8))
         if (bytes.isNotEmpty()) out.write(bytes)
         out.flush()
     }
 
-    private fun writeError(socket: Socket, status: Int, text: String) {
+    private fun writeError(out: OutputStream, status: Int, text: String) {
         val bytes = text.toByteArray(Charsets.UTF_8)
         val statusLine = "$status $text"
         val headers = buildString {
@@ -881,7 +996,6 @@ class McpServer @Inject constructor(
             append("Content-Length: ${bytes.size}\r\n")
             append("\r\n")
         }
-        val out = socket.getOutputStream()
         out.write(headers.toByteArray(Charsets.UTF_8))
         out.write(bytes)
         out.flush()

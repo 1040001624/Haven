@@ -53,9 +53,40 @@ interface Tunnel {
     fun socksAddress(): InetSocketAddress? = null
 
     /**
+     * Bind a TCP listener on the tunnel's own interface address inside the
+     * userspace netstack and return it, or null if the backend can't accept
+     * inbound connections. Lets an on-device server (the MCP endpoint, #176)
+     * accept connections from tunnel peers at [localAddress]:[port], stable
+     * across the device's WiFi/hotspot roams. Caller owns the returned
+     * socket and must close it. Closing the tunnel also tears it down.
+     */
+    fun listenTcp(port: Int): TunneledServerSocket? = null
+
+    /**
+     * The tunnel's own interface address (the WireGuard `[Interface]`
+     * Address) — both the bind host for [listenTcp] and the host a peer
+     * dials to reach a server bound on it. Null when the backend has no
+     * meaningful local address.
+     */
+    fun localAddress(): String? = null
+
+    /**
      * Tear down the tunnel. All outstanding connections are invalidated.
      * Idempotent.
      */
+    fun close()
+}
+
+/**
+ * An accepting socket bound inside a [Tunnel]'s netstack. Each [accept]
+ * blocks until a peer connects, returning a [TunneledConnection]. Mirrors
+ * [java.net.ServerSocket] without exposing a kernel socket.
+ */
+interface TunneledServerSocket {
+    /** Block until a peer connects. Throws [java.io.IOException] once closed. */
+    fun accept(): TunneledConnection
+
+    /** Stop accepting. Idempotent. Unblocks a pending [accept] with an error. */
     fun close()
 }
 
