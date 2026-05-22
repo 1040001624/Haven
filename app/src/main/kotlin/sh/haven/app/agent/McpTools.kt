@@ -1019,7 +1019,7 @@ internal class McpTools(
         // app restarts and rotated logcat buffers.
 
         "inspect_proot" to ToolHandler(
-            description = "Single rich read of the proot subsystem: active distro id, every Distro (id, label, family, installed, sizeMb, bytesOnDisk, postExtractHookIds), every DesktopEnvironment with per-family Stable/Experimental/Broken compatibility and Experimental notes, current osSetupState (phase / step / progress / errorPhase / errorMessage / errorTail), current desktopSetupState (phase / errorMessage / errorTail), and the last 50 install-log events. The single endpoint to drive issue #162 verification.",
+            description = "Single rich read of the proot subsystem: active distro id, every Distro (id, label, family, installed, sizeMb, bytesOnDisk, postExtractHookIds, and installedDesktops — the desktop ids installed on THAT distro's rootfs, so the cross-distro picture is visible without switching active distro), every DesktopEnvironment with per-family Stable/Experimental/Broken compatibility and Experimental notes, current osSetupState (phase / step / progress / errorPhase / errorMessage / errorTail), current desktopSetupState (phase / errorMessage / errorTail), and the last 50 install-log events. The single endpoint to drive issue #162 verification.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -4544,6 +4544,12 @@ internal class McpTools(
         })
         put("rootfsArches", JSONArray().apply {
             d.rootfsSources.keys.forEach { put(it.abi) }
+        })
+        // Which desktops are installed on THIS distro's rootfs — read
+        // per-distro so the cross-distro picture is visible without
+        // switching the active distro. Empty for non-installed distros.
+        put("installedDesktops", JSONArray().apply {
+            prootManager.installedDesktopsFor(d.id).forEach { put(it.spec.id) }
         })
     }
 

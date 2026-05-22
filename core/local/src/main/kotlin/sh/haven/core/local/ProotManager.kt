@@ -404,14 +404,26 @@ class ProotManager @Inject constructor(
             }
         }
 
-    /** All installed DEs — detected by checking verifyBinary on filesystem. */
+    /** All installed DEs on the active distro — verifyBinary on filesystem. */
     val installedDesktops: Set<DesktopEnvironment>
-        get() {
-            if (!isRootfsInstalled) return emptySet()
-            return DesktopEnvironment.entries.filter { de ->
-                File(activeRootfsDir, de.verifyBinary).exists()
-            }.toSet()
+        get() = installedDesktopsFor(activeDistroId)
+
+    /**
+     * Installed DEs for a *specific* distro, detected from that distro's
+     * own rootfs rather than the active one. Lets callers report which
+     * desktops are installed on every distro without switching the active
+     * distro first. Returns empty if the distro's rootfs isn't present.
+     */
+    fun installedDesktopsFor(distroId: String): Set<DesktopEnvironment> {
+        val rootfs = rootfsDirFor(distroId)
+        val binSh = File(rootfs, "bin/sh").toPath()
+        if (!java.nio.file.Files.exists(binSh, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return emptySet()
         }
+        return DesktopEnvironment.entries.filter { de ->
+            File(rootfs, de.verifyBinary).exists()
+        }.toSet()
+    }
 
     /** Compat alias — returns the first installed DE. */
     val installedDesktop: DesktopEnvironment?
