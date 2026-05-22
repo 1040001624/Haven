@@ -38,7 +38,11 @@ class CloudflareAccessTunnelTest {
         openServerSockets.forEach { runCatching { it.close(1000, null) } }
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
-        server.shutdown()
+        // shutdown() throws IOException if a WS dispatcher is still draining
+        // when the test ends — a teardown-timing race that shows up on slow
+        // CI runners, not a product fault (the body assertions have already
+        // run). Swallow it so cleanup can't flake an otherwise-green test.
+        runCatching { server.shutdown() }
     }
 
     /**
