@@ -925,8 +925,27 @@ class McpServer @Inject constructor(
             Log.e(TAG, "tool '$name' threw", e)
             throw McpError(-32603, "Tool failed: ${e.message}")
         }
+        // A tool can return an inline image by setting the reserved keys
+        // __imageBase64 + __mimeType (see McpTools.captureDesktop). Lift
+        // them into a proper MCP `image` content block so the agent sees
+        // the picture directly over the existing channel — no second port,
+        // no file download — and strip them from the text echo /
+        // structuredContent so the giant base64 blob isn't duplicated.
+        val imageB64 = content.optString("__imageBase64", null)
+        val imageMime = content.optString("__mimeType", null)
+        if (imageB64 != null) {
+            content.remove("__imageBase64")
+            content.remove("__mimeType")
+        }
         return JSONObject().apply {
             put("content", JSONArray().apply {
+                if (imageB64 != null) {
+                    put(JSONObject().apply {
+                        put("type", "image")
+                        put("data", imageB64)
+                        put("mimeType", imageMime ?: "image/png")
+                    })
+                }
                 put(JSONObject().apply {
                     put("type", "text")
                     put("text", content.toString(2))

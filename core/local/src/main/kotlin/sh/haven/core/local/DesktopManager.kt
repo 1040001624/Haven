@@ -351,6 +351,113 @@ class DesktopManager @Inject constructor(
             it.state == DesktopState.RUNNING || it.state == DesktopState.STARTING
         }?.vncPort
 
+    // ---- Agent capture / window enumeration (X11/VNC desktops) ----
+
+    /** A visible top-level X11 window on a running desktop. */
+    data class WindowInfo(
+        val id: String,
+        val title: String,
+        val x: Int,
+        val y: Int,
+        val width: Int,
+        val height: Int,
+    )
+
+    /**
+     * Resolve a running X11/VNC desktop's display number, throwing a
+     * caller-friendly message otherwise. Capture and enumeration only
+     * make sense for X11Vnc desktops driven by Xvnc — nested-Wayland
+     * desktops render through wayvnc and have no X display to talk to.
+     */
+    private fun requireX11Display(de: ProotManager.DesktopEnvironment): Int {
+        val instance = _desktops.value[de]
+            ?: throw IllegalStateException("Desktop '${de.spec.id}' is not running")
+        if (de.spec.launch !is LaunchSpec.X11Vnc) {
+            throw IllegalStateException(
+                "Capture/enumeration is only supported for X11/VNC desktops; " +
+                    "'${de.spec.id}' is ${de.spec.launch::class.simpleName}",
+            )
+        }
+        return instance.displayNumber
+    }
+
+    /**
+     * Enumerate visible top-level windows on a running X11 desktop using
+     * `xdotool`. Each window is emitted as a single pipe-delimited line
+     * (window names have '|' and newlines squashed to spaces) so the
+     * output parses unambiguously. Installs the capture toolset on first
+     * use via [ProotManager.ensureCaptureTools].
+     */
+    suspend fun listWindows(de: ProotManager.DesktopEnvironment): List<WindowInfo> {
+        val display = requireX11Display(de)
+        val (ready, detail) = prootManager.ensureCaptureTools()
+        if (!ready) throw IllegalStateException(detail)
+        // For each visible named window: eval the --shell geometry (sets
+        // X/Y/WIDTH/HEIGHT), squash the name to one field, emit one line.
+        val script = buildString {
+            append("export DISPLAY=:$display; export XAUTHORITY=/root/.Xauthority; ")
+            append("for id in \$(xdotool search --onlyvisible --name '.*' 2>/dev/null); do ")
+            append("g=\$(xdotool getwindowgeometry --shell \$id 2>/dev/null) || continue; ")
+            append("eval \"\$g\"; ")
+            append("n=\$(xdotool getwindowname \$id 2>/dev/null | tr '|\\n' '  '); ")
+            append("echo \"WIN|\$id|\$X|\$Y|\$WIDTH|\$HEIGHT|\$n\"; ")
+            append("done")
+        }
+        val (out, _) = prootManager.runCommandInProot(script)
+        return out.lineSequence()
+            .filter { it.startsWith("WIN|") }
+            .mapNotNull { line ->
+                val p = line.split("|")
+                if (p.size < 7) return@mapNotNull null
+                val x = p[2].toIntOrNull() ?: return@mapNotNull null
+                val y = p[3].toIntOrNull() ?: return@mapNotNull null
+                val w = p[4].toIntOrNull() ?: return@mapNotNull null
+                val h = p[5].toIntOrNull() ?: return@mapNotNull null
+                WindowInfo(
+                    id = p[1],
+                    title = p.drop(6).joinToString("|").trim(),
+                    x = x, y = y, width = w, height = h,
+                )
+            }
+            .toList()
+    }
+
+    /**
+     * Capture the whole root window of a running X11 desktop as PNG bytes
+     * via ImageMagick's `import`. Window-level cropping is done by the
+     * caller (which has the window geometry from [listWindows]) so this
+     * stays a single, reliable code path — `import -window root` always
+     * works on bare Xvnc, whereas per-window-id capture is finicky.
+     *
+     * The PNG is written to `/tmp` (bound to the app cacheDir), read back
+     * directly off the app's filesystem, then deleted.
+     */
+    suspend fun capture(de: ProotManager.DesktopEnvironment): ByteArray {
+        val display = requireX11Display(de)
+        val (ready, detail) = prootManager.ensureCaptureTools()
+        if (!ready) throw IllegalStateException(detail)
+        val fname = "haven-cap-${System.currentTimeMillis()}.png"
+        val script =
+            "export DISPLAY=:$display; export XAUTHORITY=/root/.Xauthority; " +
+                "rm -f /tmp/$fname; " +
+                "import -window root +repage /tmp/$fname > /tmp/$fname.log 2>&1; echo EXIT:\$?"
+        val (out, _) = prootManager.runCommandInProot(script)
+        val file = File(context.cacheDir, fname)
+        val logFile = File(context.cacheDir, "$fname.log")
+        try {
+            if (!file.exists() || file.length() == 0L) {
+                val log = if (logFile.exists()) logFile.readText() else ""
+                throw IllegalStateException(
+                    "Capture produced no image (import: ${log.take(400).trim()}; $out)",
+                )
+            }
+            return file.readBytes()
+        } finally {
+            file.delete()
+            logFile.delete()
+        }
+    }
+
     // ---- X11/VNC desktop launch (software rendering, no virgl) ----
 
     private fun launchX11Desktop(

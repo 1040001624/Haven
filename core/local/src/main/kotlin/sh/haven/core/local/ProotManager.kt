@@ -15,6 +15,7 @@ import sh.haven.core.local.proot.DesktopEnvironmentSpec
 import sh.haven.core.local.proot.Distro
 import sh.haven.core.local.proot.DistroCatalog
 import sh.haven.core.local.proot.LaunchSpec
+import sh.haven.core.local.proot.PackageFamily
 import sh.haven.core.local.proot.PackageOps
 import sh.haven.core.local.proot.RootfsFormat
 import sh.haven.core.local.proot.RootfsSource
@@ -1203,6 +1204,39 @@ class ProotManager @Inject constructor(
         val output = process.inputStream.bufferedReader().readText()
         val exitCode = process.waitFor()
         Pair(output, exitCode)
+    }
+
+    /**
+     * Ensure the guest has the tools an agent needs to screenshot a
+     * desktop and enumerate its windows: `xdotool` (window list +
+     * geometry) and ImageMagick's `import` (root capture).
+     *
+     * Installed on demand the first time a capture is requested rather
+     * than baked into every desktop's package list — adding packages to
+     * an already-installed DE silently no-ops because the install marker
+     * short-circuits setupDesktop. A presence check + targeted install is
+     * the reliable path. Returns (ready, detail) where detail is a short
+     * human-readable status (or the install-failure tail).
+     */
+    suspend fun ensureCaptureTools(): Pair<Boolean, String> {
+        val probeCmd =
+            "command -v xdotool >/dev/null 2>&1 && command -v import >/dev/null 2>&1 && echo HAVE || echo MISSING"
+        val (probe, _) = runCommandInProot(probeCmd)
+        if (probe.contains("HAVE")) return true to "capture tools already present"
+
+        val family = activeDistro.family
+        val ops = PackageOps.forFamily(family)
+        // Void packages ImageMagick with a capital name; everyone else
+        // ships lowercase `imagemagick`.
+        val imagemagick = if (family == PackageFamily.XBPS) "ImageMagick" else "imagemagick"
+        val pkgs = listOf("xdotool", imagemagick)
+        val (installOut, _) = runCommandInProot("${ops.updateCmd()} && ${ops.installCmd(pkgs)}")
+        val (recheck, _) = runCommandInProot(probeCmd)
+        return if (recheck.contains("HAVE")) {
+            true to "installed ${pkgs.joinToString(" ")}"
+        } else {
+            false to "capture-tool install failed: ${installOut.takeLast(800)}"
+        }
     }
 
     /**

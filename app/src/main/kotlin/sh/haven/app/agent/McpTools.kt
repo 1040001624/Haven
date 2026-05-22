@@ -2,8 +2,11 @@ package sh.haven.app.agent
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.Settings
+import android.util.Base64
 import android.webkit.MimeTypeMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1195,6 +1198,56 @@ internal class McpTools(
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readDesktopLog(args) },
+
+        "list_desktop_windows" to ToolHandler(
+            description = "Enumerate the visible top-level windows on a running X11/VNC desktop (deId), so an agent can target a specific application window (e.g. KiCad's schematic editor vs. PCB editor) before capturing it. Returns { deId, count, windows:[{id,title,x,y,width,height}] }. X11/VNC desktops only (not nested-Wayland). Installs the capture toolset (xdotool + ImageMagick) on first use.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("deId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.")
+                    })
+                })
+                put("required", JSONArray().put("deId"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                "Let the agent list the windows open on desktop '${args.optString("deId")}'"
+            },
+        ) { args -> listDesktopWindows(args) },
+
+        "capture_desktop" to ToolHandler(
+            description = "Capture a screenshot of a running X11/VNC desktop (deId) and return it INLINE as an image the agent can see directly — no second port or file download. Whole screen by default, or a single window when windowId (from list_desktop_windows) is given. The image is downscaled to maxWidth and JPEG-encoded by default to stay cheap over the MCP tunnel. Captures inside the guest, so it works even when the user isn't on the VNC tab. Returns the image plus { deId, width, height, format, source, windowId?, windowTitle? }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("deId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.")
+                    })
+                    put("windowId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional X11 window id from list_desktop_windows. Captures just that window (cropped to its geometry). Omit for the whole screen.")
+                    })
+                    put("maxWidth", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Downscale so the image is at most this many pixels wide. Default 1024 (clamped 160–4096).")
+                    })
+                    put("format", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
+                    })
+                })
+                put("required", JSONArray().put("deId"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                val win = args.optString("windowId").takeIf { it.isNotBlank() }
+                val what = if (win != null) "a window on" else "the screen of"
+                "Let the agent see $what desktop '${args.optString("deId")}'"
+            },
+        ) { args -> captureDesktop(args) },
 
         "get_proot_install_log" to ToolHandler(
             description = "Return install-log events from the Room-backed ProotInstallLog table. Survives logcat rotation and app restarts. Filter by distroId and/or sinceMs (millis since epoch) to poll incrementally. Each event: id, timestamp, distroId, phase, deId?, exit?, ok, message?, logTail?.",
@@ -4912,6 +4965,122 @@ internal class McpTools(
             put("count", arr.length())
             put("desktops", arr)
         }
+    }
+
+    private fun desktopByIdOrThrow(deId: String): sh.haven.core.local.ProotManager.DesktopEnvironment =
+        sh.haven.core.local.ProotManager.DesktopEnvironment.entries
+            .firstOrNull { it.spec.id == deId }
+            ?: throw McpError(-32602, "Unknown deId: $deId")
+
+    private suspend fun listDesktopWindows(args: JSONObject): JSONObject {
+        val deId = args.optString("deId").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "deId is required")
+        val de = desktopByIdOrThrow(deId)
+        val windows = try {
+            localSessionManager.desktopManager.listWindows(de)
+        } catch (e: Exception) {
+            throw McpError(-32603, e.message ?: "Window enumeration failed")
+        }
+        val arr = JSONArray()
+        windows.forEach { w ->
+            arr.put(JSONObject().apply {
+                put("id", w.id)
+                put("title", w.title)
+                put("x", w.x)
+                put("y", w.y)
+                put("width", w.width)
+                put("height", w.height)
+            })
+        }
+        return JSONObject().apply {
+            put("deId", de.spec.id)
+            put("count", arr.length())
+            put("windows", arr)
+        }
+    }
+
+    private suspend fun captureDesktop(args: JSONObject): JSONObject {
+        val deId = args.optString("deId").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "deId is required")
+        val de = desktopByIdOrThrow(deId)
+        val dm = localSessionManager.desktopManager
+        val windowId = args.optString("windowId").takeIf { it.isNotBlank() }
+        val maxWidth = args.optInt("maxWidth", 1024).coerceIn(160, 4096)
+        val format = if (args.optString("format", "jpeg").lowercase() == "png") "png" else "jpeg"
+
+        // When a window is requested, resolve its geometry first so we can
+        // crop the full-screen capture to it app-side (a single reliable
+        // capture path beats per-window-id capture on bare Xvnc).
+        var crop: IntArray? = null
+        var windowTitle: String? = null
+        if (windowId != null) {
+            val win = try {
+                dm.listWindows(de).firstOrNull { it.id == windowId }
+            } catch (e: Exception) {
+                throw McpError(-32603, e.message ?: "Window lookup failed")
+            } ?: throw McpError(
+                -32602,
+                "Window '$windowId' not found on '${de.spec.id}' — call list_desktop_windows first",
+            )
+            crop = intArrayOf(win.x, win.y, win.width, win.height)
+            windowTitle = win.title
+        }
+
+        val png = try {
+            dm.capture(de)
+        } catch (e: Exception) {
+            throw McpError(-32603, e.message ?: "Capture failed")
+        }
+        val (b64, w, h) = withContext(Dispatchers.Default) {
+            encodeCapture(png, crop, maxWidth, format)
+        }
+        return JSONObject().apply {
+            put("deId", de.spec.id)
+            put("width", w)
+            put("height", h)
+            put("format", format)
+            put("source", "guest")
+            windowId?.let { put("windowId", it) }
+            windowTitle?.let { put("windowTitle", it) }
+            // Reserved keys: McpServer lifts these into an MCP image content
+            // block and strips them from structuredContent / the text echo.
+            put("__imageBase64", b64)
+            put("__mimeType", if (format == "jpeg") "image/jpeg" else "image/png")
+        }
+    }
+
+    /**
+     * Decode captured PNG bytes, optionally crop to [crop] (x,y,w,h),
+     * downscale to [maxWidth], and re-encode. Returns (base64, width,
+     * height). Crop rect is clamped to the bitmap bounds so a window that
+     * extends past the screen edge still yields a valid image.
+     */
+    private fun encodeCapture(
+        pngBytes: ByteArray,
+        crop: IntArray?,
+        maxWidth: Int,
+        format: String,
+    ): Triple<String, Int, Int> {
+        var bmp = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size)
+            ?: throw McpError(-32603, "Could not decode captured image")
+        if (crop != null) {
+            val x = crop[0].coerceIn(0, bmp.width - 1)
+            val y = crop[1].coerceIn(0, bmp.height - 1)
+            val cw = crop[2].coerceIn(1, bmp.width - x)
+            val ch = crop[3].coerceIn(1, bmp.height - y)
+            bmp = Bitmap.createBitmap(bmp, x, y, cw, ch)
+        }
+        if (maxWidth in 1 until bmp.width) {
+            val nh = (bmp.height.toFloat() * maxWidth / bmp.width).toInt().coerceAtLeast(1)
+            bmp = Bitmap.createScaledBitmap(bmp, maxWidth, nh, true)
+        }
+        val out = java.io.ByteArrayOutputStream()
+        if (format == "jpeg") {
+            bmp.compress(Bitmap.CompressFormat.JPEG, 70, out)
+        } else {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        return Triple(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), bmp.width, bmp.height)
     }
 
     private suspend fun getProotInstallLog(args: JSONObject): JSONObject {
