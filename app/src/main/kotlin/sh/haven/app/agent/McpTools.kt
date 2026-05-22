@@ -1429,6 +1429,14 @@ internal class McpTools(
                         put("type", "boolean")
                         put("description", "Re-launch automatically when Haven's MCP endpoint comes up / after app restart. Default true.")
                     })
+                    put("isMcp", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "True if this service is itself a streamable-HTTP MCP server. Haven then aggregates its tools into its own MCP surface, namespaced 'guest_<id>_<tool>', so you call them through Haven directly. Default false.")
+                    })
+                    put("mcpPath", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "HTTP path of the guest MCP endpoint when isMcp=true. Default '/mcp'.")
+                    })
                 })
                 put("required", JSONArray().put("label").put("command").put("port"))
             },
@@ -1894,23 +1902,89 @@ internal class McpTools(
     )
 
     /** Return the list of tool definitions for MCP `tools/list`. */
-    fun definitions(): List<JSONObject> = tools.map { (name, handler) ->
-        JSONObject().apply {
-            put("name", name)
-            put("description", handler.description)
-            put("inputSchema", handler.inputSchema)
+    // ---- Guest MCP aggregation (WS3) ----
+    // Tools from running guest-resident MCP servers (isMcp guest services)
+    // are surfaced through Haven's own MCP, namespaced `guest_<svc>_<tool>`,
+    // so the agent connects only to Haven. Discovery is lazy + TTL-cached;
+    // McpServer is request/response-only (no SSE push), so guest tools appear
+    // on the next tools/list rather than via a listChanged notification.
+    private val guestClients = java.util.concurrent.ConcurrentHashMap<String, GuestMcpClient>()
+    private data class GuestToolRef(val serviceId: String, val remoteName: String, val def: JSONObject)
+
+    @Volatile private var guestToolCache: Map<String, GuestToolRef> = emptyMap()
+    @Volatile private var guestToolCacheAt = 0L
+    private val guestToolCacheTtlMs = 8_000L
+
+    /** Force the next [guestTools] call to re-discover (after register/start/stop). */
+    fun invalidateGuestTools() { guestToolCacheAt = 0L }
+
+    private fun sanitizeNs(s: String): String = s.replace(Regex("[^A-Za-z0-9]"), "_")
+
+    /** Namespaced tools aggregated from running guest MCP servers (TTL-cached). */
+    private fun guestTools(): Map<String, GuestToolRef> {
+        val now = System.currentTimeMillis()
+        if (now - guestToolCacheAt < guestToolCacheTtlMs) return guestToolCache
+        val gsm = localSessionManager.guestServiceManager
+        val running = try { gsm.runningMcpServices() } catch (e: Exception) { emptyList() }
+        val liveIds = running.map { it.id }.toSet()
+        guestClients.keys.retainAll { it in liveIds }
+        val out = LinkedHashMap<String, GuestToolRef>()
+        for (spec in running) {
+            val client = guestClients.getOrPut(spec.id) {
+                GuestMcpClient("http://127.0.0.1:${spec.port}${spec.mcpPath}")
+            }
+            val defs = try {
+                client.listTools()
+            } catch (e: Exception) {
+                android.util.Log.w("McpTools", "guest MCP ${spec.id} listTools failed: ${e.message}")
+                continue
+            }
+            val ns = sanitizeNs(spec.id)
+            for (d in defs) {
+                val remote = d.optString("name").ifBlank { continue }
+                val nsName = "guest_${ns}_$remote"
+                out[nsName] = GuestToolRef(
+                    spec.id, remote,
+                    JSONObject().apply {
+                        put("name", nsName)
+                        put("description", "[${spec.label}] " + d.optString("description"))
+                        put("inputSchema", d.optJSONObject("inputSchema") ?: JSONObject().apply { put("type", "object") })
+                    },
+                )
+            }
         }
+        guestToolCache = out
+        guestToolCacheAt = now
+        return out
+    }
+
+    fun definitions(): List<JSONObject> {
+        val local = tools.map { (name, handler) ->
+            JSONObject().apply {
+                put("name", name)
+                put("description", handler.description)
+                put("inputSchema", handler.inputSchema)
+            }
+        }
+        val guest = guestTools().values.map { it.def }
+        return local + guest
     }
 
     /**
      * Look up the consent gating metadata for a tool. Returns null for an
      * unknown tool (the dispatcher will surface that as an MCP error
      * regardless). Exposed to [McpServer] so consent prompting happens
-     * before the handler runs.
+     * before the handler runs. Proxied guest-MCP tools get a single
+     * once-per-session gate keyed to the guest service.
      */
     fun consentFor(name: String): ToolConsent? {
-        val handler = tools[name] ?: return null
-        return ToolConsent(level = handler.consentLevel, summary = handler.summarise)
+        tools[name]?.let { return ToolConsent(level = it.consentLevel, summary = it.summarise) }
+        val ref = guestToolCache[name] ?: guestTools()[name] ?: return null
+        val label = localSessionManager.guestServiceManager.registered()
+            .firstOrNull { it.id == ref.serviceId }?.label ?: ref.serviceId
+        return ToolConsent(level = ConsentLevel.ONCE_PER_SESSION) {
+            "Call guest MCP tool '${ref.remoteName}' on '$label'"
+        }
     }
 
     /**
@@ -1928,9 +2002,31 @@ internal class McpTools(
 
     /** Call a tool by name. Throws [McpError] for bad input. */
     suspend fun call(name: String, arguments: JSONObject, clientHint: String? = null): JSONObject {
-        val handler = tools[name] ?: throw McpError(-32602, "Unknown tool: $name")
         currentClientHint = clientHint
-        return handler.handle(arguments)
+        tools[name]?.let { return it.handle(arguments) }
+
+        // Proxied guest-MCP tool: forward to the guest server and pass its
+        // content array back through the __mcpContent reserved key.
+        val ref = guestToolCache[name] ?: guestTools()[name]
+            ?: throw McpError(-32602, "Unknown tool: $name")
+        val client = guestClients[ref.serviceId]
+            ?: throw McpError(-32603, "Guest MCP '${ref.serviceId}' is not connected")
+        val result = withContext(Dispatchers.IO) {
+            try {
+                client.callTool(ref.remoteName, arguments)
+            } catch (e: Exception) {
+                throw McpError(-32603, "Guest MCP call '${ref.remoteName}' failed: ${e.message}")
+            }
+        }
+        val guestContent = result.optJSONArray("content")
+        return if (guestContent != null) {
+            JSONObject().apply {
+                put("__mcpContent", guestContent)
+                if (result.optBoolean("isError", false)) put("isError", true)
+            }
+        } else {
+            result
+        }
     }
 
     // --- Tool implementations ---
@@ -5652,6 +5748,8 @@ internal class McpTools(
         put("command", spec.command)
         put("port", spec.port)
         put("autostart", spec.autostart)
+        put("isMcp", spec.isMcp)
+        if (spec.isMcp) put("mcpPath", spec.mcpPath)
         put("state", inst?.state?.name ?: "STOPPED")
         inst?.errorMessage?.let { put("errorMessage", it) }
     }
@@ -5664,16 +5762,21 @@ internal class McpTools(
         val port = args.optInt("port", 0).takeIf { it in 1..65535 }
             ?: throw McpError(-32602, "port must be 1..65535")
         val autostart = if (args.has("autostart")) args.optBoolean("autostart") else true
+        val isMcp = args.optBoolean("isMcp", false)
+        val mcpPath = args.optString("mcpPath", "/mcp").ifBlank { "/mcp" }
         val gsm = localSessionManager.guestServiceManager
         val id = "gsvc-${System.currentTimeMillis().toString(36)}"
         val spec = sh.haven.core.local.GuestServiceManager.GuestServiceSpec(
             id = id, label = label, command = command, port = port, autostart = autostart,
+            isMcp = isMcp, mcpPath = mcpPath,
         )
         gsm.register(spec)
+        invalidateGuestTools()
         return JSONObject().apply {
             put("id", id)
             put("activeDistroId", prootManager.activeDistroId)
             put("status", "registered")
+            put("isMcp", isMcp)
             put("hint", "call start_guest_service to launch it now")
         }
     }
@@ -5700,6 +5803,7 @@ internal class McpTools(
         val spec = guestSpecOrThrow(id)
         val gsm = localSessionManager.guestServiceManager
         gsm.start(id)
+        invalidateGuestTools()
         // The MCP reverse tunnel re-homes to pick up the new service's port
         // via HavenApp's guest-service observer (no-op when no tunnel endpoint
         // is configured).
@@ -5711,6 +5815,7 @@ internal class McpTools(
             ?: throw McpError(-32602, "id is required")
         val spec = guestSpecOrThrow(id)
         localSessionManager.guestServiceManager.stop(id)
+        invalidateGuestTools()
         return guestServiceToJson(localSessionManager.guestServiceManager.services.value[id], spec)
             .apply { put("status", "stopped") }
     }
@@ -5720,6 +5825,7 @@ internal class McpTools(
             ?: throw McpError(-32602, "id is required")
         guestSpecOrThrow(id)
         localSessionManager.guestServiceManager.unregister(id)
+        invalidateGuestTools()
         return JSONObject().apply { put("id", id); put("status", "unregistered") }
     }
 

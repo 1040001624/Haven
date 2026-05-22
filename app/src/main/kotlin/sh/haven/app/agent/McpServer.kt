@@ -925,6 +925,17 @@ class McpServer @Inject constructor(
             Log.e(TAG, "tool '$name' threw", e)
             throw McpError(-32603, "Tool failed: ${e.message}")
         }
+        // A proxied guest-MCP tool (McpTools aggregation) returns the guest
+        // server's own MCP content array under the reserved key __mcpContent.
+        // Forward it verbatim so the guest's text/image blocks reach the
+        // agent unchanged, instead of being re-serialised as nested JSON text.
+        content.optJSONArray("__mcpContent")?.let { passthrough ->
+            content.remove("__mcpContent")
+            return JSONObject().apply {
+                put("content", passthrough)
+                if (content.length() > 0) put("structuredContent", content)
+            }
+        }
         // A tool can return an inline image by setting the reserved keys
         // __imageBase64 + __mimeType (see McpTools.captureDesktop). Lift
         // them into a proper MCP `image` content block so the agent sees

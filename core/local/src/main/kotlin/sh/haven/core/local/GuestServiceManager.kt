@@ -51,6 +51,14 @@ class GuestServiceManager @Inject constructor(
         val port: Int,
         /** Re-launch automatically when Haven's MCP endpoint comes up. */
         val autostart: Boolean,
+        /**
+         * True when this service is itself a streamable-HTTP MCP server
+         * (e.g. a KiCad MCP). Haven aggregates such servers' tools into its
+         * own MCP surface, namespaced, so the agent talks only to Haven.
+         */
+        val isMcp: Boolean = false,
+        /** HTTP path of the guest MCP endpoint (when [isMcp]). */
+        val mcpPath: String = "/mcp",
     )
 
     data class GuestServiceInstance(
@@ -85,6 +93,8 @@ class GuestServiceManager @Inject constructor(
                     command = o.optString("command"),
                     port = o.optInt("port"),
                     autostart = o.optBoolean("autostart", false),
+                    isMcp = o.optBoolean("isMcp", false),
+                    mcpPath = o.optString("mcpPath", "/mcp"),
                 )
             }
         } catch (e: Exception) {
@@ -103,6 +113,8 @@ class GuestServiceManager @Inject constructor(
                     put("command", s.command)
                     put("port", s.port)
                     put("autostart", s.autostart)
+                    put("isMcp", s.isMcp)
+                    put("mcpPath", s.mcpPath)
                 },
             )
         }
@@ -219,6 +231,17 @@ class GuestServiceManager @Inject constructor(
             .filter { it.state == ServiceState.RUNNING }
             .map { it.spec.port }
             .filter { it > 0 }
+
+    /**
+     * Registered MCP services (isMcp) that are currently RUNNING on a valid
+     * loopback port — the set Haven aggregates into its own MCP surface.
+     */
+    fun runningMcpServices(): List<GuestServiceSpec> {
+        val running = _services.value
+        return registered().filter { spec ->
+            spec.isMcp && spec.port > 0 && running[spec.id]?.state == ServiceState.RUNNING
+        }
+    }
 
     /** Rolling output tail for a service (diagnostics). */
     fun logTailFor(id: String): List<String> =
