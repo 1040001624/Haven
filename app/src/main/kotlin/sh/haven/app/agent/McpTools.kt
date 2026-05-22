@@ -4128,6 +4128,28 @@ internal class McpTools(
         }
     }
 
+    /**
+     * Mono DllMap config that routes a HidSharp-based app's USB access to the
+     * guest shim: libudev fully (the shim implements all 27 udev functions) and
+     * the hidraw libc fileops per-function (other libc calls keep going to real
+     * libc). Place beside the assembly declaring the [DllImport]s (HidSharp.dll
+     * → HidSharp.dll.config). [shimPath] is the absolute in-guest shim path.
+     */
+    private fun monoDllMapConfig(shimPath: String): String = """
+        <configuration>
+          <dllmap dll="libudev.so.0" target="$shimPath"/>
+          <dllmap dll="libudev.so.1" target="$shimPath"/>
+          <dllmap dll="libc">
+            <dllentry dll="$shimPath" name="open"  target="open"/>
+            <dllentry dll="$shimPath" name="close" target="close"/>
+            <dllentry dll="$shimPath" name="read"  target="read"/>
+            <dllentry dll="$shimPath" name="write" target="write"/>
+            <dllentry dll="$shimPath" name="ioctl" target="ioctl"/>
+            <dllentry dll="$shimPath" name="poll"  target="poll"/>
+          </dllmap>
+        </configuration>
+    """.trimIndent()
+
     private suspend fun usbAttachToGuest(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val requested = args.optString("deviceName").takeIf { it.isNotBlank() }
         val deviceName = requested ?: run {
@@ -4153,11 +4175,17 @@ internal class McpTools(
             put("probePath", probePath ?: JSONObject.NULL)
             if (probePath != null) put("probeCommand", probePath)
             put("shimPath", shimPath)
-            // For a native HID app, prepend this so its /dev/hidraw* opens are
+            // For a NATIVE HID app, prepend this so its /dev/hidraw* opens are
             // routed to the brokered device (no real node, no root).
             put("ldPreloadWrapper", "LD_PRELOAD=$shimPath")
             put("hidrawTestCommand", "LD_PRELOAD=$shimPath /usr/local/bin/haven-hidraw-test /dev/hidraw0")
-            put("note", "Proxy bound on abstract socket \\0$socketName. Run probeCommand to confirm reachability; run hidrawTestCommand via run_in_proot to exercise the hidraw shim against the device.")
+            // For a MONO/.NET HID app (e.g. HidSharp-based), LD_PRELOAD can't
+            // interpose P/Invoke — use a DllMap config beside the assembly that
+            // declares the [DllImport]s (HidSharp.dll -> HidSharp.dll.config),
+            // mapping libudev wholesale + the hidraw libc fileops to the shim.
+            put("monoDllMapConfigName", "HidSharp.dll.config")
+            put("monoDllMapConfig", monoDllMapConfig(shimPath))
+            put("note", "Proxy bound on abstract socket \\0$socketName. Native apps: prepend ldPreloadWrapper (verify with hidrawTestCommand via run_in_proot). Mono apps: write monoDllMapConfig as monoDllMapConfigName next to the assembly's HidSharp.dll, then run the app under mono.")
         }
     }
 
