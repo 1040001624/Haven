@@ -548,6 +548,9 @@ class DesktopManager @Inject constructor(
             prootBin, "-0", "--link2symlink",
             "-r", rootfsDir.absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            // Writable /dev/shm (Android /dev is read-only, no shm) so GL/Mono
+            // desktop apps that use POSIX shared memory work. See ProotManager.
+            "-b", "${prootManager.ensureDevShm()}:/dev/shm",
             "-b", "${context.cacheDir.absolutePath}:/tmp",
         )
         // /bin/sh works on both Alpine (symlink to busybox) and Debian

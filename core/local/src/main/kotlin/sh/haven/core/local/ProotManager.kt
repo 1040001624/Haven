@@ -1145,6 +1145,22 @@ class ProotManager @Inject constructor(
     }
 
     /**
+     * Ensure a writable host dir to overlay at the guest's `/dev/shm`. Android's
+     * `/dev` (bound into the guest) is read-only and has no `shm`, so POSIX
+     * shared memory (`shm_open`) fails for Mono/.NET, Chromium, PostgreSQL, etc.
+     * cacheDir-backed and world-rwx so the fake-root guest process can use it.
+     * Returns the absolute host path to bind at `/dev/shm`.
+     */
+    fun ensureDevShm(): String {
+        val d = File(context.cacheDir, "devshm")
+        if (!d.exists()) d.mkdirs()
+        d.setReadable(true, false)
+        d.setWritable(true, false)
+        d.setExecutable(true, false)
+        return d.absolutePath
+    }
+
+    /**
      * Build and start a PRoot process running [command] in the active
      * rootfs, with combined stdout+stderr on the returned Process's
      * inputStream. Callers that need to stream output incrementally (a
@@ -1183,6 +1199,7 @@ class ProotManager @Inject constructor(
         writeIfMissing(".sysctl_inotify_max_user_watches", "65536\n")
 
         val rootfsPath = activeRootfsDir.absolutePath
+        val devShm = ensureDevShm()
         val args = mutableListOf(
             prootBin,
             "-L",
@@ -1194,6 +1211,10 @@ class ProotManager @Inject constructor(
             "--cwd=/root",
             "--bind=/dev",
             "--bind=/dev/urandom:/dev/random",
+            // Writable /dev/shm — Android's /dev (bound above) is read-only and
+            // has no shm, so POSIX shared memory (shm_open) fails for Mono/.NET,
+            // Chromium, etc. Overlay a cacheDir-backed dir so it works.
+            "--bind=$devShm:/dev/shm",
             "--bind=/proc",
             "--bind=/proc/self/fd:/dev/fd",
             "--bind=/proc/self/fd/0:/dev/stdin",
