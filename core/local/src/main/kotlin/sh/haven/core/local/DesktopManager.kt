@@ -186,8 +186,8 @@ class DesktopManager @Inject constructor(
         synchronized(logTails) { logTails[de] = ArrayDeque() }
 
         try {
-            val process = when (de.spec.launch) {
-                is LaunchSpec.NestedWayland -> launchNestedWayland(de, display, port)
+            val process = when (val spec = de.spec.launch) {
+                is LaunchSpec.NestedWayland -> launchNestedWayland(spec.compositorCmd, de.label, display, port)
                 is LaunchSpec.X11Vnc -> launchX11Desktop(de, display, shellCommand)
                 is LaunchSpec.NativeCompositor ->
                     error("NativeCompositor handled above; unreachable")
@@ -589,7 +589,8 @@ class DesktopManager @Inject constructor(
      * displays differ.
      */
     private fun launchNestedWayland(
-        de: ProotManager.DesktopEnvironment,
+        compositorCmd: String,
+        label: String,
         display: Int,
         port: Int,
     ): Process {
@@ -601,7 +602,6 @@ class DesktopManager @Inject constructor(
         val rootfsDir = prootManager.activeRootfsDir
         File(rootfsDir, "root").mkdirs()
 
-        val launch = de.spec.launch as LaunchSpec.NestedWayland
         val xdgInProot = "/tmp/xdg-runtime-$display"
 
         // wlroots' SHM allocator (the only buffer path on the headless
@@ -675,25 +675,36 @@ class DesktopManager @Inject constructor(
             append("export XKB_DEFAULT_LAYOUT=us ; ")
             append("export XKB_DEFAULT_RULES=evdev ; ")
             append("export XDG_SESSION_TYPE=wayland ; ")
-            // Clean any stale wayland-1 from a previous launch so the
-            // wait loop polls for a fresh socket and the "did the
-            // compositor start?" branch is honest.
-            append("rm -f $xdgInProot/wayland-1 $xdgInProot/wayland-1.lock ; ")
+            // XWayland (started eagerly by some compositors, e.g. cage)
+            // refuses to bind unless /tmp/.X11-unix carries the sticky bit.
+            // proot's /tmp is the app cacheDir (ext4, honours S_ISVTX), so
+            // create it 1777 up front. Harmless for compositors that don't
+            // touch XWayland (Sway/Hyprland/niri here run Wayland-only).
+            append("mkdir -p /tmp/.X11-unix ; chmod 1777 /tmp/.X11-unix 2>/dev/null ; ")
+            // Clean any stale wayland sockets from a previous launch so the
+            // wait loop polls for a fresh one and the "did the compositor
+            // start?" branch is honest. Clean ALL wayland-N, not just -1:
+            // different compositors land on different socket numbers
+            // (Sway → wayland-1, cage → wayland-0).
+            append("rm -f $xdgInProot/wayland-[0-9]* ; ")
             // `set +e` around the compositor launch so a non-zero exit
             // doesn't kill the script before the wait/diagnostic block.
             append("set +e ; ")
-            append("${launch.compositorCmd} > $xdgInProot/compositor.log 2>&1 & ")
+            append("$compositorCmd > $xdgInProot/compositor.log 2>&1 & ")
             append("comp_pid=\$! ; ")
-            // Wait up to ~10 s for the wayland socket to appear.
-            append("i=0 ; while [ ! -e $xdgInProot/wayland-1 ] && [ \$i -lt 20 ]; do sleep 0.5; i=\$((i+1)); done ; ")
-            append("if [ ! -e $xdgInProot/wayland-1 ]; then ")
-            append("echo '[haven] compositor did not create $xdgInProot/wayland-1 — log tail:' ; ")
+            // Wait up to ~10 s for ANY wayland-N socket to appear, then bind
+            // wayvnc to whichever one the compositor actually created
+            // (cage → wayland-0, Sway → wayland-1), rather than assuming -1.
+            append("i=0 ; while [ -z \"\$(ls $xdgInProot 2>/dev/null | grep -E '^wayland-[0-9]+\$')\" ] && [ \$i -lt 20 ]; do sleep 0.5; i=\$((i+1)); done ; ")
+            append("WL_SOCK=\$(ls $xdgInProot 2>/dev/null | grep -E '^wayland-[0-9]+\$' | head -1) ; ")
+            append("if [ -z \"\$WL_SOCK\" ]; then ")
+            append("echo '[haven] compositor did not create a wayland socket in $xdgInProot — log tail:' ; ")
             append("tail -n 50 $xdgInProot/compositor.log 2>&1 ; ")
             append("kill \$comp_pid 2>/dev/null ; ")
             append("exit 1 ; ")
             append("fi ; ")
-            append("echo '[haven] compositor up, starting wayvnc on $port' ; ")
-            append("export WAYLAND_DISPLAY=wayland-1 ; ")
+            append("echo \"[haven] compositor up (socket \$WL_SOCK), starting wayvnc on $port\" ; ")
+            append("export WAYLAND_DISPLAY=\$WL_SOCK ; ")
             // ~2 s grace period after the wayland socket appears, then
             // launch wayvnc. wayvnc 0.5 (Debian Bookworm) doesn't accept
             // --max-fps; restrict to flags supported across 0.5–0.9.
@@ -733,7 +744,7 @@ class DesktopManager @Inject constructor(
         )
         prootArgs.addAll(listOf("-w", "/root", "/bin/sh", "-c", shellCmd))
 
-        Log.d(TAG, "Starting ${de.label} (nested wayland) on port $port (display $display)")
+        Log.d(TAG, "Starting $label (nested wayland) on port $port (display $display)")
 
         return ProcessBuilder(prootArgs).apply {
             environment().apply {
@@ -744,6 +755,141 @@ class DesktopManager @Inject constructor(
             }
             redirectErrorStream(true)
         }.start()
+    }
+
+    // ---- App windows: one GUI app in a cage kiosk, surfaced in the
+    //      present_media overlay (not a full desktop). Reuses the nested-
+    //      Wayland launch path with a per-call compositor command and is
+    //      tracked by an opaque sessionId in a parallel registry, so it
+    //      needs no compile-time DesktopEnvironment enum entry. ----
+
+    /** State of one single-app cage kiosk surfaced as an overlay window. */
+    data class AppWindowSession(
+        val sessionId: String,
+        /** The app command cage runs, e.g. "imv /root/x.png". */
+        val command: String,
+        val displayNumber: Int,
+        val vncPort: Int,
+        val state: DesktopState,
+        val errorMessage: String? = null,
+    )
+
+    private val _appWindows = MutableStateFlow<Map<String, AppWindowSession>>(emptyMap())
+    val appWindows: StateFlow<Map<String, AppWindowSession>> = _appWindows.asStateFlow()
+    private val appWindowProcesses = java.util.concurrent.ConcurrentHashMap<String, Process>()
+
+    /**
+     * Launch [command] as a single-app `cage` kiosk and expose it over
+     * wayvnc. Blocks (on the caller's IO thread) until the VNC port accepts
+     * connections — state RUNNING — or the launch fails / times out — state
+     * ERROR — then returns the session.
+     *
+     * v1 runs one app window at a time: any existing window is stopped first.
+     * (The overlay shows one window; concurrent windows + per-session teardown
+     * are a later enhancement — see [stopAppWindow]'s name-based kill.)
+     */
+    fun startAppWindow(command: String, timeoutMs: Long = 15_000): AppWindowSession {
+        _appWindows.value.keys.toList().forEach { stopAppWindow(it) }
+
+        val sessionId = "appwin-${System.currentTimeMillis()}"
+        val display = allocateDisplay()
+        val port = 5900 + display
+        val compositorCmd = "cage -- $command"
+        var session = AppWindowSession(sessionId, command, display, port, DesktopState.STARTING)
+        _appWindows.update { it + (sessionId to session) }
+
+        val process = try {
+            launchNestedWayland(compositorCmd, "app:$command", display, port)
+        } catch (e: Exception) {
+            releaseDisplay(display)
+            session = session.copy(state = DesktopState.ERROR, errorMessage = e.message)
+            _appWindows.update { it + (sessionId to session) }
+            return session
+        }
+        appWindowProcesses[sessionId] = process
+
+        // Drain the launch process output to Logcat and notice an early exit
+        // (cage gone = app closed or never came up).
+        Thread({
+            try {
+                process.inputStream.bufferedReader().forEachLine { line ->
+                    Log.d(TAG, "$sessionId[:$display]: $line")
+                }
+            } catch (_: Exception) {}
+            val code = process.waitFor()
+            Log.d(TAG, "$sessionId launch process exited: $code")
+            appWindowProcesses.remove(sessionId)
+            releaseDisplay(display)
+            _appWindows.update { current ->
+                val s = current[sessionId] ?: return@update current
+                when (s.state) {
+                    // Crashed before the port came up → surface as ERROR.
+                    DesktopState.STARTING -> current + (sessionId to s.copy(
+                        state = DesktopState.ERROR,
+                        errorMessage = "cage kiosk exited during startup (code $code)",
+                    ))
+                    // App was running and then exited (kiosk closes with it)
+                    // → drop the session so the overlay can react.
+                    DesktopState.RUNNING -> current - sessionId
+                    else -> current
+                }
+            }
+        }, "appwin-$sessionId").apply { isDaemon = true }.start()
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            _appWindows.value[sessionId]?.let { if (it.state == DesktopState.ERROR) return it }
+            if (isPortListening(port)) {
+                session = session.copy(state = DesktopState.RUNNING)
+                _appWindows.update { it + (sessionId to session) }
+                return session
+            }
+            Thread.sleep(300)
+        }
+        stopAppWindow(sessionId)
+        val errored = AppWindowSession(
+            sessionId, command, display, port, DesktopState.ERROR,
+            errorMessage = "VNC port $port never came up within ${timeoutMs}ms",
+        )
+        _appWindows.update { it + (sessionId to errored) }
+        return errored
+    }
+
+    /** Stop an app-window kiosk and release its display. Idempotent. */
+    fun stopAppWindow(sessionId: String) {
+        val session = _appWindows.value[sessionId] ?: return
+        appWindowProcesses[sessionId]?.destroyForcibly()
+        appWindowProcesses.remove(sessionId)
+        // destroyForcibly only kills the proot launch shell (now wayvnc);
+        // cage + the app become orphans. Sweep the cage tree. NOTE v1: this
+        // is name-based (also sweeps wayvnc/foot), so don't run an app window
+        // concurrently with a nested-Wayland *desktop* — acceptable while
+        // app windows are single-instance and not mixed with a Sway desktop.
+        killOrphanedNestedWayland("cage")
+        // The kiosk app (e.g. imv/mpv) does NOT always exit when cage dies,
+        // and the sweep above only covers the compositor + its standard
+        // children — so also kill the app binary by name.
+        val appBinary = session.command.trim().substringBefore(' ').substringAfterLast('/')
+        if (appBinary.isNotEmpty()) killOrphanedNestedWayland(appBinary)
+        releaseDisplay(session.displayNumber)
+        _appWindows.update { it - sessionId }
+    }
+
+    /** Compositor log for an app-window session (grey-screen diagnostics). */
+    fun appWindowCompositorLog(sessionId: String): String? {
+        val display = _appWindows.value[sessionId]?.displayNumber ?: return null
+        val logFile = File(context.cacheDir, "xdg-runtime-$display/compositor.log")
+        return if (logFile.exists()) logFile.readText() else null
+    }
+
+    /** True when something accepts a TCP connection on 127.0.0.1:[port]. */
+    private fun isPortListening(port: Int): Boolean = try {
+        java.net.Socket().use {
+            it.connect(java.net.InetSocketAddress("127.0.0.1", port), 500)
+            true
+        }
+    } catch (_: Exception) {
+        false
     }
 
     // ---- Native Wayland compositor (uses JNI + virgl) ----
@@ -972,8 +1118,10 @@ class DesktopManager @Inject constructor(
         // Match against the basename of cmdline argv[0]. The targets
         // include both the active compositor and its standard children
         // (wayvnc, foot, swaynag) so the next launch starts clean.
+        // PREFIX match (`token*`) so wrapper binaries are caught too — e.g.
+        // the `imv` launcher execs `imv-wayland`, which an exact match misses.
         val targets = listOf(compositorCmd, "wayvnc", "foot", "swaynag")
-        val caseArm = targets.joinToString("|") { "\"$it\"" }
+        val caseArm = targets.joinToString("|") { "\"$it\"*" }
         val scanScript = """
             for p in /proc/[0-9]*; do
                 [ -r ${'$'}p/cmdline ] || continue

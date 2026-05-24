@@ -472,6 +472,28 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { args -> presentMedia(args) },
 
+        "present_app" to ToolHandler(
+            description = "Show the user a LIVE, interactive single application window inline in Haven. Launches `command` as a Wayland app under a `cage` kiosk inside the active proot guest, exposes it over VNC, and embeds the live view in a bottom sheet over whatever screen the user is on (pinch-zoom, pan, drag and fullscreen all work; the user can interact). Use this to collaborate in a real GUI app — an image viewer, a media/audio player, a PDF/whiteboard tool — rather than pushing a static image with present_media. `command` is the guest shell command cage runs (e.g. 'imv /root/board.png', 'mpv /root/clip.mp4'); the app and any Wayland deps must already be installed in the guest. Returns { presented, sessionId, vncPort, state } once the window is up; the user dismisses the sheet to close the app + tear down the session. One app window at a time (v1).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("command", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Guest shell command for the GUI app cage runs, e.g. 'imv /root/x.png'.")
+                    })
+                    put("caption", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional one-line caption shown above the window.")
+                    })
+                })
+                put("required", JSONArray().put("command"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                "Launch a GUI app window for the agent: ${args.optString("command")}"
+            },
+        ) { args -> presentApp(args) },
+
         "open_convert_dialog_with_args" to ToolHandler(
             description = "Stage a conversion in the SFTP screen's convert dialog with the given container / codec defaults. Switches to the SFTP tab and opens the dialog; the user reviews and taps Convert to actually run ffmpeg. Tap-equivalent — the agent suggests, the user confirms. Use convert_file (EVERY_CALL consent) to skip the dialog and run the conversion directly.",
             inputSchema = JSONObject().apply {
@@ -3140,6 +3162,53 @@ internal class McpTools(
             put("bytes", bytes.size)
             put("mimeType", mime)
         }
+    }
+
+    /**
+     * Launch [command] as a single-app cage kiosk in the guest and surface
+     * its live VNC view in the present_media overlay. Blocks (on IO) until
+     * the kiosk's VNC port is up — [DesktopManager.startAppWindow] does the
+     * wait — then enqueues an APP_WINDOW presentation pointing at it. On
+     * failure surfaces the compositor log tail for diagnosis and cleans up
+     * the dead session.
+     */
+    private suspend fun presentApp(args: JSONObject): JSONObject {
+        val command = args.optString("command").ifEmpty {
+            throw McpError(-32602, "command is required (the GUI app to run, e.g. 'imv /root/x.png')")
+        }
+        val caption = args.optString("caption", "").ifEmpty { null }
+        if (!prootManager.isRootfsInstalled) {
+            throw McpError(-32603, "Active distro '${prootManager.activeDistroId}' has no installed rootfs")
+        }
+        val dm = localSessionManager.desktopManager
+        val session = withContext(Dispatchers.IO) { dm.startAppWindow(command) }
+        if (session.state == sh.haven.core.local.DesktopManager.DesktopState.RUNNING) {
+            presentationManager.presentAppWindow(
+                host = "127.0.0.1",
+                port = session.vncPort,
+                sessionId = session.sessionId,
+                caption = caption ?: "App: $command",
+            )
+            return JSONObject().apply {
+                put("presented", true)
+                put("sessionId", session.sessionId)
+                put("vncPort", session.vncPort)
+                put("state", "running")
+            }
+        }
+        // ERROR: capture the compositor log tail, then clean up the dead
+        // session so it doesn't linger in the registry.
+        val logTail = dm.appWindowCompositorLog(session.sessionId)?.takeLast(800)?.trim()
+        withContext(Dispatchers.IO) { dm.stopAppWindow(session.sessionId) }
+        throw McpError(
+            -32603,
+            buildString {
+                append(session.errorMessage ?: "app window failed to start")
+                append(". The app + its Wayland deps must be installed in the guest, ")
+                append("and the Cage kiosk DE installed (provides cage + wayvnc).")
+                if (!logTail.isNullOrBlank()) append(" Compositor log: ").append(logTail)
+            },
+        )
     }
 
     /**

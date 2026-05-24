@@ -736,9 +736,44 @@ object DesktopCatalog {
         legacyConfigMarkers = listOf("spawn-at-startup \"fuzzel\""),
     )
 
+    /**
+     * Cage — a wlroots **kiosk** compositor that runs a single application
+     * fullscreen and exits when that app exits. Same nested-Wayland launch
+     * path as Sway/Hyprland/niri (headless wlroots + wayvnc), so it inherits
+     * the /dev/shm bind, the pixman renderer and the wayvnc capture shim.
+     *
+     * This entry is the de-risk scaffold for the "app windows" feature
+     * (`present_app`): it pins the app to `foot` so we can verify cage paints
+     * + wayvnc captures it end-to-end before generalising to a dynamic,
+     * per-call app command. cage is configless (no [configSeed]).
+     */
+    val CAGE = DesktopEnvironmentSpec(
+        id = "cage",
+        label = "Cage (single-app kiosk)",
+        packagesPerFamily = mapOf(
+            PackageFamily.APK to listOf("cage", "wayvnc", "foot", "xkeyboard-config", "font-noto"),
+            PackageFamily.APT to listOf("cage", "wayvnc", "foot", "fonts-noto-core"),
+            PackageFamily.PACMAN to listOf("cage", "wayvnc", "foot", "noto-fonts"),
+            PackageFamily.XBPS to listOf("cage", "wayvnc", "foot", "noto-fonts-ttf"),
+        ),
+        verifyBinary = "usr/bin/cage",
+        // Scaffold: pin to a persistent GUI (imv on a test image) — foot's
+        // shell exits under proot and a kiosk exits with its app, so foot is
+        // a misleading test target. Phase 1 replaces this with a dynamic,
+        // per-call app command. imv lives at /usr/sbin/imv on Arch.
+        launch = LaunchSpec.NestedWayland(compositorCmd = "cage -- imv /tmp/cagetest.png"),
+        sizeEstimateMb = 30,
+        compatibilityNote = mapOf(
+            PackageFamily.APK to NESTED_WAYLAND_VNC_NOTE,
+            PackageFamily.APT to NESTED_WAYLAND_VNC_NOTE,
+            PackageFamily.PACMAN to NESTED_WAYLAND_VNC_NOTE,
+            PackageFamily.XBPS to NESTED_WAYLAND_VNC_NOTE,
+        ),
+    )
+
     val all: List<DesktopEnvironmentSpec> = listOf(
         OPENBOX, XFCE4, LABWC_NATIVE,
-        SWAY, HYPRLAND, NIRI,
+        SWAY, HYPRLAND, NIRI, CAGE,
     )
 
     fun lookup(id: String): DesktopEnvironmentSpec? = all.firstOrNull { it.id == id }

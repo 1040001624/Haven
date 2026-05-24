@@ -326,6 +326,18 @@ class ProotManager @Inject constructor(
             startCommands = "",
             sizeEstimate = "~70MB",
             isWayland = true,
+        ),
+        // Cage single-app kiosk — de-risk scaffold for the "app windows"
+        // feature. Same nested-Wayland launch path; pins the app to foot
+        // for now (compositorCmd = "cage -- foot" in DesktopCatalog.CAGE).
+        CAGE(
+            id = "cage",
+            label = "Cage (single-app kiosk)",
+            packages = "cage wayvnc foot noto-fonts",
+            verifyBinary = "usr/bin/cage",
+            startCommands = "",
+            sizeEstimate = "~30MB",
+            isWayland = true,
         );
 
         /**
