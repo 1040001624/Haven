@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.preferences.UserPreferencesRepository
@@ -102,22 +103,55 @@ class McpTunnelManager @Inject constructor(
             // roams are caught by NetworkMonitor, but a silent keepalive
             // timeout / server-side close would otherwise go unnoticed. Poll
             // the session and kick a reconnect when the transport has dropped.
+            //
+            // TCP-liveness (client.isConnected) is necessary but not sufficient:
+            // a *wedged* reverse forward — the endpoint sshd still LISTENs on the
+            // bind port but its forwarded channel is stuck (send-q backed up after
+            // a roam/restart) — leaves the session looking CONNECTED while MCP
+            // clients hang with no response. Keepalive can't see it (the transport
+            // is up). So additionally probe the forward end-to-end from the
+            // endpoint and force a reconnect (which rebinds, self-healing any stale
+            // holder) when it stops responding.
             val sid = sessionId ?: return@launch
+            var probeFails = 0
             while (isActive) {
                 delay(HEALTH_CHECK_MS)
                 val s = sshSessionManager.getSession(sid) ?: return@launch
                 when (s.status) {
-                    SshSessionManager.SessionState.Status.CONNECTED ->
+                    SshSessionManager.SessionState.Status.CONNECTED -> {
                         if (!s.client.isConnected) {
                             Log.i(TAG, "MCP tunnel transport dropped — requesting reconnect")
                             sshSessionManager.updateStatus(
                                 sid, SshSessionManager.SessionState.Status.DISCONNECTED,
                             )
                             sshSessionManager.requestReconnect(sid)
+                            probeFails = 0
+                        } else when (probeForward(s.client, mcpPort)) {
+                            Probe.ALIVE -> probeFails = 0
+                            Probe.SKIP -> { /* endpoint has no curl — can't probe */ }
+                            Probe.DEAD -> {
+                                probeFails++
+                                Log.w(
+                                    TAG,
+                                    "MCP forward liveness probe failed " +
+                                        "($probeFails/$PROBE_FAIL_THRESHOLD) on :$mcpPort",
+                                )
+                                if (probeFails >= PROBE_FAIL_THRESHOLD) {
+                                    Log.w(TAG, "MCP forward wedged — forcing reconnect")
+                                    probeFails = 0
+                                    sshSessionManager.updateStatus(
+                                        sid, SshSessionManager.SessionState.Status.DISCONNECTED,
+                                    )
+                                    sshSessionManager.requestReconnect(sid)
+                                }
+                            }
                         }
+                    }
                     SshSessionManager.SessionState.Status.DISCONNECTED,
-                    SshSessionManager.SessionState.Status.ERROR ->
+                    SshSessionManager.SessionState.Status.ERROR -> {
                         sshSessionManager.requestReconnect(sid)
+                        probeFails = 0
+                    }
                     else -> { /* CONNECTING / RECONNECTING — in progress */ }
                 }
             }
@@ -352,9 +386,54 @@ class McpTunnelManager @Inject constructor(
         return null
     }
 
+    /**
+     * Probe the reverse forward end-to-end: ask the endpoint to HTTP-GET the
+     * forwarded MCP port on its own loopback. A healthy `-R` round-trips back to
+     * the device's MCP server and returns a status code fast (the server answers
+     * 405/406 to a bare GET — any response proves the channel works); a wedged
+     * forward hangs until the 4 s curl timeout, and a wedged *exec channel*
+     * (transport itself stuck) is caught by [PROBE_TIMEOUT_MS] — both surface as
+     * DEAD. SKIP when the endpoint lacks curl (we can't probe, so don't act).
+     */
+    private suspend fun probeForward(client: SshClient, port: Int): Probe {
+        val cmd =
+            "if command -v curl >/dev/null 2>&1; then " +
+                "code=\$(curl -s -o /dev/null -m 4 -w '%{http_code}' " +
+                "http://127.0.0.1:$port/mcp 2>/dev/null); rc=\$?; " +
+                "echo \"P:\${code:-000}:\$rc\"; else echo P:NOCURL:127; fi"
+        val stdout = withTimeoutOrNull(PROBE_TIMEOUT_MS) {
+            runCatching { client.execCommand(cmd).stdout }.getOrNull()
+        } ?: return Probe.DEAD
+        return interpretProbeLine(stdout)
+    }
+
     private companion object {
         const val INITIAL_RETRY_MS = 2_000L
         const val MAX_RETRY_MS = 30_000L
         const val HEALTH_CHECK_MS = 15_000L
+        const val PROBE_TIMEOUT_MS = 8_000L
+        const val PROBE_FAIL_THRESHOLD = 2
+    }
+}
+
+/** Result of a reverse-forward liveness probe (see [McpTunnelManager.probeForward]). */
+internal enum class Probe { ALIVE, DEAD, SKIP }
+
+/**
+ * Interpret the endpoint probe's stdout (`P:<httpcode>:<rc>`, or `P:NOCURL:127`
+ * when the endpoint has no curl). ALIVE iff the forward round-tripped to an HTTP
+ * status (any 3-digit code other than 000); SKIP when we couldn't probe; DEAD
+ * otherwise (curl timeout / connection refused → wedged or dead forward). Pure +
+ * `internal` so the watchdog's decision logic is unit-testable.
+ */
+internal fun interpretProbeLine(stdout: String): Probe {
+    val line = stdout.lineSequence().map { it.trim() }
+        .firstOrNull { it.startsWith("P:") } ?: return Probe.SKIP
+    val code = line.removePrefix("P:").substringBefore(":")
+    if (code == "NOCURL") return Probe.SKIP
+    return if (code.length == 3 && code.all { it.isDigit() } && code != "000") {
+        Probe.ALIVE
+    } else {
+        Probe.DEAD
     }
 }
