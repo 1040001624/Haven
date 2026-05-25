@@ -144,6 +144,7 @@ fun RdpSessionContent(
      * stored orientation; this composable just calls back.
      */
     onCycleOrientation: () -> Unit = {},
+    onRetry: (() -> Unit)? = null,
 ) {
     val connectedState by connected.collectAsState()
     val frameState by frame.collectAsState()
@@ -213,6 +214,7 @@ fun RdpSessionContent(
                 else -> ProgressState.WaitingForFrame
             },
             onDisconnect = onDisconnect,
+            onRetry = onRetry,
         )
     }
 }
@@ -317,6 +319,7 @@ private fun DesktopPlaceholder(
     error: String?,
     progressState: ProgressState = ProgressState.Error,
     onDisconnect: (() -> Unit)? = null,
+    onRetry: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -414,10 +417,19 @@ private fun DesktopPlaceholder(
                 )
             }
         }
-        if (onDisconnect != null && (progressState == ProgressState.Error || progressState == ProgressState.Connecting)) {
+        val showButtons = progressState == ProgressState.Error || progressState == ProgressState.Connecting
+        if (showButtons && (onDisconnect != null || onRetry != null)) {
             Spacer(Modifier.height(16.dp))
-            TextButton(onClick = onDisconnect) {
-                Text(if (progressState == ProgressState.Error) "Close" else "Cancel")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (onDisconnect != null) {
+                    TextButton(onClick = onDisconnect) {
+                        Text(if (progressState == ProgressState.Error) "Close" else "Cancel")
+                    }
+                }
+                // Retry only makes sense once it's failed, not mid-handshake.
+                if (onRetry != null && progressState == ProgressState.Error) {
+                    Button(onClick = onRetry) { Text("Retry") }
+                }
             }
         }
     }

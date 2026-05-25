@@ -267,6 +267,7 @@ fun DesktopScreen(
                             inputMode = inputMode,
                             currentOrientation = desktopOrientation,
                             onCycleOrientation = { desktopViewModel.cycleDesktopOrientation() },
+                            onRetry = { desktopViewModel.retryTab(tab.id) },
                         )
 
                         is DesktopTab.Wayland -> WaylandDesktopView(
