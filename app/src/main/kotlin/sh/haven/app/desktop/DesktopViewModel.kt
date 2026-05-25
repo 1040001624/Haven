@@ -573,6 +573,52 @@ class DesktopViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Reconnect a tab that hit "connection lost" (e.g. no server listening),
+     * from the inline Retry button — so a dead desktop isn't a long-press dead
+     * end (#121, KoriKraut). Profile-backed tabs re-run the full connect via the
+     * AgentUiCommand bus (same path a tap uses), which re-establishes the SSH
+     * tunnel with a fresh session instead of reusing the torn-down one. Ad-hoc
+     * VNC tabs (no profile) fall back to re-dialling the saved original params,
+     * mirroring [acceptBandwidthSuggestion].
+     */
+    fun retryTab(tabId: String) {
+        val tab = _tabs.value.firstOrNull { it.id == tabId } ?: return
+        val profileId = when (tab) {
+            is DesktopTab.Vnc -> tab.profileId
+            is DesktopTab.Rdp -> tab.profileId
+            else -> null
+        }
+        if (profileId != null) {
+            closeTab(tabId)
+            agentUiCommandBus.emit(
+                sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profileId),
+            )
+            return
+        }
+        // Ad-hoc VNC tab with no backing profile — re-dial the original params.
+        if (tab is DesktopTab.Vnc) {
+            val host = tab.originalHost.ifEmpty { return }
+            val port = tab.originalPort
+            val username = tab.originalUsername
+            val password = tab.originalPassword
+            val sshForward = tab.sshForward
+            val sshSessionId = tab.sshSessionId
+            val colorDepth = tab.colorDepth
+            closeTab(tabId)
+            addVncSession(
+                host = host,
+                port = port,
+                password = password,
+                username = username,
+                sshForward = sshForward,
+                sshSessionId = sshSessionId,
+                profileId = null,
+                colorDepth = colorDepth,
+            )
+        }
+    }
+
     fun closeTab(tabId: String) {
         val tabs = _tabs.value.toMutableList()
         val index = tabs.indexOfFirst { it.id == tabId }

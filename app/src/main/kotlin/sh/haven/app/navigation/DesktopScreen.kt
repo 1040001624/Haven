@@ -234,6 +234,8 @@ fun DesktopScreen(
                             onDismissBandwidthSuggestion = { desktopViewModel.dismissBandwidthSuggestion(tab.id) },
                             currentOrientation = desktopOrientation,
                             onCycleOrientation = { desktopViewModel.cycleDesktopOrientation() },
+                            onRetry = { desktopViewModel.retryTab(tab.id) },
+                            onClose = { desktopViewModel.closeTab(tab.id) },
                         )
 
                         is DesktopTab.Rdp -> RdpSessionContent(

@@ -144,6 +144,8 @@ fun VncSessionContent(
     onDismissBandwidthSuggestion: (() -> Unit)? = null,
     currentOrientation: Int = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
     onCycleOrientation: () -> Unit = {},
+    onRetry: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
 ) {
     val connectedState by connected.collectAsState()
     val frameState by frame.collectAsState()
@@ -211,7 +213,11 @@ fun VncSessionContent(
             onCycleOrientation = onCycleOrientation,
         )
     } else {
-        VncPlaceholder(error = errorState)
+        VncPlaceholder(
+            error = errorState,
+            onRetry = onRetry,
+            onClose = onClose,
+        )
     }
 }
 
@@ -297,7 +303,11 @@ fun VncScreen(
 }
 
 @Composable
-private fun VncPlaceholder(error: String?) {
+private fun VncPlaceholder(
+    error: String?,
+    onRetry: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -326,6 +336,20 @@ private fun VncPlaceholder(error: String?) {
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(12.dp),
                 )
+            }
+            // Inline recovery so a lost connection isn't a long-press-to-close
+            // dead-end (#121, KoriKraut). Retry re-runs the connect; Close drops
+            // the tab and releases any lingering SSH tunnel.
+            if (onRetry != null || onClose != null) {
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (onClose != null) {
+                        TextButton(onClick = onClose) { Text("Close") }
+                    }
+                    if (onRetry != null) {
+                        Button(onClick = onRetry) { Text("Retry") }
+                    }
+                }
             }
         }
     }

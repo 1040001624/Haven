@@ -1918,6 +1918,40 @@ internal class McpTools(
             },
         ) { args -> createConnection(args) },
 
+        "update_connection" to ToolHandler(
+            description = "Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
+                    put("label", JSONObject().apply { put("type", "string"); put("description", "New user-facing label.") })
+                    put("host", JSONObject().apply { put("type", "string"); put("description", "New hostname or IP.") })
+                    put("port", JSONObject().apply { put("type", "integer"); put("description", "New TCP port.") })
+                    put("username", JSONObject().apply { put("type", "string"); put("description", "New username (SSH/SMB).") })
+                    put("password", JSONObject().apply { put("type", "string"); put("description", "New password (stored encrypted). Mapped to the profile's transport (SSH/VNC/RDP/SMB). Pass an empty string to clear it.") })
+                    put("keyId", JSONObject().apply { put("type", "string"); put("description", "SSH only: id of a saved key (list_ssh_keys). Empty string clears.") })
+                    put("ignoreSavedKeys", JSONObject().apply { put("type", "boolean"); put("description", "SSH-family only: force password-only auth, never offer saved keystore keys (#121).") })
+                    put("useMosh", JSONObject().apply { put("type", "boolean"); put("description", "SSH only: use Mosh on top of the SSH bootstrap.") })
+                    put("vncSshForward", JSONObject().apply { put("type", "boolean"); put("description", "VNC only: tunnel through a saved SSH profile (set vncSshProfileId).") })
+                    put("vncSshProfileId", JSONObject().apply { put("type", "string"); put("description", "VNC only: SSH profile id to tunnel through. Empty string clears.") })
+                    put("rdpSshForward", JSONObject().apply { put("type", "boolean"); put("description", "RDP only: tunnel through a saved SSH profile (set rdpSshProfileId).") })
+                    put("rdpSshProfileId", JSONObject().apply { put("type", "string"); put("description", "RDP only: SSH profile id to tunnel through. Empty string clears.") })
+                    put("smbSshForward", JSONObject().apply { put("type", "boolean"); put("description", "SMB only: tunnel through a saved SSH profile (set smbSshProfileId).") })
+                    put("smbSshProfileId", JSONObject().apply { put("type", "string"); put("description", "SMB only: SSH profile id to tunnel through. Empty string clears.") })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val pid = args.optString("profileId")
+                val changed = args.keys().asSequence()
+                    .filter { it != "profileId" }
+                    .toList()
+                val fields = if (changed.isEmpty()) "(no changes)" else changed.joinToString(", ")
+                "Update \"${profileLabel(pid)}\": $fields?"
+            },
+        ) { args -> updateConnection(args) },
+
         "set_port_knock" to ToolHandler(
             description = "Update the port-knock fields on an existing profile. Pass portKnockSequence='' (empty) to disable knocking. Format: 'port[/proto]' tokens — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'. Returns the updated profile summary.",
             inputSchema = JSONObject().apply {
@@ -4853,6 +4887,75 @@ internal class McpTools(
             put("proxyHost", updated.proxyHost ?: JSONObject.NULL)
             put("proxyPort", updated.proxyPort)
         }
+    }
+
+    /**
+     * Edit fields on an existing profile (load → copy changed → save). Only
+     * keys present in [args] change; everything else is preserved. Password
+     * maps to the transport-specific column based on the profile's type, and
+     * is never echoed back. Referenced ids (keyId, *SshProfileId) are validated.
+     */
+    private suspend fun updateConnection(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifBlank {
+            throw IllegalArgumentException("profileId required")
+        }
+        val existing = connectionRepository.getById(profileId)
+            ?: throw IllegalArgumentException("profile $profileId not found")
+
+        fun str(key: String, current: String?): String? =
+            if (args.has(key)) args.optString(key).ifBlank { null } else current
+        fun bool(key: String, current: Boolean): Boolean =
+            if (args.has(key)) args.optBoolean(key) else current
+
+        // Validate referenced ids before saving so a typo fails here, not at connect.
+        val newKeyId = str("keyId", existing.keyId)
+        if (args.has("keyId") && !newKeyId.isNullOrBlank() && sshKeyRepository.getById(newKeyId) == null) {
+            throw IllegalArgumentException("key $newKeyId not found")
+        }
+        for (refKey in listOf("vncSshProfileId", "rdpSshProfileId", "smbSshProfileId")) {
+            if (args.has(refKey)) {
+                val ref = args.optString(refKey).ifBlank { null }
+                if (ref != null && connectionRepository.getById(ref) == null) {
+                    throw IllegalArgumentException("$refKey $ref not found")
+                }
+            }
+        }
+
+        // Password maps to the transport-specific column.
+        val newPassword: (current: String?) -> String? = { current ->
+            if (args.has("password")) args.optString("password").ifBlank { null } else current
+        }
+
+        // `port` maps to the base port AND the transport-specific port column —
+        // VNC/RDP/SMB dial vncPort/rdpPort/smbPort, not the base port (mirrors
+        // create_connection, which sets both).
+        val portChanged = args.has("port")
+        val newPort = if (portChanged) args.optInt("port", existing.port) else existing.port
+
+        val updated = existing.copy(
+            label = if (args.has("label")) args.optString("label").ifBlank { existing.label } else existing.label,
+            host = if (args.has("host")) args.optString("host").ifBlank { existing.host } else existing.host,
+            port = newPort,
+            vncPort = if (portChanged && existing.connectionType == "VNC") newPort else existing.vncPort,
+            rdpPort = if (portChanged && existing.connectionType == "RDP") newPort else existing.rdpPort,
+            smbPort = if (portChanged && existing.connectionType == "SMB") newPort else existing.smbPort,
+            username = if (args.has("username")) args.optString("username") else existing.username,
+            sshPassword = if (existing.connectionType == "SSH") newPassword(existing.sshPassword) else existing.sshPassword,
+            vncPassword = if (existing.connectionType == "VNC") newPassword(existing.vncPassword) else existing.vncPassword,
+            rdpPassword = if (existing.connectionType == "RDP") newPassword(existing.rdpPassword) else existing.rdpPassword,
+            smbPassword = if (existing.connectionType == "SMB") newPassword(existing.smbPassword) else existing.smbPassword,
+            keyId = newKeyId,
+            ignoreSavedKeys = bool("ignoreSavedKeys", existing.ignoreSavedKeys),
+            useMosh = bool("useMosh", existing.useMosh),
+            vncSshForward = bool("vncSshForward", existing.vncSshForward),
+            vncSshProfileId = str("vncSshProfileId", existing.vncSshProfileId),
+            rdpSshForward = bool("rdpSshForward", existing.rdpSshForward),
+            rdpSshProfileId = str("rdpSshProfileId", existing.rdpSshProfileId),
+            smbSshForward = bool("smbSshForward", existing.smbSshForward),
+            smbSshProfileId = str("smbSshProfileId", existing.smbSshProfileId),
+        )
+        connectionRepository.save(updated)
+        return profileToJson(updated)
     }
 
     private suspend fun createConnection(args: JSONObject): JSONObject {

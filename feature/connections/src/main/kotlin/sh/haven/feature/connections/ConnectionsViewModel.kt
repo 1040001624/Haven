@@ -1268,8 +1268,48 @@ class ConnectionsViewModel @Inject constructor(
                 connect(dependentProfile, password = "")
             } catch (e: Exception) {
                 Log.e(TAG, "Tunnel-auth retry failed: ${e.message}", e)
-                _error.value = "SSH tunnel: ${e.message}"
+                // A mistyped password lands here — re-open the prompt (user-driven,
+                // cancellable) instead of dead-ending on a raw JSch message.
+                handleTunnelJumpFailure(e, dependentProfile, jumpProfile.id)
             }
+        }
+    }
+
+    /**
+     * Surface a jump-host (VNC/RDP/SMB-over-SSH) connect failure. On an
+     * authentication failure with a recoverable credential path, re-open the
+     * password prompt wired to [connectTunnelDependentAfterAuth] so the user can
+     * enter or retry a password — mirroring the direct SSH tap's key→password
+     * fallback — instead of dead-ending on a raw "Auth cancel for methods
+     * 'password'" message (#121). Network and other failures fall through to a
+     * clean [_error] string. Classification matches [connectSsh]'s catch block.
+     */
+    private suspend fun handleTunnelJumpFailure(
+        e: Exception,
+        dependentProfile: ConnectionProfile,
+        sshProfileId: String,
+    ) {
+        val msg = e.message ?: ""
+        val isNetworkError = e is java.net.ConnectException ||
+            e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.net.NoRouteToHostException ||
+            msg.contains("refused", ignoreCase = true) ||
+            msg.contains("timed out", ignoreCase = true) ||
+            msg.contains("unreachable", ignoreCase = true)
+        val isAuthMessage = !isNetworkError && (
+            msg.contains("Auth fail", ignoreCase = true) ||
+            msg.contains("Auth cancel", ignoreCase = true) ||
+            msg.contains("authentication", ignoreCase = true) ||
+            msg.contains("publickey", ignoreCase = true)
+        )
+        val jumpProfile = if (isAuthMessage) repository.getById(sshProfileId) else null
+        if (jumpProfile != null) {
+            Log.d(TAG, "Jump-host auth failed; prompting for password (${jumpProfile.label})")
+            _pendingTunnelDependent.value = dependentProfile
+            _passwordFallback.value = jumpProfile
+        } else {
+            _error.value = "SSH tunnel: ${msg.ifBlank { "connection failed" }}"
         }
     }
 
@@ -1366,7 +1406,7 @@ class ConnectionsViewModel @Inject constructor(
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to connect SSH tunnel host for VNC", e)
-                    _error.value = "SSH tunnel: ${e.message}"
+                    handleTunnelJumpFailure(e, profile, sshProfileId)
                 } finally {
                     _connectingProfileId.value = null
                 }
@@ -1420,7 +1460,7 @@ class ConnectionsViewModel @Inject constructor(
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to connect SSH tunnel host for RDP", e)
-                    _error.value = "SSH tunnel: ${e.message}"
+                    handleTunnelJumpFailure(e, profile, sshProfileId)
                 } finally {
                     _connectingProfileId.value = null
                 }
@@ -1455,9 +1495,17 @@ class ConnectionsViewModel @Inject constructor(
                         _connectingProfileId.value = null
                         return@launch
                     }
-                    val (sshSessionId, _) = connectJumpHost(
-                        sshProfileId, "", tunnelOwnerProfileId = profile.id,
-                    )
+                    // Isolate the jump-host connect: an auth failure here is the
+                    // SSH credential, not the SMB share's — route it to the
+                    // password prompt rather than the SMB-auth error path (#121).
+                    val sshSessionId = try {
+                        connectJumpHost(sshProfileId, "", tunnelOwnerProfileId = profile.id).first
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to connect SSH tunnel host for SMB", e)
+                        handleTunnelJumpFailure(e, profile, sshProfileId)
+                        _connectingProfileId.value = null
+                        return@launch
+                    }
                     val sshClient = sshSessionManager.sessions.value[sshSessionId]?.client
                         ?: throw IllegalStateException("SSH tunnel session not found")
                     // Set up local port forward: random port -> remoteHost:smbPort
