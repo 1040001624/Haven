@@ -1,0 +1,3 @@
+Terminal toolbar: optional Enter key.
+
+- New Enter (⏎) key for the terminal keyboard toolbar. Add it via Settings → Keyboard toolbar (it's off by default). Handy for submitting a command after recalling it with the Up-arrow key, without bringing up the on-screen keyboard.
