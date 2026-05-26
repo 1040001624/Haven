@@ -379,6 +379,33 @@ fun KeyboardToolbar(
 }
 
 /**
+ * One column cell: stretches its key to the column width (the wider of the two
+ * stacked keys) via [Box.propagateMinConstraints], so both keys sharing a column
+ * are the same width — not just centred in it (#184 follow-up). A null [content]
+ * leaves an aligned 32dp placeholder.
+ */
+@Composable
+private fun KeyCell(content: (@Composable () -> Unit)?) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        contentAlignment = Alignment.Center,
+        propagateMinConstraints = true,
+    ) {
+        if (content != null) content() else Spacer(Modifier.size(32.dp))
+    }
+}
+
+/** A single toolbar column: the row-1 key stacked over the row-2 key, sized to
+ *  the wider of the two so columns line up across both rows. */
+@Composable
+private fun KeyColumn(top: (@Composable () -> Unit)?, bottom: (@Composable () -> Unit)?) {
+    Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+        KeyCell(top)
+        KeyCell(bottom)
+    }
+}
+
+/**
  * Renders the two-row toolbar with an aligned navigation block.
  *
  * Layout: [left keys] [nav grid] [symbols]
@@ -438,30 +465,10 @@ private fun AlignedToolbarContent(
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp),
     ) {
-        // Left keys, column-aligned: each column stacks its row-1 key over its
-        // row-2 key in a Column sized to the wider of the two (IntrinsicSize.Max),
-        // so the two rows line up in tidy columns at minimum width — no 58dp
-        // pills, no misaligned rows (#184 follow-up).
-        @Composable
-        fun KeyCell(content: (@Composable () -> Unit)?) {
-            // propagateMinConstraints stretches the key to the column width
-            // (the wider of the two stacked keys), so both keys sharing a column
-            // are the same width — not just centred in it (#184 follow-up).
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                contentAlignment = Alignment.Center,
-                propagateMinConstraints = true,
-            ) {
-                if (content != null) content() else Spacer(Modifier.size(32.dp))
-            }
-        }
-        @Composable
-        fun KeyColumn(top: (@Composable () -> Unit)?, bottom: (@Composable () -> Unit)?) {
-            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
-                KeyCell(top)
-                KeyCell(bottom)
-            }
-        }
+        // Left keys, column-aligned via the file-level KeyColumn/KeyCell helpers:
+        // each column stacks its row-1 key over its row-2 key in a Column sized to
+        // the wider of the two (IntrinsicSize.Max), so the two rows line up in tidy
+        // columns at minimum width — no 58dp pills, no misaligned rows (#184).
         fun itemRenderer(item: ToolbarItem?): (@Composable () -> Unit)? = item?.let {
             { RenderItem(it, focusRequester, ctrlActive, altActive, shiftActive, imeVisible, view) }
         }
@@ -1043,6 +1050,44 @@ private fun keyIcon(key: ToolbarKey): ImageVector? = when (key) {
     else -> null
 }
 
+/**
+ * The visual style of a key — icon vs glyph-text vs plain-text — decided once and
+ * shared by the live render and reorder/edit mode so a key looks identical in both.
+ * The glyph/icon choices mirror the live [RenderItem] leaves verbatim:
+ *  - icon keys (Keyboard/Attach/Voice) → [keyIcon];
+ *  - Enter "⏎" and the arrows → the larger 16sp bold glyph;
+ *  - single-char symbols → bold glyph (matches [SymbolButton]'s length<=1 rule);
+ *  - Snippets → its "✂" glyph (plain weight, as live);
+ *  - everything else (Esc/Tab/Paste/Home/PgUp/Fn/Ins/Del/Shift/Ctrl/Alt/Raw) → 12sp text.
+ */
+private sealed interface KeyVisual {
+    data class IconV(val icon: ImageVector, val desc: String?) : KeyVisual
+    data class TextV(val label: String, val glyph: Boolean) : KeyVisual
+}
+
+private fun toolbarKeyVisual(item: ToolbarItem): KeyVisual = when (item) {
+    is ToolbarItem.Custom -> KeyVisual.TextV(item.label, glyph = item.label.length <= 1)
+    is ToolbarItem.BuiltIn -> when (item.key) {
+        ToolbarKey.KEYBOARD -> KeyVisual.IconV(Icons.Filled.Keyboard, null)
+        ToolbarKey.ATTACH -> KeyVisual.IconV(Icons.Filled.AttachFile, null)
+        ToolbarKey.VOICE_KEYBOARD -> KeyVisual.IconV(Icons.Filled.Lock, null)
+        ToolbarKey.ENTER_KEY -> KeyVisual.TextV("⏎", glyph = true) // ⏎
+        ToolbarKey.ARROW_LEFT -> KeyVisual.TextV("←", glyph = true)
+        ToolbarKey.ARROW_UP -> KeyVisual.TextV("↑", glyph = true)
+        ToolbarKey.ARROW_DOWN -> KeyVisual.TextV("↓", glyph = true)
+        ToolbarKey.ARROW_RIGHT -> KeyVisual.TextV("→", glyph = true)
+        ToolbarKey.SNIPPETS -> KeyVisual.TextV("✂", glyph = false) // ✂
+        else -> item.key.char?.let { KeyVisual.TextV(it.toString(), glyph = true) }
+            ?: KeyVisual.TextV(item.key.label, glyph = false)
+    }
+}
+
+@Composable
+private fun ToolbarKeyContent(v: KeyVisual) = when (v) {
+    is KeyVisual.IconV -> ToolbarKeyIcon(v.icon, v.desc)
+    is KeyVisual.TextV -> ToolbarKeyText(v.label, glyph = v.glyph)
+}
+
 // --- Standard buttons (variable width) ---
 
 @Composable
@@ -1192,6 +1237,15 @@ private fun ReorderToolbarContent(
     val nav1 = navBounds(row1)
     val nav2 = if (row2 != null) navBounds(row2) else null
 
+    // KEYBOARD is pinned to row1[0] and rendered as the fixed done-✓ cell (col 0),
+    // so the draggable row-1 left segment starts just after it; row-2's left
+    // segment starts at 0 (Voice). This makes the two segments pair column-for-column.
+    val r1HasKeyboard = (row1.getOrNull(0) as? ToolbarItem.BuiltIn)?.key == ToolbarKey.KEYBOARD
+    val r1LeftStart = if (r1HasKeyboard) 1 else 0
+    // Per-column max-width oracles shared between row 1 and row 2 within each block.
+    val leftColWidths = remember(layout) { mutableStateMapOf<Int, Float>() }
+    val rightColWidths = remember(layout) { mutableStateMapOf<Int, Float>() }
+
     // If no nav keys or single row, fall back to flat rows
     if (nav1 == null && nav2 == null || row2 == null) {
         Column {
@@ -1242,34 +1296,49 @@ private fun ReorderToolbarContent(
             targetRow.add(insertAt, item)
         }
 
-        // Left column — IntrinsicSize.Max aligns both rows
-        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
-            DraggableSegment(
-                items = row1,
-                range = 0 until (nav1?.first ?: row1.size),
-                showDoneButton = true,
-                onDone = ::saveAndExit,
-                onTransferRight = if (nav1 != null) { idx -> transferRight(row1, idx) } else null,
-                onTransferToOtherRow = if (row2 != null) { idx ->
-                    transferBetweenRows(row1, row2, idx, isLeftSegment = true)
-                } else null,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (row2 != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (showVncIcon) {
+        // Left block: a fixed leading column (done-✓ over the VNC icon, mirroring
+        // live col 0) so the two draggable segments below pair index-for-index and
+        // their columns line up — instead of the old VNC-prepend that shifted row 2.
+        Row(verticalAlignment = Alignment.Top) {
+            KeyColumn(
+                top = {
+                    IconButton(
+                        onClick = ::saveAndExit,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = stringResource(R.string.toolbar_done_reordering),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                },
+                bottom = if (showVncIcon) {
+                    {
                         Icon(
                             Icons.Filled.DesktopWindows,
                             contentDescription = stringResource(R.string.toolbar_vnc_desktop),
-                            modifier = Modifier
-                                .size(32.dp)
-                                .padding(7.dp),
+                            modifier = Modifier.size(32.dp).padding(7.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                } else {
+                    null
+                },
+            )
+            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+                DraggableSegment(
+                    items = row1,
+                    range = r1LeftStart until (nav1?.first ?: row1.size),
+                    onTransferRight = if (nav1 != null) { idx -> transferRight(row1, idx) } else null,
+                    onTransferToOtherRow = if (row2 != null) { idx ->
+                        transferBetweenRows(row1, row2, idx, isLeftSegment = true)
+                    } else null,
+                    modifier = Modifier.fillMaxWidth(),
+                    columnWidths = leftColWidths,
+                )
+                if (row2 != null) {
                     DraggableSegment(
                         items = row2,
                         range = 0 until (nav2?.first ?: row2.size),
@@ -1277,6 +1346,8 @@ private fun ReorderToolbarContent(
                         onTransferToOtherRow = { idx ->
                             transferBetweenRows(row2, row1, idx, isLeftSegment = true)
                         },
+                        modifier = Modifier.fillMaxWidth(),
+                        columnWidths = leftColWidths,
                     )
                 }
             }
@@ -1321,6 +1392,7 @@ private fun ReorderToolbarContent(
                     transferBetweenRows(row1, row2, idx, isLeftSegment = false)
                 } else null,
                 modifier = Modifier.fillMaxWidth(),
+                columnWidths = rightColWidths,
             )
             if (row2 != null) {
                 DraggableSegment(
@@ -1331,6 +1403,7 @@ private fun ReorderToolbarContent(
                         transferBetweenRows(row2, row1, idx, isLeftSegment = false)
                     },
                     modifier = Modifier.fillMaxWidth(),
+                    columnWidths = rightColWidths,
                 )
             }
         }
@@ -1387,6 +1460,12 @@ private fun DraggableSegment(
     onTransferLeft: ((Int) -> Unit)? = null,
     onTransferToOtherRow: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    // Per-column max-width oracle shared with the segment in the OTHER row, keyed
+    // by column index (idx - range.first). Each key reports its width as a running
+    // max and inflates to that, so a column's two stacked keys end up the same
+    // width and line up — reproducing live mode's IntrinsicSize.Max grid across the
+    // two independent flat rows. Null disables equalization.
+    columnWidths: androidx.compose.runtime.snapshots.SnapshotStateMap<Int, Float>? = null,
 ) {
     if (range.isEmpty()) {
         // Empty segment — still need height for alignment
@@ -1400,6 +1479,7 @@ private fun DraggableSegment(
     val itemWidths = remember { mutableStateMapOf<Int, Float>() }
     val itemLeftEdges = remember { mutableStateMapOf<Int, Float>() }
     val view = LocalView.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val transferThreshold = 60f // pixels — ~22dp, enough to indicate intent
 
     fun checkSwaps() {
@@ -1518,11 +1598,19 @@ private fun DraggableSegment(
                     )
                 }
             } else {
+                val col = idx - range.first
+                val colMin = columnWidths?.get(col)?.let { with(density) { it.toDp() } } ?: 0.dp
                 Box(
                     modifier = Modifier
+                        .widthIn(min = colMin)
                         .onGloballyPositioned { c ->
-                            itemWidths[idx] = c.size.width.toFloat()
+                            val w = c.size.width.toFloat()
+                            itemWidths[idx] = w
                             itemLeftEdges[idx] = c.positionInParent().x
+                            if (columnWidths != null) {
+                                val prev = columnWidths[col]
+                                if (prev == null || w > prev) columnWidths[col] = w
+                            }
                         }
                         .then(
                             if (idx == draggedIndex) {
@@ -1535,6 +1623,7 @@ private fun DraggableSegment(
                                     }
                             } else Modifier
                         ),
+                    propagateMinConstraints = true,
                 ) {
                     ReorderModeKey(item)
                 }
@@ -1796,9 +1885,8 @@ private fun ReorderableToolbarRow(
 
 @Composable
 private fun ReorderModeKey(item: ToolbarItem) {
-    // Icon keys show their icon here too (not a text label), so a key looks the
-    // same in reorder mode as in live mode.
-    val icon = (item as? ToolbarItem.BuiltIn)?.let { keyIcon(it.key) }
+    // Render through the shared visual so a key looks the same in reorder mode as
+    // in live mode — icons stay icons, and Enter/arrows/symbols keep their glyph.
     Surface(
         modifier = Modifier
             .padding(horizontal = 1.dp)
@@ -1813,11 +1901,7 @@ private fun ReorderModeKey(item: ToolbarItem) {
             modifier = Modifier.padding(horizontal = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            if (icon != null) {
-                ToolbarKeyIcon(icon, item.displayLabel)
-            } else {
-                ToolbarKeyText(item.displayLabel)
-            }
+            ToolbarKeyContent(toolbarKeyVisual(item))
         }
     }
 }
