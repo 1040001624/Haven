@@ -76,17 +76,29 @@ class SshClient : Closeable {
                 }
                 is ConnectionConfig.AuthMethod.PrivateKey -> {
                     // Pass the OpenSSH cert (when present) as the third
-                    // public-key arg; JSch wraps it for CA validation. (#133)
+                    // public-key arg; JSch wraps it for CA validation. The
+                    // stored cert is a raw binary blob, but JSch expects the
+                    // textual `<type> <base64>` form — convert it. (#133/#185)
                     jsch.addIdentity(
                         "haven-key-${System.nanoTime()}",
                         auth.keyBytes,
-                        auth.certificateBytes,
+                        auth.certificateBytes?.let { SshCertificateParser.toOpenSshPublicKeyLine(it) },
                         if (auth.passphrase.isNotEmpty()) charsToUtf8Bytes(auth.passphrase) else null,
                     )
                 }
                 is ConnectionConfig.AuthMethod.PrivateKeys -> {
-                    auth.keys.forEachIndexed { i, (label, keyBytes) ->
-                        jsch.addIdentity("haven-key-$i-$label-${System.nanoTime()}", keyBytes, null, null)
+                    // Pass each candidate's cert (when present) as the
+                    // public-key arg so a CA-only server accepts a cert-backed
+                    // key even when it isn't explicitly assigned to the
+                    // profile. Without this the bare pubkey is offered and the
+                    // server rejects it. (#185)
+                    auth.keys.forEachIndexed { i, entry ->
+                        jsch.addIdentity(
+                            "haven-key-$i-${entry.label}-${System.nanoTime()}",
+                            entry.keyBytes,
+                            entry.certificateBytes?.let { SshCertificateParser.toOpenSshPublicKeyLine(it) },
+                            null,
+                        )
                     }
                 }
                 is ConnectionConfig.AuthMethod.FidoKey -> {

@@ -376,7 +376,13 @@ class McpTunnelManager @Inject constructor(
             .filter { !it.isEncrypted && !it.keyType.startsWith("sk-") }
         if (usableKeys.isNotEmpty()) {
             return ConnectionConfig.AuthMethod.PrivateKeys(
-                keys = usableKeys.map { it.label to SshKeyExporter.toPem(it.privateKeyBytes, it.keyType) },
+                keys = usableKeys.map {
+                    ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(
+                        label = it.label,
+                        keyBytes = SshKeyExporter.toPem(it.privateKeyBytes, it.keyType),
+                        certificateBytes = it.certificateBytes, // CA-only servers (#185)
+                    )
+                },
             )
         }
         val password = profile.sshPassword

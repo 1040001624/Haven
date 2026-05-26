@@ -76,6 +76,29 @@ object SshCertificateParser {
     fun getCertKeyType(baseKeyType: String): String =
         if (baseKeyType.endsWith(CERT_SUFFIX)) baseKeyType else "$baseKeyType$CERT_SUFFIX"
 
+    /**
+     * Render a stored raw certificate [blob] (the base64-decoded binary we
+     * persist in `SshKey.certificateBytes`) as an OpenSSH public-key **text
+     * line** — `"<cert-type> <base64-blob>"`. JSch's
+     * `addIdentity(name, prv, pubkey, passphrase)` parses its `pubkey`
+     * argument as this textual form (type + base64), not as the raw binary;
+     * passing the binary blob makes JSch silently fall back to the bare
+     * public key and the server rejects a CA-only login (#185). The cert
+     * type is read from the blob's leading SSH `string` field so we don't
+     * depend on a separately-tracked key type.
+     */
+    fun toOpenSshPublicKeyLine(blob: ByteArray): ByteArray {
+        require(blob.size >= 4) { "certificate blob too short" }
+        val typeLen = ((blob[0].toInt() and 0xFF) shl 24) or
+            ((blob[1].toInt() and 0xFF) shl 16) or
+            ((blob[2].toInt() and 0xFF) shl 8) or
+            (blob[3].toInt() and 0xFF)
+        require(typeLen in 1..(blob.size - 4)) { "invalid certificate type length" }
+        val type = String(blob, 4, typeLen, Charsets.US_ASCII)
+        val b64 = Base64.getEncoder().encodeToString(blob)
+        return "$type $b64".toByteArray(Charsets.US_ASCII)
+    }
+
     /** True when the cert's embedded public key matches the supplied SHA-256 fingerprint. */
     fun matchesKey(cert: CertificateInfo, keyFingerprintSha256: String): Boolean =
         cert.embeddedPublicKeyFingerprint == keyFingerprintSha256

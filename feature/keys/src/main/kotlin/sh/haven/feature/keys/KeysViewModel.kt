@@ -527,6 +527,18 @@ class KeysViewModel @Inject constructor(
         _pendingExportKeyId.value = null
     }
 
+    /** Key ID pending certificate export — UI launches SAF when set. (#185) */
+    private val _pendingCertExportKeyId = MutableStateFlow<String?>(null)
+    val pendingCertExportKeyId: StateFlow<String?> = _pendingCertExportKeyId.asStateFlow()
+
+    fun requestCertExport(keyId: String) {
+        _pendingCertExportKeyId.value = keyId
+    }
+
+    fun clearPendingCertExport() {
+        _pendingCertExportKeyId.value = null
+    }
+
     fun getExportFileName(keyId: String): String {
         val key = keys.value.firstOrNull { it.id == keyId } ?: return "id_key"
         val sanitized = key.label.replace(Regex("[^a-zA-Z0-9._-]"), "_")
@@ -551,6 +563,41 @@ class KeysViewModel @Inject constructor(
                 _message.value = "Private key exported"
             } catch (e: Exception) {
                 Log.e("KeysViewModel", "Export failed", e)
+                _error.value = "Export failed: ${e.message}"
+            }
+        }
+    }
+
+    /** Suggested filename for an exported certificate: `id_<label>-cert.pub`. */
+    fun getCertExportFileName(keyId: String): String = "${getExportFileName(keyId)}-cert.pub"
+
+    /**
+     * Write the attached OpenSSH certificate to [destinationUri] so the
+     * user can inspect it (`ssh-keygen -L -f …`) or copy it to a server.
+     * Certificates are public material — no biometric gate, no decryption.
+     * (#185 — the reporter had no way to verify the cert Haven holds.)
+     */
+    fun exportCertificate(context: Context, keyId: String, destinationUri: Uri) {
+        viewModelScope.launch {
+            try {
+                val certBytes = withContext(Dispatchers.IO) { repository.getCertificateBytes(keyId) }
+                if (certBytes == null) {
+                    _error.value = "This key has no certificate attached"
+                    return@launch
+                }
+                // We persist the raw binary cert blob, but a usable
+                // `*-cert.pub` file is the OpenSSH text line ("<type> <base64>")
+                // — render that so the export round-trips through
+                // `ssh-keygen -L -f` and copies onto a server. (#185)
+                val line = sh.haven.core.ssh.SshCertificateParser.toOpenSshPublicKeyLine(certBytes)
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(destinationUri)?.use { out ->
+                        out.write(line)
+                    } ?: throw IllegalStateException("Cannot open output stream")
+                }
+                _message.value = "Certificate exported"
+            } catch (e: Exception) {
+                Log.e("KeysViewModel", "Certificate export failed", e)
                 _error.value = "Export failed: ${e.message}"
             }
         }

@@ -1,6 +1,7 @@
 package sh.haven.core.ssh
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -202,34 +203,57 @@ class ConnectionConfigTest {
 
     // PrivateKeys auth method
 
+    private fun keyEntry(label: String, bytes: ByteArray, cert: ByteArray? = null) =
+        ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(label, bytes, cert)
+
     @Test
     fun `PrivateKeys holds single key pair`() {
         val keyBytes = byteArrayOf(1, 2, 3)
-        val auth = ConnectionConfig.AuthMethod.PrivateKeys(listOf("my-key" to keyBytes))
+        val auth = ConnectionConfig.AuthMethod.PrivateKeys(listOf(keyEntry("my-key", keyBytes)))
         assertEquals(1, auth.keys.size)
-        assertEquals("my-key", auth.keys[0].first)
-        assertTrue(auth.keys[0].second.contentEquals(keyBytes))
+        assertEquals("my-key", auth.keys[0].label)
+        assertTrue(auth.keys[0].keyBytes.contentEquals(keyBytes))
+        assertNull(auth.keys[0].certificateBytes)
     }
 
     @Test
     fun `PrivateKeys holds multiple key pairs`() {
         val keys = listOf(
-            "work-key" to byteArrayOf(1, 2, 3),
-            "personal-key" to byteArrayOf(4, 5, 6),
-            "backup-key" to byteArrayOf(7, 8, 9),
+            keyEntry("work-key", byteArrayOf(1, 2, 3)),
+            keyEntry("personal-key", byteArrayOf(4, 5, 6)),
+            keyEntry("backup-key", byteArrayOf(7, 8, 9)),
         )
         val auth = ConnectionConfig.AuthMethod.PrivateKeys(keys)
         assertEquals(3, auth.keys.size)
-        assertEquals("work-key", auth.keys[0].first)
-        assertEquals("personal-key", auth.keys[1].first)
-        assertEquals("backup-key", auth.keys[2].first)
+        assertEquals("work-key", auth.keys[0].label)
+        assertEquals("personal-key", auth.keys[1].label)
+        assertEquals("backup-key", auth.keys[2].label)
     }
 
     @Test
     fun `PrivateKeys preserves key byte content`() {
         val keyBytes = byteArrayOf(0x00, 0x7F, 0xFF.toByte(), 0x2D)
-        val auth = ConnectionConfig.AuthMethod.PrivateKeys(listOf("k" to keyBytes))
-        assertTrue(auth.keys[0].second.contentEquals(keyBytes))
+        val auth = ConnectionConfig.AuthMethod.PrivateKeys(listOf(keyEntry("k", keyBytes)))
+        assertTrue(auth.keys[0].keyBytes.contentEquals(keyBytes))
+    }
+
+    @Test
+    fun `PrivateKeys carries an optional certificate per key`() {
+        val keyBytes = byteArrayOf(1, 2, 3)
+        val certBytes = byteArrayOf(9, 8, 7)
+        val auth = ConnectionConfig.AuthMethod.PrivateKeys(
+            listOf(keyEntry("ca-key", keyBytes, certBytes)),
+        )
+        assertTrue(auth.keys[0].certificateBytes!!.contentEquals(certBytes))
+        // Equality must account for the cert (#185).
+        assertEquals(
+            ConnectionConfig.AuthMethod.PrivateKeys(listOf(keyEntry("ca-key", keyBytes, certBytes))),
+            auth,
+        )
+        assertNotEquals(
+            ConnectionConfig.AuthMethod.PrivateKeys(listOf(keyEntry("ca-key", keyBytes))),
+            auth,
+        )
     }
 
     @Test
@@ -241,14 +265,14 @@ class ConnectionConfigTest {
     @Test
     fun `PrivateKeys is an AuthMethod`() {
         val auth: ConnectionConfig.AuthMethod =
-            ConnectionConfig.AuthMethod.PrivateKeys(listOf("k" to byteArrayOf(1)))
+            ConnectionConfig.AuthMethod.PrivateKeys(listOf(keyEntry("k", byteArrayOf(1))))
         assertTrue(auth is ConnectionConfig.AuthMethod.PrivateKeys)
     }
 
     @Test
     fun `ConnectionConfig accepts PrivateKeys as authMethod`() {
         val auth = ConnectionConfig.AuthMethod.PrivateKeys(
-            listOf("deploy" to byteArrayOf(1, 2, 3))
+            listOf(keyEntry("deploy", byteArrayOf(1, 2, 3)))
         )
         val config = ConnectionConfig(
             host = "example.com",

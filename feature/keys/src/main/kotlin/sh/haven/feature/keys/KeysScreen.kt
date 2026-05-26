@@ -103,6 +103,7 @@ fun KeysScreen(
     val importResult by viewModel.importResult.collectAsState()
     val message by viewModel.message.collectAsState()
     val pendingExportKeyId by viewModel.pendingExportKeyId.collectAsState()
+    val pendingCertExportKeyId by viewModel.pendingCertExportKeyId.collectAsState()
     val pendingCertKeyId by viewModel.pendingCertKeyId.collectAsState()
     var pendingPasswordWipe by remember { mutableStateOf<KeystoreEntry?>(null) }
 
@@ -145,6 +146,24 @@ fun KeysScreen(
     LaunchedEffect(pendingExportKeyId) {
         pendingExportKeyId?.let { keyId ->
             exportLauncher.launch(viewModel.getExportFileName(keyId))
+        }
+    }
+
+    val certExportLauncher = rememberLauncherForActivityResult(
+        // Neutral type so DocumentsUI keeps the ".pub" name instead of
+        // appending ".pem" (as it does for application/x-pem-file). (#185)
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val keyId = pendingCertExportKeyId
+        viewModel.clearPendingCertExport()
+        if (uri != null && keyId != null) {
+            viewModel.exportCertificate(context, keyId, uri)
+        }
+    }
+
+    LaunchedEffect(pendingCertExportKeyId) {
+        pendingCertExportKeyId?.let { keyId ->
+            certExportLauncher.launch(viewModel.getCertExportFileName(keyId))
         }
     }
 
@@ -285,6 +304,7 @@ fun KeysScreen(
                             },
                             onAttachCertificate = { viewModel.requestAttachCertificate(sshKey.id) },
                             onRemoveCertificate = { viewModel.removeCertificate(sshKey.id) },
+                            onExportCertificate = { viewModel.requestCertExport(sshKey.id) },
                             onRegenerateViaStepCa = { viewModel.regenerateViaStepCa(sshKey.id) },
                         )
                         HorizontalDivider()
@@ -776,6 +796,7 @@ private fun SshKeyAuditRow(
     onBiometricToggle: (Boolean) -> Unit,
     onAttachCertificate: () -> Unit,
     onRemoveCertificate: () -> Unit,
+    onExportCertificate: () -> Unit,
     onRegenerateViaStepCa: () -> Unit,
 ) {
     val flags = entry?.flags ?: emptySet()
@@ -884,6 +905,11 @@ private fun SshKeyAuditRow(
                 // skip this — their signing path doesn't compose with
                 // OpenSSH cert auth.
                 if (hasCertificate) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.keys_export_certificate)) },
+                        onClick = { onMenuDismiss(); onExportCertificate() },
+                        leadingIcon = { Icon(Icons.Filled.FileDownload, contentDescription = null) },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.keys_remove_certificate)) },
                         onClick = { onMenuDismiss(); onRemoveCertificate() },

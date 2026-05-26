@@ -108,7 +108,35 @@ data class ConnectionConfig(
                     passphrase.contentHashCode() * 17 +
                     (certificateBytes?.contentHashCode() ?: 0)
         }
-        data class PrivateKeys(val keys: List<Pair<String, ByteArray>>) : AuthMethod
+        /**
+         * "Try every stored key" bundle used when no explicit key is
+         * assigned to a profile. Each [KeyEntry] may carry an optional
+         * OpenSSH certificate — without it, a key destined for a CA-only
+         * server (`TrustedUserCAKeys`, no `authorized_keys` entry) only
+         * offers its bare public key and the server rejects it with
+         * `Auth fail for methods 'publickey'`. (#185)
+         */
+        data class PrivateKeys(val keys: List<KeyEntry>) : AuthMethod {
+            /** A single candidate key, with its optional CA certificate. */
+            data class KeyEntry(
+                val label: String,
+                val keyBytes: ByteArray,
+                val certificateBytes: ByteArray? = null,
+            ) {
+                override fun equals(other: Any?): Boolean {
+                    if (this === other) return true
+                    if (other !is KeyEntry) return false
+                    return label == other.label &&
+                        keyBytes.contentEquals(other.keyBytes) &&
+                        (certificateBytes?.contentEquals(other.certificateBytes ?: byteArrayOf())
+                            ?: (other.certificateBytes == null))
+                }
+                override fun hashCode(): Int =
+                    label.hashCode() * 31 +
+                        keyBytes.contentHashCode() * 17 +
+                        (certificateBytes?.contentHashCode() ?: 0)
+            }
+        }
         /**
          * FIDO2 SK key — signing delegated to hardware security key.
          * Optional [certBytes] (raw `id_xxx-cert.pub` content) pairs the

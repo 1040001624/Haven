@@ -3315,7 +3315,15 @@ class ConnectionsViewModel @Inject constructor(
         val keys = sshKeyRepository.getAllDecrypted().filter { !it.isEncrypted }
         if (keys.isEmpty()) return null
         return ConnectionConfig.AuthMethod.PrivateKeys(
-            keys = keys.map { key -> key.label to rawKeyToPem(key.privateKeyBytes, key.keyType) },
+            keys = keys.map { key ->
+                ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(
+                    label = key.label,
+                    keyBytes = rawKeyToPem(key.privateKeyBytes, key.keyType),
+                    // Carry the attached cert so a CA-only server accepts this
+                    // key even without an explicit profile assignment. (#185)
+                    certificateBytes = key.certificateBytes,
+                )
+            },
         )
     }
 

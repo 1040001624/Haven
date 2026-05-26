@@ -183,6 +183,25 @@ class OpenSshCertificateTest {
             SshWire.writeBytes(o, ByteArray(64) { 0xDD.toByte() })
         }.toByteArray()
 
+    @Test
+    fun `toOpenSshPublicKeyLine renders type and base64 from a raw blob`() {
+        val blob = buildEd25519UserCert(
+            keyId = "bob@phone",
+            principals = listOf("bob"),
+        )
+
+        val line = SshCertificateParser.toOpenSshPublicKeyLine(blob).decodeToString()
+        val parts = line.split(" ")
+
+        // "<cert-type> <base64-blob>" — the textual form JSch's addIdentity
+        // pubkey arg requires; passing the raw binary blob silently drops the
+        // cert and breaks CA-only auth (#185).
+        assertEquals(2, parts.size)
+        assertEquals("ssh-ed25519-cert-v01@openssh.com", parts[0])
+        // The base64 segment must decode back to the exact original blob.
+        assertTrue(Base64.getDecoder().decode(parts[1]).contentEquals(blob))
+    }
+
     /**
      * Build a synthetic ed25519 user/host cert blob. Uses defaults for
      * everything not overridden by the caller. The wire format matches
