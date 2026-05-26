@@ -1,0 +1,5 @@
+Fixes SSH login with a CA-signed certificate (e.g. step-ca keys).
+
+- SSH certificate authentication now works for software keys, not just hardware (FIDO) keys. Haven was sending the bare public key instead of the certificate, so servers that trust a CA (TrustedUserCAKeys) rejected the login.
+- Certificate-backed keys now authenticate even when no key is explicitly assigned to a profile.
+- New "Export certificate" action on the Keys screen writes a valid id_xxx-cert.pub you can inspect with `ssh-keygen -L` or copy to a server.
