@@ -2072,7 +2072,12 @@ class SftpViewModel @Inject constructor(
             }
             try {
                 _loading.value = true
-                val mediaEntries = _entries.value
+                // List the long-clicked folder itself — not _entries.value,
+                // which is the currently displayed directory (the folder's
+                // parent). Using _entries here streamed the wrong folder.
+                val backend = currentFileBackend()
+                    ?: throw IllegalStateException("Not connected")
+                val mediaEntries = backend.list(folderPath)
                     .filter { !it.isDirectory && it.isMediaFile(mediaExtensionsSet.value) }
                     .sortedWith(compareBy(NATURAL_SORT_COMPARATOR) { it.name })
                 if (mediaEntries.isEmpty()) {
