@@ -1,0 +1,3 @@
+Explicit mouse buttons for VNC desktops.
+
+- The VNC toolbar now has L / M / R mouse-button toggles. Tap one to hold that button down on the remote, then drag your finger to drag with it held; tap again to release. Lets you middle/right-drag, and (in Touchpad input mode) move the cursor without pressing anything — instead of every swipe acting as a left-button drag.
