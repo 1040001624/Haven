@@ -1,0 +1,5 @@
+Faster MCP endpoint reconnect + reconnect diagnostics
+
+The MCP agent endpoint's reverse tunnel now revives immediately when you return to Haven or the network changes, instead of waiting on its internal watchdog — matching the foreground reconnect terminal/SFTP sessions got in 5.59.2.
+
+With connection logging on, the connection log now records reconnect steps (channel swap, session-manager reattach, shell reader end) to help diagnose a session that reconnects to a blank pane.
