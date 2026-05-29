@@ -1,0 +1,5 @@
+Fixes: multiple terminal tabs over a tunnel, and a keyboard-dismiss follow-up
+
+Opening a second terminal tab on a connection routed through a WireGuard/Tailscale tunnel now works — it was dialling direct and timing out ("Session not connected").
+
+Follow-up to the 5.59.4 keyboard fix: the scroll-to-bottom on dismiss could return after switching tabs or returning to the app with the keyboard up. The terminal now sizes from the keyboard-hidden height. (#206)
