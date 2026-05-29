@@ -160,6 +160,16 @@ class TunnelManager @Inject constructor(
     }
 
     /**
+     * True iff at least one WireGuard tunnel is currently live. The MCP
+     * reverse-tunnel manager gates on this to stand its (redundant, fragile)
+     * SSH `-R` down while WireGuard is exposing the MCP endpoint directly, and
+     * to revive the `-R` fallback if the WG tunnel later drops.
+     */
+    suspend fun hasLiveWireguard(): Boolean = mutex.withLock {
+        liveTunnels.values.any { it is WireguardTunnel }
+    }
+
+    /**
      * Snapshot of the live tunnel state — every configId that currently
      * has at least one active dependent, paired with the set of profile
      * ids holding it. For agent / debug tooling that wants to verify

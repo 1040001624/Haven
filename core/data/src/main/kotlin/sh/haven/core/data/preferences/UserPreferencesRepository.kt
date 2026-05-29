@@ -526,11 +526,15 @@ class UserPreferencesRepository @Inject constructor(
 
     /**
      * Whether the MCP server also exposes itself on the active WireGuard
-     * tunnel's interface address. Default **false** — opt-in because it
-     * widens the listener's reach from device-loopback to every WG peer.
+     * tunnel's interface address. Default **true** — when a WireGuard tunnel
+     * is up it is the preferred MCP transport (stable across roams, no SSH
+     * `-R` re-bind collisions), so the SSH reverse tunnel stands down to a
+     * fallback. Harmless with no WG tunnel up (the binder idles). Reach stays
+     * gated by client pairing; widening to every WG peer is the trade for the
+     * roaming-proof path.
      */
     val mcpWireguardEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[mcpWireguardEnabledKey] ?: false
+        prefs[mcpWireguardEnabledKey] ?: true
     }
 
     suspend fun setMcpWireguardEnabled(enabled: Boolean) {

@@ -24,6 +24,7 @@ import sh.haven.core.ssh.SessionManager
 import sh.haven.core.ssh.SshClient
 import sh.haven.core.ssh.SshKeyExporter
 import sh.haven.core.ssh.SshSessionManager
+import sh.haven.core.tunnel.TunnelManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,6 +35,13 @@ private const val TAG = "McpTunnelManager"
  * device-local MCP HTTP listener (`127.0.0.1:<port>`) back to the
  * laptop running the MCP client, so the endpoint stays reachable as the
  * device's WiFi/hotspot address roams and across app restarts.
+ *
+ * **Fallback only.** When WireGuard is exposing the MCP endpoint directly
+ * (see [McpServer.startWireguardBinderLocked] + `mcpWireguardEnabled`), that
+ * is the preferred transport — stable across roams with no `-R` re-bind
+ * collisions — so this reverse tunnel **stands down** and only (re)establishes
+ * while no WG tunnel is serving MCP. The supervisory loop in [launchTunnel]
+ * polls [wireguardServingMcp] to switch between the two.
  *
  * This is decoupled from the user's interactive "near" terminal session
  * (which dies on every app restart and didn't reliably re-establish its
@@ -65,6 +73,7 @@ class McpTunnelManager @Inject constructor(
     private val hostKeyVerifier: HostKeyVerifier,
     private val connectionLogRepository: ConnectionLogRepository,
     private val guestServiceManager: GuestServiceManager,
+    private val tunnelManager: TunnelManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
@@ -88,79 +97,115 @@ class McpTunnelManager @Inject constructor(
 
     private fun launchTunnel(mcpPort: Int) {
         job = scope.launch {
-            // Connect phase: retry with backoff until the tunnel + critical
-            // forward are up (or the config is unusable).
-            var delayMs = INITIAL_RETRY_MS
-            var established = false
-            while (isActive && !established) {
-                when (establish(mcpPort)) {
-                    Outcome.ESTABLISHED -> established = true
-                    Outcome.FATAL -> return@launch // misconfig — retrying won't help
-                    Outcome.RETRY -> {
-                        delay(delayMs)
-                        delayMs = (delayMs * 2).coerceAtMost(MAX_RETRY_MS)
+            // Supervisory loop. The SSH `-R` is now a *fallback*: whenever
+            // WireGuard is exposing the MCP endpoint directly (stable across
+            // roams, no `-R` re-bind collisions) the reverse tunnel stands down,
+            // and only (re)establishes when WG stops serving. This is what
+            // removes the "Address already in use" churn that plagued the `-R`.
+            while (isActive) {
+                // Stand-down gate: WG is serving MCP → tear the `-R` down (if up)
+                // and idle until WG drops.
+                if (wireguardServingMcp()) {
+                    teardownSession("WireGuard is serving MCP")
+                    delay(WG_GATE_POLL_MS)
+                    continue
+                }
+
+                // Connect phase: retry with backoff until the tunnel + critical
+                // forward are up, the config is unusable (FATAL), or WG preempts.
+                var delayMs = INITIAL_RETRY_MS
+                var established = false
+                while (isActive && !established) {
+                    if (wireguardServingMcp()) break // WG came up mid-connect — stand down
+                    when (establish(mcpPort)) {
+                        Outcome.ESTABLISHED -> established = true
+                        Outcome.FATAL -> return@launch // misconfig — retrying won't help
+                        Outcome.RETRY -> {
+                            delay(delayMs)
+                            delayMs = (delayMs * 2).coerceAtMost(MAX_RETRY_MS)
+                        }
                     }
                 }
-            }
-            // Watchdog phase: a headless session has no shell channel, so the
-            // usual channel-exit reconnect trigger never fires for it. Network
-            // roams are caught by NetworkMonitor, but a silent keepalive
-            // timeout / server-side close would otherwise go unnoticed. Poll
-            // the session and kick a reconnect when the transport has dropped.
-            //
-            // TCP-liveness (client.isConnected) is necessary but not sufficient:
-            // a *wedged* reverse forward — the endpoint sshd still LISTENs on the
-            // bind port but its forwarded channel is stuck (send-q backed up after
-            // a roam/restart) — leaves the session looking CONNECTED while MCP
-            // clients hang with no response. Keepalive can't see it (the transport
-            // is up). So additionally probe the forward end-to-end from the
-            // endpoint and force a reconnect (which rebinds, self-healing any stale
-            // holder) when it stops responding.
-            val sid = sessionId ?: return@launch
-            var probeFails = 0
-            while (isActive) {
-                delay(HEALTH_CHECK_MS)
-                val s = sshSessionManager.getSession(sid) ?: return@launch
-                when (s.status) {
-                    SshSessionManager.SessionState.Status.CONNECTED -> {
-                        if (!s.client.isConnected) {
-                            Log.i(TAG, "MCP tunnel transport dropped — requesting reconnect")
-                            sshSessionManager.updateStatus(
-                                sid, SshSessionManager.SessionState.Status.DISCONNECTED,
-                            )
-                            sshSessionManager.requestReconnect(sid)
-                            probeFails = 0
-                        } else when (probeForward(s.client, mcpPort)) {
-                            Probe.ALIVE -> probeFails = 0
-                            Probe.SKIP -> { /* endpoint has no curl — can't probe */ }
-                            Probe.DEAD -> {
-                                probeFails++
-                                Log.w(
-                                    TAG,
-                                    "MCP forward liveness probe failed " +
-                                        "($probeFails/$PROBE_FAIL_THRESHOLD) on :$mcpPort",
+                if (!established) continue // preempted by WG → re-evaluate the gate
+
+                // Watchdog phase: a headless session has no shell channel, so the
+                // usual channel-exit reconnect trigger never fires for it. Network
+                // roams are caught by NetworkMonitor, but a silent keepalive
+                // timeout / server-side close would otherwise go unnoticed. Poll
+                // the session and kick a reconnect when the transport has dropped.
+                //
+                // TCP-liveness (client.isConnected) is necessary but not sufficient:
+                // a *wedged* reverse forward — the endpoint sshd still LISTENs on the
+                // bind port but its forwarded channel is stuck (send-q backed up after
+                // a roam/restart) — leaves the session looking CONNECTED while MCP
+                // clients hang with no response. Keepalive can't see it (the transport
+                // is up). So additionally probe the forward end-to-end from the
+                // endpoint and force a reconnect (which rebinds, self-healing any stale
+                // holder) when it stops responding.
+                val sid = sessionId ?: continue
+                var probeFails = 0
+                var watching = true
+                while (isActive && watching) {
+                    delay(HEALTH_CHECK_MS)
+                    // WG took over while we were the live transport — hand off.
+                    if (wireguardServingMcp()) {
+                        teardownSession("WireGuard now serving MCP")
+                        watching = false
+                        continue
+                    }
+                    val s = sshSessionManager.getSession(sid)
+                    if (s == null) {
+                        // Session evaporated — fall back to the outer loop to
+                        // re-establish rather than giving up (the endpoint stays
+                        // enabled, so the tunnel should self-heal).
+                        watching = false
+                        continue
+                    }
+                    when (s.status) {
+                        SshSessionManager.SessionState.Status.CONNECTED -> {
+                            if (!s.client.isConnected) {
+                                Log.i(TAG, "MCP tunnel transport dropped — requesting reconnect")
+                                sshSessionManager.updateStatus(
+                                    sid, SshSessionManager.SessionState.Status.DISCONNECTED,
                                 )
-                                if (probeFails >= PROBE_FAIL_THRESHOLD) {
-                                    Log.w(TAG, "MCP forward wedged — forcing reconnect")
-                                    probeFails = 0
-                                    sshSessionManager.updateStatus(
-                                        sid, SshSessionManager.SessionState.Status.DISCONNECTED,
+                                sshSessionManager.requestReconnect(sid)
+                                probeFails = 0
+                            } else when (probeForward(s.client, mcpPort)) {
+                                Probe.ALIVE -> probeFails = 0
+                                Probe.SKIP -> { /* endpoint has no curl — can't probe */ }
+                                Probe.DEAD -> {
+                                    probeFails++
+                                    Log.w(
+                                        TAG,
+                                        "MCP forward liveness probe failed " +
+                                            "($probeFails/$PROBE_FAIL_THRESHOLD) on :$mcpPort",
                                     )
-                                    sshSessionManager.requestReconnect(sid)
+                                    if (probeFails >= PROBE_FAIL_THRESHOLD) {
+                                        Log.w(TAG, "MCP forward wedged — forcing reconnect")
+                                        probeFails = 0
+                                        sshSessionManager.updateStatus(
+                                            sid, SshSessionManager.SessionState.Status.DISCONNECTED,
+                                        )
+                                        sshSessionManager.requestReconnect(sid)
+                                    }
                                 }
                             }
                         }
+                        SshSessionManager.SessionState.Status.DISCONNECTED,
+                        SshSessionManager.SessionState.Status.ERROR -> {
+                            sshSessionManager.requestReconnect(sid)
+                            probeFails = 0
+                        }
+                        else -> { /* CONNECTING / RECONNECTING — in progress */ }
                     }
-                    SshSessionManager.SessionState.Status.DISCONNECTED,
-                    SshSessionManager.SessionState.Status.ERROR -> {
-                        sshSessionManager.requestReconnect(sid)
-                        probeFails = 0
-                    }
-                    else -> { /* CONNECTING / RECONNECTING — in progress */ }
                 }
             }
         }
     }
+
+    /** WG is the active MCP transport: the pref is on AND a WG tunnel is live. */
+    private suspend fun wireguardServingMcp(): Boolean =
+        preferencesRepository.mcpWireguardEnabled.first() && tunnelManager.hasLiveWireguard()
 
     /**
      * Proactively revive the tunnel **now**, without waiting for the
@@ -301,25 +346,37 @@ class McpTunnelManager @Inject constructor(
     private fun stopLocked() {
         job?.cancel()
         job = null
-        sessionId?.let { sid ->
-            // Best-effort: release the server-side `-R` binds now, so a clean
-            // re-enable / restart doesn't hit a stale bind. (A server only
-            // reaps a dead client's forward on its own ClientAliveInterval, so
-            // without this an immediate re-enable races the reaper. A hard
-            // process kill skips this path and still relies on that reaper.)
-            runCatching {
-                val s = sshSessionManager.getSession(sid)
-                val client = s?.client
-                if (client != null && client.isConnected) {
-                    s.activeForwards
-                        .filter { it.type == SshSessionManager.PortForwardType.REMOTE }
-                        .forEach { fwd -> runCatching { client.delPortForwardingR(fwd.bindPort) } }
-                }
-            }
-            sshSessionManager.removeSession(sid)
-        }
-        sessionId = null
+        teardownSession()
         currentPort = 0
+    }
+
+    /**
+     * Tear down the headless tunnel session — release its server-side `-R`
+     * binds and drop the [SshSessionManager] entry — WITHOUT cancelling the
+     * supervising [job]. Lets the supervisory loop stand the `-R` down (e.g.
+     * when WireGuard takes over the MCP transport) and re-establish later,
+     * rather than ending the job. Reentrant under [lock] so [stopLocked]
+     * reuses it. No-op if no session is up.
+     */
+    private fun teardownSession(reason: String? = null) = synchronized(lock) {
+        val sid = sessionId ?: return@synchronized
+        if (reason != null) Log.i(TAG, "Standing down MCP reverse tunnel: $reason")
+        // Best-effort: release the server-side `-R` binds now, so a clean
+        // re-enable / restart doesn't hit a stale bind. (A server only
+        // reaps a dead client's forward on its own ClientAliveInterval, so
+        // without this an immediate re-enable races the reaper. A hard
+        // process kill skips this path and still relies on that reaper.)
+        runCatching {
+            val s = sshSessionManager.getSession(sid)
+            val client = s?.client
+            if (client != null && client.isConnected) {
+                s.activeForwards
+                    .filter { it.type == SshSessionManager.PortForwardType.REMOTE }
+                    .forEach { fwd -> runCatching { client.delPortForwardingR(fwd.bindPort) } }
+            }
+        }
+        sshSessionManager.removeSession(sid)
+        sessionId = null
     }
 
     private enum class Outcome { ESTABLISHED, RETRY, FATAL }
@@ -531,6 +588,10 @@ class McpTunnelManager @Inject constructor(
         const val INITIAL_RETRY_MS = 2_000L
         const val MAX_RETRY_MS = 30_000L
         const val HEALTH_CHECK_MS = 15_000L
+        // How often the supervisory loop re-checks whether WireGuard is still
+        // serving MCP while the `-R` is stood down (so the fallback revives
+        // promptly if the WG tunnel drops).
+        const val WG_GATE_POLL_MS = 10_000L
         const val PROBE_TIMEOUT_MS = 8_000L
         const val PROBE_FAIL_THRESHOLD = 2
     }
