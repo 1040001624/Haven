@@ -1,0 +1,8 @@
+SSH & terminal hardening
+
+Correctness and security fixes across the SSH and terminal stack, from an external review:
+
+- CA-signed host certificates are now cryptographically verified, not just name-matched.
+- The forwarded SSH agent no longer exposes your login keys when no agent keys are configured.
+- More reliable reconnects after a silent network drop, and the SOCKS proxy no longer truncates half-closed connections.
+- Tougher handling of malformed terminal escape sequences and OSC links.
