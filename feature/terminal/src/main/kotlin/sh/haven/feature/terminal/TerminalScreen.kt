@@ -320,6 +320,12 @@ fun TerminalScreen(
     // callback below. Lint also bans context.getString from a Compose
     // tree (LocalContextGetResourceValueCall).
     val noCameraMessage = stringResource(R.string.terminal_scan_no_camera)
+    // Hoisted for the same reason: used from click-time callbacks below where
+    // @Composable stringResource can't be called and context.getString is
+    // lint-banned (LocalContextGetResourceValueCall).
+    val linkOpenFailedMessage = stringResource(R.string.terminal_link_open_failed)
+    val linkSchemeBlockedMessage = stringResource(R.string.terminal_link_scheme_blocked)
+    val localVncFailedMessage = stringResource(R.string.terminal_local_vnc_failed)
     fun launchCameraScan(mode: TerminalViewModel.ScanMode) {
         val cacheRoot = java.io.File(context.cacheDir, "scan").apply { mkdirs() }
         val file = java.io.File(cacheRoot, "scan_${System.currentTimeMillis()}.jpg")
@@ -1062,14 +1068,14 @@ fun TerminalScreen(
                                         } catch (_: android.content.ActivityNotFoundException) {
                                             android.widget.Toast.makeText(
                                                 context,
-                                                context.getString(R.string.terminal_link_open_failed),
+                                                linkOpenFailedMessage,
                                                 android.widget.Toast.LENGTH_LONG,
                                             ).show()
                                         }
                                     } else {
                                         android.widget.Toast.makeText(
                                             context,
-                                            context.getString(R.string.terminal_link_scheme_blocked),
+                                            linkSchemeBlockedMessage,
                                             android.widget.Toast.LENGTH_LONG,
                                         ).show()
                                     }
@@ -1146,7 +1152,7 @@ fun TerminalScreen(
                                         android.util.Log.e("TerminalScreen", "local VNC launch failed", e)
                                         android.widget.Toast.makeText(
                                             context,
-                                            context.getString(R.string.terminal_local_vnc_failed),
+                                            localVncFailedMessage,
                                             android.widget.Toast.LENGTH_LONG,
                                         ).show()
                                     } finally {
