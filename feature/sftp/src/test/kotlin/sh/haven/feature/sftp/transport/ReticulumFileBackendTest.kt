@@ -30,6 +30,8 @@ class ReticulumFileBackendTest {
     ) : ReticulumTransport {
         var lastCommand: List<String>? = null
             private set
+        /** Captures everything fed over stdin (the upload script). */
+        val stdinFed = java.io.ByteArrayOutputStream()
 
         override suspend fun execCommand(
             destinationHash: String,
@@ -40,7 +42,7 @@ class ReticulumFileBackendTest {
                 override val stdout: Flow<ByteArray> = flowOf(this@FakeTransport.stdout)
                 override val stderr: Flow<ByteArray> = flowOf(this@FakeTransport.stderr)
                 override val exitCode = CompletableDeferred(0)
-                override suspend fun writeStdin(data: ByteArray) {}
+                override suspend fun writeStdin(data: ByteArray) { stdinFed.write(data) }
                 override suspend fun closeStdin() {}
                 override fun close() {}
             }
@@ -119,6 +121,47 @@ class ReticulumFileBackendTest {
             b.list("/x"); throw AssertionError("expected IOException")
         } catch (e: IOException) {
             assertTrue(e.message!!.contains("sentinel"))
+        }
+    }
+
+    @Test
+    fun `writeBytes streams octal printf over one interactive sh, exiting cleanly`() = runBlocking {
+        val ft = FakeTransport(ByteArray(0), "HRC=0".toByteArray())
+        val b = ReticulumFileBackend(ft, "deadbeef")
+        // tricky bytes: NUL, 'A', high byte 0xFF, newline, single-quote
+        b.writeBytes("/tmp/it's", byteArrayOf(0x00, 0x41, 0xFF.toByte(), 0x0A, 0x27))
+
+        // Interactive `sh` reading stdin — NOT `sh -c` (the script rides stdin).
+        assertEquals(listOf("sh"), ft.lastCommand)
+        val script = ft.stdinFed.toByteArray().decodeToString()
+        // Each byte octal-escaped (\NNN), binary-clean.
+        assertTrue("octal payload", script.contains("\\000\\101\\377\\012\\047"))
+        // First (only) chunk creates via '>', path single-quote-escaped.
+        assertTrue("create redirect", script.contains("' > '/tmp/it'\\''s'"))
+        // HRC sentinel on stderr, then a clean shell exit (never a stdin-EOF).
+        assertTrue("sentinel", script.contains("printf 'HRC=%s' \"\$?\" 1>&2"))
+        assertTrue("clean exit", script.trimEnd().endsWith("exit"))
+    }
+
+    @Test
+    fun `writeBytes appends with double-redirect past the first line`() = runBlocking {
+        val ft = FakeTransport(ByteArray(0), "HRC=0".toByteArray())
+        val b = ReticulumFileBackend(ft, "deadbeef")
+        b.writeBytes("/f", ByteArray(700) { 0x62 }) // 700 > UPLOAD_LINE_BYTES(512) -> 2 lines
+        val script = ft.stdinFed.toByteArray().decodeToString()
+        assertTrue("first line creates", script.contains("' > '/f'"))
+        assertTrue("second line appends", script.contains("' >> '/f'"))
+    }
+
+    @Test
+    fun `writeBytes surfaces a non-zero HRC as IOException`() = runBlocking {
+        val ft = FakeTransport(ByteArray(0), "sh: can't create /ro: Read-only\nHRC=1".toByteArray())
+        val b = ReticulumFileBackend(ft, "deadbeef")
+        try {
+            b.writeBytes("/ro", byteArrayOf(1, 2, 3))
+            throw AssertionError("expected IOException")
+        } catch (e: IOException) {
+            assertTrue(e.message!!.contains("rc=1"))
         }
     }
 

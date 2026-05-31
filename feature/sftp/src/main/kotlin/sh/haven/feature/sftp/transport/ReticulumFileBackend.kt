@@ -39,12 +39,13 @@ private const val TAG = "ReticulumFileBackend"
  *     every command is wrapped to print the remote shell's own `$?` as an
  *     `HRC=<code>` sentinel on stderr, and the real status is parsed from
  *     there — never from [ReticulumExecSession.exitCode].
- *  3. **No client stdin.** The rnsh listener kills/stalls a command ~50ms
- *     after any stdin-EOF (a `close_stdin` -> _ensure_terminate behaviour,
- *     reproduced with the reference rnsh client), so nothing here streams over
- *     stdin. Uploads encode the bytes into the command as `printf` octal
- *     escapes instead — clean-exiting commands, each sized to fit one Reticulum
- *     Channel message (link MDU ~319); larger files append over several.
+ *  3. **No stdin-EOF.** The rnsh listener kills/stalls a command ~50ms after
+ *     any stdin-EOF (a `close_stdin` -> _ensure_terminate behaviour, reproduced
+ *     with the reference rnsh client), so [writeBytes] never closes stdin. It
+ *     opens one interactive `sh` and feeds `printf '<octal>' >> path` commands
+ *     plus an `exit` over stdin — the shell exits cleanly (no EOF), and the
+ *     whole file rides ONE Link instead of one per chunk. Reads/metadata ops
+ *     use one-shot `sh -c` commands with no stdin at all.
  *
  * Known v1 limitations (named, not hidden): modified-time is reported as 0
  * (no portable per-entry time source without `stat`); symlinks are treated
@@ -93,32 +94,75 @@ class ReticulumFileBackend(
         run("cat ${q(path)}", timeoutMs = TRANSFER_TIMEOUT_MS).stdout
 
     override suspend fun writeBytes(path: String, data: ByteArray) {
-        // Upload WITHOUT stdin: the rnsh listener kills/stalls a command ~50ms
-        // after any stdin-EOF (a `close_stdin` -> _ensure_terminate behaviour,
-        // reproduced with the reference rnsh client), so streaming via
-        // `cat > file` never reports a clean exit. Instead we encode the bytes
-        // into the command itself — `printf '\NNN...'` octal escapes — which is
-        // a single no-stdin command that exits cleanly. Large files are written
-        // in append chunks (each kept well under the per-arg size limit). Fully
-        // POSIX/busybox-portable (printf is universal; no base64 dependency).
-        // Each chunk's command travels as ONE Reticulum Channel message
-        // (ExecuteCommandMesssage), bounded by the link MDU (~325, Channel mdu
-        // ~319). Bytes are octal-escaped (4 chars each) and the command is
-        // wrapped by run() with an `sh -c` + HRC sentinel, so size the per-chunk
-        // byte count from the budget left after the destination path and that
-        // fixed overhead. (Device-verified: a single ~1.2 KB command — the old
-        // 12 KB chunk — overflows the MDU and Channel.send throws "Packed
-        // message too big for packet".)
-        val octalBudget = (WRITE_CMD_OCTAL_BUDGET - path.length).coerceAtLeast(MIN_OCTAL_BUDGET)
-        val chunkBytes = (octalBudget / 4).coerceAtLeast(8)
+        // Stream the whole file over ONE Link instead of one Link per chunk.
+        // Run an interactive `sh` (pipe mode) and feed it a short script over
+        // stdin — a sequence of `printf '<octal>' >> path` commands (octal so it
+        // is binary-clean and busybox-portable), an `HRC=$?` sentinel on stderr,
+        // then `exit`. The shell executes each line as it arrives.
+        //
+        // Three listener/transport quirks shape this:
+        //  - We never send a stdin-EOF: the Python rnsh listener kills the
+        //    command ~50 ms after `close_stdin`, losing the exit. Ending the
+        //    script with `exit` makes the SHELL exit normally instead (clean
+        //    CommandExited, no _ensure_terminate) — the same exit path the read
+        //    commands already rely on.
+        //  - In pipe mode the shell's stdio is block-buffered, so the HRC line
+        //    would not flush while `sh` keeps reading; the `exit` flushes it.
+        //  - writeStdin sends ONE Channel message per call, bounded by the link
+        //    MDU (~319), so the script bytes are fed in MDU-safe pieces — but
+        //    all over the SAME Link, i.e. no per-chunk handshake.
+        val script = StringBuilder()
         var off = 0
         var first = true
         while (first || off < data.size) {
-            val end = minOf(off + chunkBytes, data.size)
-            val redirect = if (first) ">" else ">>"
-            run("printf '${octalEscape(data, off, end)}' $redirect ${q(path)}")
+            val end = minOf(off + UPLOAD_LINE_BYTES, data.size)
+            script.append("printf '").append(octalEscape(data, off, end))
+                .append(if (first) "' > " else "' >> ").append(q(path)).append('\n')
             first = false
             off = end
+        }
+        script.append("printf '").append(SENTINEL_PRE).append("%s' \"\$?\" 1>&2\n")
+        script.append("exit\n")
+        val scriptBytes = script.toString().toByteArray()
+
+        val exec = transport.execCommand(destinationHash, listOf("sh"))
+        try {
+            withTimeout(TRANSFER_TIMEOUT_MS) {
+                coroutineScope {
+                    val errD = async {
+                        val buf = ByteArrayOutputStream()
+                        exec.stderr.collect { buf.write(it) }
+                        buf.toByteArray().decodeToString()
+                    }
+                    // Drain stdout so it can never back-pressure the link window.
+                    val outD = async { exec.stdout.collect { } }
+
+                    var p = 0
+                    while (p < scriptBytes.size) {
+                        val e = minOf(p + STDIN_MSG_BYTES, scriptBytes.size)
+                        exec.writeStdin(scriptBytes.copyOfRange(p, e))
+                        p = e
+                    }
+
+                    exec.exitCode.await() // completes on CommandExited (shell exited)
+                    val errStr = errD.await()
+                    outD.await()
+
+                    val match = SENTINEL_RE.findAll(errStr).lastOrNull()
+                        ?: throw IOException(
+                            "reticulum upload: no result sentinel (link dropped or shell " +
+                                "killed before exit); stderr='${errStr.take(120)}'"
+                        )
+                    val rc = match.groupValues[1].toIntOrNull()
+                        ?: throw IOException("reticulum upload: malformed sentinel")
+                    if (rc != 0) {
+                        val msg = errStr.substring(0, match.range.first).trim()
+                        throw IOException("reticulum upload to $path failed (rc=$rc): $msg")
+                    }
+                }
+            }
+        } finally {
+            exec.close()
         }
     }
 
@@ -226,7 +270,7 @@ class ReticulumFileBackend(
                 if (stdin != null) {
                     var off = 0
                     while (off < stdin.size) {
-                        val end = minOf(off + STDIN_CHUNK, stdin.size)
+                        val end = minOf(off + STDIN_MSG_BYTES, stdin.size)
                         exec.writeStdin(stdin.copyOfRange(off, end))
                         off = end
                     }
@@ -289,14 +333,14 @@ class ReticulumFileBackend(
     }
 
     companion object {
-        /** Max stdin chunk per stream-data message (stays under the link MDU). */
-        private const val STDIN_CHUNK = 400
+        /** Max bytes per writeStdin call. writeStdin sends ONE Channel message,
+         *  so this stays under the link MDU (~319). All pieces ride one Link. */
+        private const val STDIN_MSG_BYTES = 256
 
-        /** Budget (chars) for octal payload + path in one upload command, kept
-         *  well under the Reticulum Channel MDU (~319) after the `sh -c`/HRC
-         *  wrapper overhead. Per-chunk source bytes = (budget − pathLen) / 4. */
-        private const val WRITE_CMD_OCTAL_BUDGET = 200
-        private const val MIN_OCTAL_BUDGET = 40
+        /** Source bytes per `printf` line in the upload script. Octal-escaped
+         *  (×4 chars), so a line is ~4× this — kept within shell LINE_MAX.
+         *  Independent of the wire chunking above; all lines ride one Link. */
+        private const val UPLOAD_LINE_BYTES = 512
 
         private const val METADATA_TIMEOUT_MS = 120_000L
         private const val TRANSFER_TIMEOUT_MS = 300_000L
