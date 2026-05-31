@@ -2034,6 +2034,14 @@ class ConnectionsViewModel @Inject constructor(
                     val sshSessionMgr = resolveSessionManager(profile)
                     val cmdOverride = preferencesRepository.sessionCommandOverride.first()
                     sshSessionManager.storeConnectionConfig(sessionId, config, sshSessionMgr, cmdOverride, profile.postLoginCommand, profile.postLoginBeforeSessionManager)
+                    // Re-resolve the profile's tunnel/proxy on auto-reconnect.
+                    // Jump-host sessions reconnect via createProxyJump instead,
+                    // so only register for the non-jump (havenProxy) case.
+                    if (jumpSessionId == null) {
+                        sshSessionManager.setReconnectProxyProvider(sessionId) {
+                            tunnelResolver.havenProxy(profile)
+                        }
+                    }
                     sshSessionMgr
                 }
 

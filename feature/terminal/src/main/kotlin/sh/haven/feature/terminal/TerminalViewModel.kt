@@ -1888,6 +1888,12 @@ class TerminalViewModel @Inject constructor(
                 }
 
                 sessionManager.storeConnectionConfig(sessionId, config, sshSessionMgr)
+                // Re-resolve the profile's tunnel / proxy on auto-reconnect, the
+                // same way the initial connect did — otherwise a tunnel-routed
+                // tab reconnects directly and stalls when off-LAN.
+                sessionManager.setReconnectProxyProvider(sessionId) {
+                    connectionRepository.getById(profileId)?.let { tunnelResolver.havenProxy(it) }
+                }
 
                 val listCmd = sshSessionMgr.listCommand
                 if (listCmd != null) {
@@ -2007,6 +2013,10 @@ class TerminalViewModel @Inject constructor(
                     }
                 }
                 sessionManager.storeConnectionConfig(sessionId, config, sshSessionMgr)
+                // Re-resolve the profile's tunnel / proxy on auto-reconnect.
+                sessionManager.setReconnectProxyProvider(sessionId) {
+                    connectionRepository.getById(profileId)?.let { tunnelResolver.havenProxy(it) }
+                }
                 sessionManager.setChosenSessionName(sessionId, sessionName)
                 finishNewSshTab(sessionId)
             } catch (e: Exception) {

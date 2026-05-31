@@ -182,6 +182,21 @@ class SshSessionManager @Inject constructor(
      */
     private val leases = ConcurrentHashMap<String, LeaseRecord>()
 
+    /**
+     * Per-session provider that re-resolves the routing proxy (per-profile
+     * WireGuard / Tailscale tunnel, or legacy SOCKS/HTTP) on auto-reconnect.
+     *
+     * core:ssh cannot depend on core:tunnel (core:tunnel already depends on
+     * core:ssh — a cycle), so [SshSessionManager] has no [TunnelResolver]. The
+     * ViewModel that owns the resolver registers this callback after a
+     * successful connect; [attemptReconnect] invokes it to rebuild the same
+     * proxy the initial connect used. Without it, a tunnel-routed session whose
+     * host is only reachable through the tunnel (device off-LAN) reconnects
+     * directly and never recovers. Jump-host sessions don't use this — they go
+     * through [createProxyJump] keyed on [SessionState.jumpSessionId].
+     */
+    private val reconnectProxyProviders = ConcurrentHashMap<String, suspend () -> HavenProxy?>()
+
     private class LeaseRecord(
         val leaseId: String,
         val sessionId: String,
@@ -247,6 +262,18 @@ class SshSessionManager @Inject constructor(
                 postLoginBeforeSessionManager = postLoginBeforeSessionManager,
             ))
         }
+    }
+
+    /**
+     * Register (or clear, when [provider] is null) the routing-proxy provider
+     * invoked on auto-reconnect for [sessionId]. Call after a successful connect
+     * with the same resolution the initial connect used
+     * (`tunnelResolver.havenProxy(profile)`). Cleared automatically in
+     * [removeSession].
+     */
+    fun setReconnectProxyProvider(sessionId: String, provider: (suspend () -> HavenProxy?)?) {
+        if (provider == null) reconnectProxyProviders.remove(sessionId)
+        else reconnectProxyProviders[sessionId] = provider
     }
 
     fun updateStatus(sessionId: String, status: SessionState.Status) {
@@ -554,7 +581,12 @@ class SshSessionManager @Inject constructor(
             if (_sessions.value[sessionId] == null) return
 
             try {
-                // If this session goes through a jump host, get its proxy
+                // Rebuild the routing proxy the same way the initial connect
+                // did. Jump host > per-profile tunnel (WireGuard / Tailscale) /
+                // SOCKS / HTTP — mirroring ConnectionsViewModel.connectSsh.
+                // Without the tunnel branch a tunnel-routed profile reconnects
+                // directly and never recovers when the host is only reachable
+                // through the tunnel (device off-LAN).
                 val jumpSid = _sessions.value[sessionId]?.jumpSessionId
                 val proxy = if (jumpSid != null) {
                     val jumpSession = _sessions.value[jumpSid]
@@ -564,7 +596,11 @@ class SshSessionManager @Inject constructor(
                         continue
                     }
                     createProxyJump(jumpSid)
-                } else null
+                } else {
+                    reconnectProxyProviders[sessionId]?.let { provider ->
+                        runBlocking { provider() }
+                    }
+                }
 
                 val newClient = SshClient()
                 val hostKeyEntry = newClient.connectBlocking(config, proxy = proxy)
@@ -591,9 +627,17 @@ class SshSessionManager @Inject constructor(
                 }
 
                 // Open shell and reconnect terminal — skipped for headless
-                // tunnel-only sessions (e.g. the MCP reverse tunnel), which
-                // carry port forwards and never had a shell.
-                if (_sessions.value[sessionId]?.headless != true) {
+                // tunnel-ONLY sessions (e.g. the MCP reverse tunnel), which
+                // carry port forwards and never had a shell. But a headless
+                // session that ALSO holds an interactive terminal (the "near"
+                // profile used as BOTH the MCP reverse-tunnel endpoint and a
+                // REPL tab — tunnel + REPL collapsed onto one session) must
+                // still reattach its shell, or the tunnel recovers on
+                // return-to-foreground (via McpTunnelManager.kickNow) while the
+                // terminal stays frozen. A pure tunnel has terminalSession ==
+                // null and still skips this.
+                val reconnecting = _sessions.value[sessionId]
+                if (reconnecting?.headless != true || reconnecting.terminalSession != null) {
                     val channel = newClient.openShellChannel()
                     attachShellChannel(sessionId, channel)
 
@@ -647,6 +691,7 @@ class SshSessionManager @Inject constructor(
         val dependents = _sessions.value.values.filter { it.jumpSessionId == sessionId }
         _sessions.update { it - sessionId }
         agentScrollback.remove(sessionId)
+        reconnectProxyProviders.remove(sessionId)
         // Fire any tunnel leases riding on this session so their dependents
         // (VNC/RDP tabs) tear themselves down. Single-shot per lease; runs on
         // the caller thread (the consumer re-dispatches to its own scope).
