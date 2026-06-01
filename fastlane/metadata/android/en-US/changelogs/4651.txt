@@ -1,0 +1,5 @@
+USB serial devices in the Linux guest, plus steadier embedded app windows.
+
+• Unmodified Linux serial apps (e.g. LIRC) can now drive a brokered USB-serial device inside the on-device Linux guest — Haven bridges it to a serial port, with no root and no kernel driver.
+• Brokered USB devices recover automatically after an unplug/replug instead of getting stuck.
+• Embedded single-app guest windows now render reliably — fixed a blank screen / crash on the headless display path.
