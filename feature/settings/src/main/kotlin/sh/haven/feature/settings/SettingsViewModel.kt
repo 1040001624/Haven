@@ -10,10 +10,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withContext
 import sh.haven.core.data.agent.AgentConsentManager
 import sh.haven.core.data.backup.BackupService
 import sh.haven.core.data.db.AgentAuditEventDao
@@ -97,9 +99,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _backupStatus.value = BackupStatus.InProgress
             try {
-                val data = backupService.export(password)
-                appContext.contentResolver.openOutputStream(uri)?.use { it.write(data) }
-                    ?: throw IllegalStateException("Could not open output stream")
+                // Crypto + the SAF output-stream write run on IO: a cloud-backed
+                // DocumentsProvider target (e.g. a NextCloud-synced folder) does
+                // network I/O on write, which throws NetworkOnMainThreadException
+                // if left on the main thread. See #145.
+                withContext(Dispatchers.IO) {
+                    val data = backupService.export(password)
+                    appContext.contentResolver.openOutputStream(uri)?.use { it.write(data) }
+                        ?: throw IllegalStateException("Could not open output stream")
+                }
                 _backupStatus.value = BackupStatus.Success("Backup exported")
             } catch (e: Exception) {
                 _backupStatus.value = BackupStatus.Error(e.message ?: "Export failed")
@@ -111,9 +119,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _backupStatus.value = BackupStatus.InProgress
             try {
-                val data = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Could not open input stream")
-                val result = backupService.import(data, password)
+                // Reading the .enc via the SAF input stream must run off the main
+                // thread: picking the file straight from a cloud-synced directory
+                // (e.g. NextCloud) reads through a DocumentsProvider that performs
+                // network I/O, which throws NetworkOnMainThreadException on the
+                // main thread. Copying to local storage first was the only
+                // workaround before this. See #145.
+                val result = withContext(Dispatchers.IO) {
+                    val data = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw IllegalStateException("Could not open input stream")
+                    backupService.import(data, password)
+                }
                 val msg = "Restored ${result.count} items" +
                     if (result.errors.isNotEmpty()) " (${result.errors.size} errors)" else ""
                 _backupStatus.value = BackupStatus.Success(msg)
