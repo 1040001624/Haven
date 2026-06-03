@@ -158,6 +158,27 @@ internal class McpTools(
             inputSchema = emptyObjectSchema(),
         ) { _ -> getAppInfo() },
 
+        "list_paired_clients" to ToolHandler(
+            description = "List the MCP clients paired with Haven — the clientInfo.name values that passed the first-connect pairing prompt and may call tools. For each: `name`; `autoApprove` (true when the user has enabled 'Skip approval prompts' for it under Settings → Agent endpoint → Paired MCP clients, so its calls bypass per-call consent); and `isCaller` (true for the client making this request). Read-only.",
+            inputSchema = emptyObjectSchema(),
+        ) { _ -> listPairedClients() },
+
+        "unpair_mcp_client" to ToolHandler(
+            description = "Remove a paired MCP client from Haven's allowlist. It must be approved again via a fresh pairing prompt the next time it connects, and any persistent auto-approval for it is revoked. Use list_paired_clients for exact names. Note: this gates *new* connections — a client with an already-established session may keep working until Haven restarts. The pairing allowlist is the trust boundary, so there is intentionally no MCP tool to *add* a client (that only happens through the on-device pairing prompt) or to grant a client auto-approval (that's UI-only). Gated by consent.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("name", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Exact clientInfo.name to un-pair, as shown by list_paired_clients.")
+                    })
+                })
+                put("required", JSONArray().put("name"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args -> "Un-pair MCP client '${args.optString("name", "?")}' from Haven?" },
+        ) { args -> unpairMcpClient(args) },
+
         "list_connections" to ToolHandler(
             description = "List saved connection profiles (SSH, Mosh, VNC, RDP, SMB, rclone, local, Reticulum). Secrets like passwords and keys are redacted.",
             inputSchema = emptyObjectSchema(),
@@ -2415,6 +2436,41 @@ internal class McpTools(
             put("wayland")
             put("ffmpeg")
         })
+    }
+
+    private suspend fun listPairedClients(): JSONObject {
+        val allowed = preferencesRepository.mcpAllowedClients.first().sorted()
+        val bypass = preferencesRepository.mcpBypassConsentClients.first()
+        val arr = JSONArray()
+        for (name in allowed) {
+            arr.put(JSONObject().apply {
+                put("name", name)
+                put("autoApprove", name in bypass)
+                put("isCaller", name == currentClientHint)
+            })
+        }
+        return JSONObject().apply {
+            put("count", allowed.size)
+            put("clients", arr)
+        }
+    }
+
+    private suspend fun unpairMcpClient(args: JSONObject): JSONObject {
+        val name = args.optString("name", "").trim()
+            .ifEmpty { throw McpError(-32602, "Missing 'name' — the client to un-pair (see list_paired_clients)") }
+        val allowed = preferencesRepository.mcpAllowedClients.first()
+        if (name !in allowed) {
+            throw McpError(-32602, "No paired client named '$name'. Call list_paired_clients for exact names.")
+        }
+        // removeMcpAllowedClient also drops the name from the persistent
+        // auto-approve set, so this fully revokes the client's standing trust.
+        preferencesRepository.removeMcpAllowedClient(name)
+        val remaining = preferencesRepository.mcpAllowedClients.first().sorted()
+        return JSONObject().apply {
+            put("unpaired", name)
+            put("remainingCount", remaining.size)
+            put("remaining", JSONArray(remaining))
+        }
     }
 
     private suspend fun listConnections(): JSONObject {
