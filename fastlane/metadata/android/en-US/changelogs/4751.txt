@@ -1,0 +1,2 @@
+- Local desktop is discoverable on a fresh install: the Desktop tab is now always shown and opens a clear "Local Linux desktop" setup screen, instead of staying hidden until you'd already created a connection. (#215)
+- SSH: connecting to a host with no session manager (no tmux/zellij/screen) now shows a clear "Shell closed" error and stays on Connections, instead of silently landing on the wrong terminal tab. Connect errors now show over any screen, so they're no longer missed after navigating.
