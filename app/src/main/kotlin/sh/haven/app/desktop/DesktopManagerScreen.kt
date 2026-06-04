@@ -355,6 +355,19 @@ private fun DesktopManagerSection(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Header so a user arriving on the (now always-visible) Desktop
+            // tab understands this is the local-desktop install hub (#215).
+            Text(
+                stringResource(AppR.string.app_desktop_manager_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                stringResource(AppR.string.app_desktop_manager_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
             if (installedDistros.size > 1 || availableDistros.isNotEmpty()) {
                 Box {
                     AssistChip(

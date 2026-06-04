@@ -89,7 +89,6 @@ fun HavenNavHost(
 ) {
     // Desktop multi-session ViewModel — hoisted to nav scope so it survives tab switches
     val desktopViewModel: DesktopViewModel = hiltViewModel()
-    val desktopTabs by desktopViewModel.tabs.collectAsState()
 
     // Agent activity audit overlay — opened by the AgentActiveChip on the
     // Connections top bar, dismissed via the screen's back arrow. Lifted
@@ -121,8 +120,6 @@ fun HavenNavHost(
     val alwaysShowAllTabs by preferencesRepository.alwaysShowAllTabs
         .collectAsState(initial = false)
 
-    val hasDesktopConnections = waylandRunning || desktopTabs.isNotEmpty() ||
-        connections.any { it.isVnc || it.isRdp || it.isLocal }
     val hasTerminalProfiles = connections.any { it.isTerminal }
     // Show Keys once the user has any key/CA config OR any SSH connection
     // to attach a key to — otherwise there's a chicken-and-egg: a fresh
@@ -135,7 +132,6 @@ fun HavenNavHost(
         .collectAsState(initial = emptyList())
     val screens = remember(
         screenOrderPref,
-        hasDesktopConnections,
         hasTerminalProfiles,
         hasKeysOrCaConfigs,
         alwaysShowAllTabs,
@@ -155,9 +151,14 @@ fun HavenNavHost(
                 // Always shown — Connections is the master list, Settings
                 // hosts the Always-show-all-tabs toggle (discoverability).
                 Screen.Connections, Screen.Settings -> true
-                // Pre-existing rule: hidden until any VNC / RDP / Wayland /
-                // local-shell connection or live desktop session exists.
-                Screen.Desktop -> hasDesktopConnections
+                // Always shown: the Desktop tab is the sole entry point to
+                // the local-desktop install hub (DesktopManagerScreen), which
+                // is useful with no connection at all — same rationale as Sftp
+                // below. Hiding it until a desktop connection existed made the
+                // local-desktop feature undiscoverable on a fresh install: the
+                // installer was reachable only via "Always show all tabs" or
+                // after blindly creating a Local Shell first (#215).
+                Screen.Desktop -> true
                 // SFTP file browser is useful even with no remote storage
                 // (local file paths work), so it stays visible.
                 Screen.Sftp -> true
