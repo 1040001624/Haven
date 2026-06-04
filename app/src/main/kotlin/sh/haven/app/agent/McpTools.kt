@@ -491,17 +491,25 @@ internal class McpTools(
         ) { args -> playFile(args) },
 
         "present_media" to ToolHandler(
-            description = "Show the user an image — or play a short sound — inline in Haven. A bottom sheet floats over whatever screen the user is on, rendering the image (or an audio card with a play button) plus an optional caption. This is the \"here, look at / listen to this\" channel: use it when you have generated or fetched something visual or audible you want the user to perceive directly, rather than describing it or writing it to a file and asking them to open it. Pass the media as base64 in `dataBase64`. `mimeType` is auto-detected from the bytes for common image formats (PNG/JPEG/GIF/WebP) but should be set explicitly for audio (e.g. 'audio/mpeg', 'audio/wav', 'audio/ogg'). Only image/* and audio/* are supported. The call returns immediately ({ presented, kind, bytes, mimeType }); the user dismisses the sheet at their leisure. Max payload 8 MiB.",
+            description = "Show the user an image — or play a short sound — inline in Haven. A bottom sheet floats over whatever screen the user is on, rendering the image (or an audio card with a play button) plus an optional caption. The \"here, look at / listen to this\" channel: use it when you have something visual or audible you want the user to perceive directly. Reference the media by a file Haven can reach — `profileId` (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone profile id) + `path` — or by a ready `url` (e.g. a serve_file loopback URL). Haven streams the file into a local handle; the bytes never pass through the agent context. `mimeType` is inferred from the file (extension, else content sniff) when omitted; set it for audio. Only image/* and audio/* are supported. Returns immediately ({ presented, id, kind, mimeType }); the user dismisses the sheet at their leisure.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
-                    put("dataBase64", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
                         put("type", "string")
-                        put("description", "Base64-encoded image or audio bytes to show the user.")
+                        put("description", "Backend holding the file: \"local\" for the device / proot-guest cache (default), or an SSH/SMB/rclone profile id. Used with `path`.")
+                    })
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Absolute path of the image/audio file on that backend.")
+                    })
+                    put("url", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Alternative to profileId+path: an http(s) URL to fetch the media from (e.g. a serve_file loopback URL).")
                     })
                     put("mimeType", JSONObject().apply {
                         put("type", "string")
-                        put("description", "MIME type, e.g. 'image/png' or 'audio/mpeg'. Optional for images (sniffed from the bytes); recommended for audio.")
+                        put("description", "Optional MIME, e.g. 'image/png' or 'audio/mpeg'. Inferred from the file otherwise; set it for audio.")
                     })
                     put("caption", JSONObject().apply {
                         put("type", "string")
@@ -512,10 +520,35 @@ internal class McpTools(
                         put("description", "Audio only: start playback as soon as the sheet appears. Defaults to false.")
                     })
                 })
-                put("required", JSONArray().put("dataBase64"))
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> presentMedia(args) },
+
+        "present_web" to ToolHandler(
+            description = "Show the user HTML, an SVG, or a PDF inline in an in-app WebView — the interactive rung between present_media (a static image) and present_app (a full live VNC app). Pass a `url` (e.g. a serve_file loopback URL or any web page), or reference a file with `profileId` (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone profile id) + `path`, which Haven serves over a loopback URL. A PDF is paged; HTML/SVG render live (pinch-zoom). Floats in a bottom sheet over whatever screen the user is on; bytes never pass through the agent context. Returns immediately ({ presented, id, url? }); the user dismisses it at their leisure.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("url", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "An http(s) URL to load (e.g. a serve_file loopback URL or any web page). Alternative to profileId+path.")
+                    })
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Backend holding the file: \"local\" (device / proot-guest cache, default) or an SSH/SMB/rclone profile id. Used with `path`.")
+                    })
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Absolute path of the .html/.svg/.pdf file on that backend.")
+                    })
+                    put("caption", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional one-line caption shown above the view.")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> presentWeb(args) },
 
         "present_app" to ToolHandler(
             description = "Show the user a LIVE, interactive single application window inline in Haven. Launches `command` as a Wayland app under a `cage` kiosk inside the active proot guest, exposes it over VNC, and embeds the live view in a bottom sheet over whatever screen the user is on (pinch-zoom, pan, drag and fullscreen all work; the user can interact). Use this to collaborate in a real GUI app — an image viewer, a media/audio player, a PDF/whiteboard tool — rather than pushing a static image with present_media. `command` is the guest shell command cage runs (e.g. 'imv /root/board.png', 'mpv /root/clip.mp4'); the app and any Wayland deps must already be installed in the guest. Returns { presented, sessionId, vncPort, state } once the window is up. Multiple app windows can run at once: each call launches another cage; the newest is shown full-overlay and any previous one is backgrounded to a draggable edge icon (tap to bring it back). The user backgrounds a window by tapping outside it (keeps it running) and tears it down with the Dismiss button or the edge-icon close.",
@@ -1605,7 +1638,7 @@ internal class McpTools(
         ) { args -> viewFile(args) },
 
         "read_guest_file" to ToolHandler(
-            description = "Read a file from the ACTIVE proot guest and return its bytes to the agent — text inline (UTF-8) or base64 for binary. This is the reliable agent⇄guest file channel (no hand-copying base64 over run_in_proot output). Reads are capped to maxBytes. For images/PDFs/schematics use view_file instead (renders to an inline picture).",
+            description = "Read a small file from the ACTIVE proot guest and return its contents to the agent (UTF-8 text; set asBase64 only for small binary). The reliable agent⇄guest text channel. Reads are capped to maxBytes. For large or binary files prefer serve_file (streams over a loopback URL — no base64 through the agent); for images/PDFs/schematics use view_file (renders to an inline picture); for anything the USER should see use present_media.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1615,7 +1648,7 @@ internal class McpTools(
                     })
                     put("asBase64", JSONObject().apply {
                         put("type", "boolean")
-                        put("description", "Return base64 instead of UTF-8 text. Use for binary files. Default false.")
+                        put("description", "Return base64 instead of UTF-8 text — only for small binary files; prefer serve_file for larger binaries. Default false.")
                     })
                     put("maxBytes", JSONObject().apply {
                         put("type", "integer")
@@ -1628,7 +1661,7 @@ internal class McpTools(
         ) { args -> readGuestFile(args) },
 
         "write_guest_file" to ToolHandler(
-            description = "Write a file into the ACTIVE proot guest. Supply either `content` (UTF-8 text) or `contentBase64` (binary). Parent directories are created by default. The reliable way to push agent-authored files (scripts, generators, configs) into the guest without a terminal heredoc. For large files, send in ordered chunks: first chunk {append:false, final:false}, middle chunks {append:true, final:false}, last chunk {append:true, final:true} — the file lands in the guest only on the final chunk.",
+            description = "Write a file into the ACTIVE proot guest. Supply `content` (UTF-8 text); for binary prefer upload_file (stages a device-cache file into the guest) over `contentBase64`. Parent directories are created by default. The reliable way to push agent-authored text files (scripts, generators, configs) into the guest without a terminal heredoc. For large files, send in ordered chunks: first chunk {append:false, final:false}, middle chunks {append:true, final:false}, last chunk {append:true, final:true} — the file lands in the guest only on the final chunk.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1642,7 +1675,7 @@ internal class McpTools(
                     })
                     put("contentBase64", JSONObject().apply {
                         put("type", "string")
-                        put("description", "Base64-encoded bytes to write (for binary). Mutually exclusive with content.")
+                        put("description", "Base64-encoded bytes for small binary writes; prefer upload_file for larger/binary files. Mutually exclusive with content.")
                     })
                     put("mkdirs", JSONObject().apply {
                         put("type", "boolean")
@@ -3145,20 +3178,45 @@ internal class McpTools(
             )
         }
 
+        val ref = publishFileLoopback(profileId, path)
+        JSONObject().apply {
+            put("profileId", profileId)
+            put("backend", ref.backendLabel)
+            put("path", path)
+            put("size", ref.size)
+            put("mimeType", ref.contentType)
+            put("url", ref.url)
+        }
+    }
+
+    private data class LoopbackRef(
+        val url: String,
+        val size: Long,
+        val contentType: String,
+        val backendLabel: String,
+    )
+
+    /**
+     * Resolve [profileId]'s backend, stat [path], publish it on
+     * [sftpStreamServer] as a token-protected loopback HTTP entry, and return
+     * the URL + metadata. Shared by serve_file (agent downloads) and
+     * present_web (in-app WebView). Does NOT enforce the file-read capability
+     * gate — callers that expose bytes to the *agent* (serve_file) check it
+     * first; present_web only renders to the user.
+     */
+    private suspend fun publishFileLoopback(profileId: String, path: String): LoopbackRef {
         val resolution = transportSelector.resolveFileBackend(profileId)
             ?: throw McpError(-32603, "No connected backend for profile $profileId")
         val backend = resolution.backend
-
         val entry = try {
             backend.stat(path)
         } catch (t: Throwable) {
             throw McpError(-32603, "Failed to stat $path: ${t.message}")
         }
         if (entry.isDirectory) {
-            throw McpError(-32602, "$path is a directory; serve_file is for single files")
+            throw McpError(-32602, "$path is a directory; not a single file")
         }
         val contentType = guessContentType(path)
-
         val port = sftpStreamServer.start()
         val urlPath = sftpStreamServer.publish(
             path = path,
@@ -3175,15 +3233,12 @@ internal class McpTools(
             },
         )
         servedFileTracker.register(profileId, path)
-
-        JSONObject().apply {
-            put("profileId", profileId)
-            put("backend", backend.label)
-            put("path", path)
-            put("size", entry.size)
-            put("mimeType", contentType)
-            put("url", "http://127.0.0.1:$port$urlPath")
-        }
+        return LoopbackRef(
+            url = "http://127.0.0.1:$port$urlPath",
+            size = entry.size,
+            contentType = contentType,
+            backendLabel = backend.label,
+        )
     }
 
     private fun guessContentType(name: String): String =
@@ -3199,6 +3254,14 @@ internal class McpTools(
             "ogg", "oga", "opus" -> "audio/ogg"
             "flac" -> "audio/flac"
             "wav" -> "audio/wav"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            "svg" -> "image/svg+xml"
+            "html", "htm" -> "text/html"
+            "pdf" -> "application/pdf"
             else -> "application/octet-stream"
         }
 
@@ -3327,58 +3390,71 @@ internal class McpTools(
     }
 
     /**
-     * Push an image or sound for the user to see/hear inline. Decodes the
-     * base64 payload, writes it to a cache file (so the overlay's image
-     * decoder / [android.media.MediaPlayer] can read a real file handle),
-     * and hands it to [presentationManager] — which the top-of-tree
-     * `PresentationHost` renders as a dismissible bottom sheet. Fire and
-     * forget: returns as soon as the item is queued, never waits on the
-     * user. See [AgentPresentationManager].
+     * Push an image or sound for the user to see/hear inline. References a
+     * file Haven can reach — a backend `profileId` + `path` (incl. "local"
+     * for the device / proot-guest cache) or a ready `url` — streams it into
+     * a cache handle (so the overlay's image decoder / [MediaPlayer] read a
+     * real file), and hands it to [presentationManager], which the top-of-tree
+     * `PresentationHost` renders as a dismissible bottom sheet. The media
+     * bytes never pass through the agent context (no base64). Fire and forget:
+     * returns as soon as the item is queued, never waits on the user. See
+     * [AgentPresentationManager].
      */
-    private fun presentMedia(args: JSONObject): JSONObject {
-        val dataB64 = args.optString("dataBase64").ifEmpty {
-            throw McpError(-32602, "Missing required argument: dataBase64")
+    private suspend fun presentMedia(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        if (args.optString("dataBase64").isNotEmpty()) {
+            throw McpError(
+                -32602,
+                "present_media no longer takes dataBase64 — reference the file instead: " +
+                    "profileId (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone " +
+                    "profile id) + path, or a url (e.g. from serve_file).",
+            )
         }
         val caption = args.optString("caption", "").ifEmpty { null }
         val explicitMime = args.optString("mimeType", "").ifEmpty { null }
         val autoPlay = args.optBoolean("autoPlay", false)
+        val url = args.optString("url", "").ifEmpty { null }
+        val path = args.optString("path", "").ifEmpty { null }
 
-        val bytes = try {
-            Base64.decode(dataB64, Base64.DEFAULT)
-        } catch (e: IllegalArgumentException) {
-            throw McpError(-32602, "dataBase64 is not valid base64: ${e.message}")
-        }
-        if (bytes.isEmpty()) throw McpError(-32602, "dataBase64 decoded to zero bytes")
-        if (bytes.size > MAX_PRESENT_BYTES) {
-            throw McpError(
+        val srcName: String
+        val file: File = when {
+            url != null -> {
+                srcName = url.substringBefore('?').substringAfterLast('/')
+                downloadToPresentCache(url)
+            }
+            path != null -> {
+                val profileId = args.optString("profileId", "local").ifEmpty { "local" }
+                srcName = path.substringAfterLast('/')
+                streamBackendToPresentCache(profileId, path)
+            }
+            else -> throw McpError(
                 -32602,
-                "Payload is ${bytes.size} bytes; present_media caps at $MAX_PRESENT_BYTES (8 MiB). " +
-                    "Serve large media via serve_file and play_file instead.",
+                "present_media needs a file reference: profileId + path, or url.",
             )
         }
 
-        // Trust an explicit image/* or audio/* MIME; otherwise sniff the
-        // bytes for a known image signature. We can't sniff audio reliably
-        // enough to bet on, so audio requires an explicit mimeType.
-        val mime = explicitMime ?: sniffImageMime(bytes)
-            ?: throw McpError(
-                -32602,
-                "Could not determine media type from the bytes — pass mimeType " +
-                    "(e.g. 'image/png' or 'audio/mpeg').",
-            )
+        // Determine MIME: explicit wins; else from the file name; else sniff
+        // the head bytes for a known image signature (audio can't be sniffed
+        // reliably, so it needs an extension or explicit mimeType).
+        val head = ByteArray(32)
+        val n = file.inputStream().use { it.read(head) }
+        val mime = explicitMime
+            ?: guessContentType(srcName).takeIf { it.startsWith("image/") || it.startsWith("audio/") }
+            ?: sniffImageMime(if (n > 0) head.copyOf(n) else head)
+            ?: run {
+                file.delete()
+                throw McpError(
+                    -32602,
+                    "Could not determine media type — pass mimeType (e.g. 'image/png' or 'audio/mpeg').",
+                )
+            }
         val kind = when {
             mime.startsWith("image/") -> sh.haven.core.data.agent.PresentedMediaKind.IMAGE
             mime.startsWith("audio/") -> sh.haven.core.data.agent.PresentedMediaKind.AUDIO
-            else -> throw McpError(
-                -32602,
-                "present_media supports image/* and audio/* only; got '$mime'.",
-            )
+            else -> {
+                file.delete()
+                throw McpError(-32602, "present_media supports image/* and audio/* only; got '$mime'.")
+            }
         }
-
-        val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
-            ?: if (kind == sh.haven.core.data.agent.PresentedMediaKind.IMAGE) "img" else "snd"
-        val file = File(context.cacheDir, "haven-present-${System.currentTimeMillis()}.$ext")
-        file.writeBytes(bytes)
 
         val id = presentationManager.present(
             kind = kind,
@@ -3387,11 +3463,126 @@ internal class McpTools(
             caption = caption,
             autoPlay = autoPlay,
         )
-        return JSONObject().apply {
+        JSONObject().apply {
             put("presented", true)
             put("id", id)
             put("kind", kind.name.lowercase())
-            put("bytes", bytes.size)
+            put("mimeType", mime)
+        }
+    }
+
+    /**
+     * Copy [input] into a fresh cache file (named with [ext]), capping at
+     * [MAX_PRESENT_BYTES] so a referenced file can't fill the cache. The
+     * cache file is owned by [AgentPresentationManager] from return — it
+     * deletes it on dismissal / eviction.
+     */
+    private fun copyToPresentCache(input: java.io.InputStream, ext: String): File {
+        val file = File(context.cacheDir, "haven-present-${System.currentTimeMillis()}.$ext")
+        try {
+            var total = 0L
+            val buf = ByteArray(64 * 1024)
+            input.use { ins ->
+                file.outputStream().use { out ->
+                    while (true) {
+                        val r = ins.read(buf)
+                        if (r < 0) break
+                        total += r
+                        if (total > MAX_PRESENT_BYTES) {
+                            throw McpError(
+                                -32602,
+                                "media exceeds $MAX_PRESENT_BYTES bytes — use present_app or play_file for large media",
+                            )
+                        }
+                        out.write(buf, 0, r)
+                    }
+                }
+            }
+            return file
+        } catch (t: Throwable) {
+            runCatching { file.delete() }
+            throw t
+        }
+    }
+
+    /** Stream a file off a connected backend into a present-cache handle. */
+    private suspend fun streamBackendToPresentCache(profileId: String, path: String): File {
+        val resolution = transportSelector.resolveFileBackend(profileId)
+            ?: throw McpError(-32603, "No connected backend for profile $profileId")
+        val backend = resolution.backend
+        val entry = try {
+            backend.stat(path)
+        } catch (t: Throwable) {
+            throw McpError(-32603, "Failed to stat $path: ${t.message}")
+        }
+        if (entry.isDirectory) throw McpError(-32602, "$path is a directory")
+        if (entry.size > MAX_PRESENT_BYTES) {
+            throw McpError(
+                -32602,
+                "$path is ${entry.size} bytes; caps at $MAX_PRESENT_BYTES — use present_app or play_file for large media",
+            )
+        }
+        val ext = path.substringAfterLast('.', "").ifEmpty { "bin" }
+        return copyToPresentCache(backend.openInputStream(path, 0), ext)
+    }
+
+    /** Fetch a URL (e.g. a serve_file loopback URL) into a present-cache handle. */
+    private fun downloadToPresentCache(urlStr: String): File {
+        val url = java.net.URL(urlStr)
+        val conn = url.openConnection().apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+        }
+        val ext = urlStr.substringBefore('?').substringAfterLast('.', "").ifEmpty { "bin" }
+        return copyToPresentCache(conn.getInputStream(), ext)
+    }
+
+    /**
+     * Show HTML / SVG / PDF inline. HTML/SVG are served over a loopback URL
+     * and loaded in an in-app WebView; a PDF is streamed to a cache file and
+     * paged by PdfRenderer (it needs a local fd). Reference by a ready `url`
+     * or a backend `profileId` + `path`. Bytes never pass through the agent
+     * context. Fire and forget; returns as soon as the item is queued.
+     */
+    private suspend fun presentWeb(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val caption = args.optString("caption", "").ifEmpty { null }
+        val explicitUrl = args.optString("url", "").ifEmpty { null }
+        val path = args.optString("path", "").ifEmpty { null }
+
+        val resultUrl: String?
+        val pdfFile: File?
+        val mime: String
+        when {
+            explicitUrl != null -> {
+                resultUrl = explicitUrl
+                pdfFile = null
+                mime = guessContentType(explicitUrl.substringBefore('?'))
+            }
+            path != null -> {
+                val profileId = args.optString("profileId", "local").ifEmpty { "local" }
+                mime = guessContentType(path)
+                if (mime == "application/pdf") {
+                    // PdfRenderer needs a seekable local file, not a URL.
+                    resultUrl = null
+                    pdfFile = streamBackendToPresentCache(profileId, path)
+                } else {
+                    resultUrl = publishFileLoopback(profileId, path).url
+                    pdfFile = null
+                }
+            }
+            else -> throw McpError(-32602, "present_web needs a url, or profileId + path.")
+        }
+
+        val id = presentationManager.presentWeb(
+            url = resultUrl,
+            filePath = pdfFile?.absolutePath,
+            mimeType = mime,
+            caption = caption,
+        )
+        JSONObject().apply {
+            put("presented", true)
+            put("id", id)
+            resultUrl?.let { put("url", it) }
             put("mimeType", mime)
         }
     }

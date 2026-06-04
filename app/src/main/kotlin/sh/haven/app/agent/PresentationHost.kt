@@ -3,8 +3,13 @@ package sh.haven.app.agent
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
 import android.media.MediaPlayer
+import android.os.ParcelFileDescriptor
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -39,6 +47,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,6 +67,9 @@ import sh.haven.core.local.DesktopManager
 import sh.haven.feature.vnc.VncSessionContent
 import java.io.File
 import javax.inject.Inject
+
+/** Max PDF pages [PdfContent] rasterises (bounds memory for a chatty agent). */
+private const val MAX_PDF_PAGES = 20
 
 /**
  * Thin Hilt + Compose wrapper around the app-scoped
@@ -187,6 +199,7 @@ internal fun PresentationHost(viewModel: PresentationHostViewModel = hiltViewMod
             when (current.kind) {
                 PresentedMediaKind.IMAGE -> ImageContent(current)
                 PresentedMediaKind.AUDIO -> AudioContent(current)
+                PresentedMediaKind.WEB -> WebContent(current)
                 PresentedMediaKind.APP_WINDOW -> {
                     val controller = viewModel.controllerFor(current)
                     if (controller != null) {
@@ -315,6 +328,105 @@ private fun AudioContent(media: PresentedMedia) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Web content: HTML/SVG loaded from a loopback-served [PresentedMedia.url] in
+ * an in-app WebView (cleartext to 127.0.0.1 is permitted by the network
+ * security config), or a downloaded PDF ([PresentedMedia.filePath]) paged via
+ * [PdfContent]. The rung between a static image and a live app window.
+ */
+@Composable
+private fun WebContent(media: PresentedMedia) {
+    val pdfPath = media.filePath
+    if (media.mimeType == "application/pdf" && pdfPath != null) {
+        PdfContent(pdfPath)
+        return
+    }
+    val url = media.url ?: return
+    // key() so a new URL (a different presented item reusing this node) forces
+    // a fresh WebView + load rather than keeping the old page.
+    key(url) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    webViewClient = WebViewClient()
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    loadUrl(url)
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(480.dp),
+        )
+    }
+}
+
+/**
+ * Render a downloaded PDF to a vertical run of page bitmaps via
+ * [android.graphics.pdf.PdfRenderer] (which needs a seekable local fd, hence
+ * the cache download rather than a served URL). Mirrors [ImageContent]'s
+ * "spinner until ready / on failure" honesty — null or empty both show the
+ * spinner. Capped at [MAX_PDF_PAGES].
+ */
+@Composable
+private fun PdfContent(path: String) {
+    val pages by produceState<List<ImageBitmap>?>(initialValue = null, path) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                val pfd = ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+                try {
+                    PdfRenderer(pfd).use { renderer ->
+                        val count = renderer.pageCount.coerceAtMost(MAX_PDF_PAGES)
+                        (0 until count).map { i ->
+                            renderer.openPage(i).use { page ->
+                                val w = 1080
+                                val h = (w.toFloat() * page.height / page.width)
+                                    .toInt().coerceAtLeast(1)
+                                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                bmp.asImageBitmap()
+                            }
+                        }
+                    }
+                } finally {
+                    runCatching { pfd.close() }
+                }
+            }.getOrNull()
+        }
+    }
+    val list = pages
+    if (list.isNullOrEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator()
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 600.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            list.forEach { pg ->
+                Image(
+                    bitmap = pg,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.FillWidth,
+                )
+            }
+        }
     }
 }
 

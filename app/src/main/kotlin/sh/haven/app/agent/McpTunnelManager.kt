@@ -24,7 +24,6 @@ import sh.haven.core.ssh.SessionManager
 import sh.haven.core.ssh.SshClient
 import sh.haven.core.ssh.SshKeyExporter
 import sh.haven.core.ssh.SshSessionManager
-import sh.haven.core.tunnel.TunnelManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,12 +35,16 @@ private const val TAG = "McpTunnelManager"
  * laptop running the MCP client, so the endpoint stays reachable as the
  * device's WiFi/hotspot address roams and across app restarts.
  *
- * **Fallback only.** When WireGuard is exposing the MCP endpoint directly
- * (see [McpServer.startWireguardBinderLocked] + `mcpWireguardEnabled`), that
- * is the preferred transport — stable across roams with no `-R` re-bind
- * collisions — so this reverse tunnel **stands down** and only (re)establishes
- * while no WG tunnel is serving MCP. The supervisory loop in [launchTunnel]
- * polls [wireguardServingMcp] to switch between the two.
+ * **Always-on for a configured endpoint.** This `-R` is the managed
+ * transport that makes the device's MCP reachable on a *remote SSH endpoint
+ * host* (the designated `mcpTunnelEndpointProfileId`). It runs independent of
+ * WireGuard: WG exposes MCP on the device's own WG address (for WG-network
+ * peers + on-device loopback), which gives a separate SSH host nothing — so
+ * the two are parallel transports to different audiences, not alternatives.
+ * (Earlier builds stood this `-R` down whenever any WG tunnel was live, which
+ * wrongly killed MCP on a remote endpoint host the moment WG came up.) Rebind
+ * churn on roam/reconnect is owned by the watchdog in [launchTunnel] (liveness
+ * probe + self-healing reconnect), not by deferring to WG.
  *
  * This is decoupled from the user's interactive "near" terminal session
  * (which dies on every app restart and didn't reliably re-establish its
@@ -73,7 +76,6 @@ class McpTunnelManager @Inject constructor(
     private val hostKeyVerifier: HostKeyVerifier,
     private val connectionLogRepository: ConnectionLogRepository,
     private val guestServiceManager: GuestServiceManager,
-    private val tunnelManager: TunnelManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
@@ -97,26 +99,17 @@ class McpTunnelManager @Inject constructor(
 
     private fun launchTunnel(mcpPort: Int) {
         job = scope.launch {
-            // Supervisory loop. The SSH `-R` is now a *fallback*: whenever
-            // WireGuard is exposing the MCP endpoint directly (stable across
-            // roams, no `-R` re-bind collisions) the reverse tunnel stands down,
-            // and only (re)establishes when WG stops serving. This is what
-            // removes the "Address already in use" churn that plagued the `-R`.
+            // Supervisory loop. The SSH `-R` is the unconditional managed
+            // transport for a configured endpoint — it runs independent of
+            // WireGuard (WG serves the device's own WG address; it gives a
+            // remote SSH endpoint host nothing). Rebind churn is owned by the
+            // watchdog below, not by deferring to WG.
             while (isActive) {
-                // Stand-down gate: WG is serving MCP → tear the `-R` down (if up)
-                // and idle until WG drops.
-                if (wireguardServingMcp()) {
-                    teardownSession("WireGuard is serving MCP")
-                    delay(WG_GATE_POLL_MS)
-                    continue
-                }
-
                 // Connect phase: retry with backoff until the tunnel + critical
-                // forward are up, the config is unusable (FATAL), or WG preempts.
+                // forward are up, or the config is unusable (FATAL).
                 var delayMs = INITIAL_RETRY_MS
                 var established = false
                 while (isActive && !established) {
-                    if (wireguardServingMcp()) break // WG came up mid-connect — stand down
                     when (establish(mcpPort)) {
                         Outcome.ESTABLISHED -> established = true
                         Outcome.FATAL -> return@launch // misconfig — retrying won't help
@@ -126,7 +119,7 @@ class McpTunnelManager @Inject constructor(
                         }
                     }
                 }
-                if (!established) continue // preempted by WG → re-evaluate the gate
+                if (!established) continue // cancelled
 
                 // Watchdog phase: a headless session has no shell channel, so the
                 // usual channel-exit reconnect trigger never fires for it. Network
@@ -147,12 +140,6 @@ class McpTunnelManager @Inject constructor(
                 var watching = true
                 while (isActive && watching) {
                     delay(HEALTH_CHECK_MS)
-                    // WG took over while we were the live transport — hand off.
-                    if (wireguardServingMcp()) {
-                        teardownSession("WireGuard now serving MCP")
-                        watching = false
-                        continue
-                    }
                     val s = sshSessionManager.getSession(sid)
                     if (s == null) {
                         // Session evaporated — fall back to the outer loop to
@@ -202,10 +189,6 @@ class McpTunnelManager @Inject constructor(
             }
         }
     }
-
-    /** WG is the active MCP transport: the pref is on AND a WG tunnel is live. */
-    private suspend fun wireguardServingMcp(): Boolean =
-        preferencesRepository.mcpWireguardEnabled.first() && tunnelManager.hasLiveWireguard()
 
     /**
      * Proactively revive the tunnel **now**, without waiting for the
@@ -588,10 +571,6 @@ class McpTunnelManager @Inject constructor(
         const val INITIAL_RETRY_MS = 2_000L
         const val MAX_RETRY_MS = 30_000L
         const val HEALTH_CHECK_MS = 15_000L
-        // How often the supervisory loop re-checks whether WireGuard is still
-        // serving MCP while the `-R` is stood down (so the fallback revives
-        // promptly if the WG tunnel drops).
-        const val WG_GATE_POLL_MS = 10_000L
         const val PROBE_TIMEOUT_MS = 8_000L
         const val PROBE_FAIL_THRESHOLD = 2
     }

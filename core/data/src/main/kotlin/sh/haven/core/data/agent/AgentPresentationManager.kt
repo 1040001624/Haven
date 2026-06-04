@@ -18,6 +18,15 @@ enum class PresentedMediaKind {
      * The overlay embeds the VNC viewer rather than decoding a file.
      */
     APP_WINDOW,
+
+    /**
+     * HTML / SVG / PDF shown inline. HTML and SVG load from a loopback-served
+     * URL ([PresentedMedia.url]) in an in-app WebView; a PDF is downloaded to
+     * a cache file ([PresentedMedia.filePath]) and paged via PdfRenderer
+     * (which needs a local fd). The rung between a static image ([IMAGE]) and
+     * a live app ([APP_WINDOW]).
+     */
+    WEB,
 }
 
 /**
@@ -30,8 +39,10 @@ enum class PresentedMediaKind {
 data class PresentedMedia(
     val id: Long,
     val kind: PresentedMediaKind,
-    /** IMAGE/AUDIO: absolute cache-file path the UI reads/decodes/plays. */
+    /** IMAGE/AUDIO: absolute cache-file path the UI reads/decodes/plays. WEB: a downloaded PDF cache file. */
     val filePath: String? = null,
+    /** WEB: loopback-served URL for HTML/SVG content (a PDF uses [filePath] instead). */
+    val url: String? = null,
     val mimeType: String? = null,
     /** Optional one-line caption shown above the media. */
     val caption: String? = null,
@@ -107,6 +118,30 @@ class AgentPresentationManager @Inject constructor() {
             mimeType = mimeType,
             caption = caption,
             autoPlay = autoPlay,
+        ),
+    )
+
+    /**
+     * Enqueue web content for the user to view inline: HTML/SVG via a
+     * loopback-served [url] in a WebView, or a PDF via a downloaded cache
+     * [filePath] paged by PdfRenderer. Non-blocking; returns the assigned id.
+     * A PDF [filePath] is owned by this manager from here on (deleted on
+     * dismissal / eviction); a served [url] is reclaimed by the stream
+     * server's TTL.
+     */
+    fun presentWeb(
+        url: String?,
+        filePath: String?,
+        mimeType: String?,
+        caption: String?,
+    ): Long = enqueue(
+        PresentedMedia(
+            id = nextId.getAndIncrement(),
+            kind = PresentedMediaKind.WEB,
+            url = url,
+            filePath = filePath,
+            mimeType = mimeType,
+            caption = caption,
         ),
     )
 
