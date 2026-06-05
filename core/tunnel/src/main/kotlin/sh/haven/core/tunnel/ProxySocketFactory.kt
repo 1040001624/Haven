@@ -92,8 +92,11 @@ class ProxySocketFactory(
             when (val method = readByte(ins)) {
                 0x00 -> { /* server accepts no-auth */ }
                 0x02 -> {
-                    val u = (proxyUser ?: "").toByteArray(Charsets.ISO_8859_1)
-                    val p = (proxyPassword ?: "").toByteArray(Charsets.ISO_8859_1)
+                    // UTF-8 to match curl / JSch (str2byte) and what most SOCKS5
+                    // servers store; the length octets below come from the byte
+                    // arrays, so non-ASCII credentials stay correct (#227).
+                    val u = (proxyUser ?: "").toByteArray(Charsets.UTF_8)
+                    val p = (proxyPassword ?: "").toByteArray(Charsets.UTF_8)
                     if (u.size > 255 || p.size > 255) {
                         throw IOException("SOCKS5 proxy credentials exceed 255 bytes")
                     }
@@ -152,7 +155,7 @@ class ProxySocketFactory(
 
             val target = "$host:$port"
             val token = java.util.Base64.getEncoder()
-                .encodeToString("${proxyUser ?: ""}:${proxyPassword ?: ""}".toByteArray(Charsets.ISO_8859_1))
+                .encodeToString("${proxyUser ?: ""}:${proxyPassword ?: ""}".toByteArray(Charsets.UTF_8))
             val request = buildString {
                 append("CONNECT ").append(target).append(" HTTP/1.1\r\n")
                 append("Host: ").append(target).append("\r\n")

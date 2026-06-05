@@ -179,6 +179,53 @@ class ProxySocketFactoryTest {
     }
 
     @Test
+    fun socks5EncodesNonAsciiCredentialsByByteLength() {
+        // #227 regression: the RFC 1929 length octets must equal the UTF-8 BYTE
+        // length of the credentials, not the character count (JSch's ProxySOCKS5
+        // used the char count, corrupting non-ASCII creds → "server status = 01").
+        val server = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
+        val user = "用户"        // 2 chars, 6 UTF-8 bytes
+        val pass = "pä55wörd"    // 8 chars, 10 UTF-8 bytes (ä, ö are 2 bytes each)
+        val gotUser = AtomicReference<String>()
+        val gotPass = AtomicReference<String>()
+        val gotUlen = AtomicReference<Int>()
+        val gotPlen = AtomicReference<Int>()
+        val done = CountDownLatch(1)
+        val srv = thread(isDaemon = true) {
+            server.accept().use { s ->
+                val ins = DataInputStream(s.getInputStream())
+                val out = s.getOutputStream()
+                assertEquals(0x05, ins.read()); val n = ins.read(); repeat(n) { ins.read() }
+                out.write(byteArrayOf(0x05, 0x02)); out.flush()
+                assertEquals(0x01, ins.read())
+                val ulen = ins.read(); val u = ByteArray(ulen).also { ins.readFully(it) }
+                val plen = ins.read(); val p = ByteArray(plen).also { ins.readFully(it) }
+                gotUlen.set(ulen); gotPlen.set(plen)
+                gotUser.set(String(u, Charsets.UTF_8)); gotPass.set(String(p, Charsets.UTF_8))
+                out.write(byteArrayOf(0x01, 0x00)); out.flush()
+                assertEquals(0x05, ins.read()); ins.read(); ins.read()
+                assertEquals(0x03, ins.read())
+                val dl = ins.read(); ByteArray(dl).also { ins.readFully(it) }; ins.read(); ins.read()
+                out.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0)); out.flush()
+                done.countDown()
+            }
+        }
+        var client: Socket? = null
+        try {
+            client = ProxySocketFactory("SOCKS5", "127.0.0.1", server.localPort, 5_000, user, pass)
+                .createSocket("h", 22)
+            assertTrue(done.await(5, TimeUnit.SECONDS))
+            assertEquals("ulen must be the UTF-8 byte length, not the char count", 6, gotUlen.get())
+            assertEquals("plen must be the UTF-8 byte length, not the char count", 10, gotPlen.get())
+            assertEquals(user, gotUser.get())
+            assertEquals(pass, gotPass.get())
+            assertTrue(client.isConnected)
+        } finally {
+            client?.close(); server.close(); srv.join(2_000)
+        }
+    }
+
+    @Test
     fun httpConnectSendsBasicProxyAuthorization() {
         val server = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
         val requestLines = AtomicReference<List<String>>()

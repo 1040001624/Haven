@@ -1,0 +1,1 @@
+- Proxy auth: fixed authenticated SOCKS5 proxies rejecting non-ASCII (e.g. CJK or accented) usernames/passwords with "authentication failed: server status = 01". Haven now sends the SOCKS5 RFC 1929 credentials with correct UTF-8 byte lengths instead of character counts. (#227)

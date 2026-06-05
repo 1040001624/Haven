@@ -147,9 +147,27 @@ class TunnelResolver @Inject constructor(
         val user = profile.proxyUser?.takeIf { it.isNotEmpty() }
         val pass = profile.proxyPassword ?: ""
         return when (profile.proxyType) {
-            "SOCKS5" -> ProxySOCKS5(proxyHost, profile.proxyPort).apply {
-                if (user != null) setUserPasswd(user, pass)
-            }
+            // #227: an authenticated SOCKS5 proxy goes through ProxySocketFactory
+            // (byte-correct RFC 1929) rather than JSch's ProxySOCKS5, whose
+            // username/password length octets use the character count, corrupting
+            // non-ASCII credentials. No-auth SOCKS5 keeps JSch's proxy unchanged.
+            "SOCKS5" ->
+                if (user != null) {
+                    AuthenticatedProxy(
+                        ProxySocketFactory(
+                            proxyType = "SOCKS5",
+                            proxyHost = proxyHost,
+                            proxyPort = profile.proxyPort,
+                            proxyUser = user,
+                            proxyPassword = pass,
+                        ),
+                    )
+                } else {
+                    ProxySOCKS5(proxyHost, profile.proxyPort)
+                }
+            // SOCKS4 sends a NUL-terminated userid (no length octet → no
+            // char/byte mismatch) and HTTP Basic base64s the raw UTF-8 bytes;
+            // both are byte-correct in JSch, so they stay on JSch's proxies.
             "SOCKS4" -> ProxySOCKS4(proxyHost, profile.proxyPort).apply {
                 if (user != null) setUserPasswd(user, pass)
             }

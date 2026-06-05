@@ -176,15 +176,16 @@ class TunnelResolverTest {
         proxy.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(proxy) as String?
 
     @Test
-    fun jschProxySocks5AppliesUserPasswdWhenCredsPresent() = runTest {
+    fun jschProxySocks5WithCredsUsesAuthenticatedProxy() = runTest {
+        // #227: an authenticated SOCKS5 proxy must bypass JSch's ProxySOCKS5
+        // (whose non-ASCII RFC 1929 auth encoding is broken) and route through
+        // the byte-correct ProxySocketFactory via AuthenticatedProxy.
         val resolver = TunnelResolver(mockk(relaxed = true))
         val proxy = resolver.jschProxy(
             profile(proxyType = "SOCKS5", proxyHost = "127.0.0.1", proxyPort = 1080,
                 proxyUser = "alice", proxyPassword = "s3cr3t"),
         )
-        assertTrue(proxy is ProxySOCKS5)
-        assertEquals("alice", proxyField(proxy!!, "user"))
-        assertEquals("s3cr3t", proxyField(proxy, "passwd"))
+        assertTrue("auth'd SOCKS5 must use AuthenticatedProxy", proxy is AuthenticatedProxy)
     }
 
     @Test
