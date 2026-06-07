@@ -731,7 +731,10 @@ private fun VncViewer(
                                     if (totalFingers >= zoomPanMinFingers) {
                                         if (prevSpan > 0f && span > 0f) {
                                             val requestedScale = span / prevSpan
-                                            val newZoom = (zoom * requestedScale).coerceIn(0.5f, 5f)
+                                            // Max 10× (was 5×): small portrait
+                                            // phones need to magnify far enough
+                                            // to read remote-desktop text.
+                                            val newZoom = (zoom * requestedScale).coerceIn(0.5f, 10f)
                                             // Keep the content point under the pinch
                                             // centroid stationary during the zoom.
                                             // graphicsLayer's default TransformOrigin
@@ -846,6 +849,15 @@ private fun VncViewer(
                                     }
                                 }
                                 change.consume()
+                            } else {
+                                // Residual finger after a multi-finger pinch
+                                // (count == 1 but totalFingers already >= 2), or
+                                // the final all-up frame. Consume it so the
+                                // lingering single-finger slide can't leak up to
+                                // the HorizontalPager and swipe the Haven screen
+                                // sideways during/after a zoom. It isn't a tap or
+                                // drag in this state, so consuming costs nothing.
+                                event.changes.forEach { it.consume() }
                             }
                         } while (event.changes.any { it.pressed })
 

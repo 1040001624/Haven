@@ -685,6 +685,15 @@ private fun RdpViewer(
                                     }
                                 }
                                 change.consume()
+                            } else {
+                                // Residual finger after a multi-finger pinch
+                                // (count == 1 but totalFingers already >= 2), or
+                                // the final all-up frame. Consume it so the
+                                // lingering single-finger slide can't leak up to
+                                // the HorizontalPager and swipe the Haven screen
+                                // sideways during/after a zoom. It isn't a tap or
+                                // drag in this state, so consuming costs nothing.
+                                event.changes.forEach { it.consume() }
                             }
                         } while (event.changes.any { it.pressed })
 
