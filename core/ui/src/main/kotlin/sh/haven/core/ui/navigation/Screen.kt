@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.VpnKey
@@ -21,5 +22,6 @@ enum class Screen(
     Desktop("desktop", R.string.nav_desktop, Icons.Filled.DesktopWindows),
     Keys("keys", R.string.nav_keys, Icons.Filled.VpnKey),
     Sftp("sftp", R.string.nav_sftp, Icons.Filled.Folder),
+    Mail("mail", R.string.nav_mail, Icons.Filled.Mail),
     Settings("settings", R.string.nav_settings, Icons.Filled.Settings),
 }

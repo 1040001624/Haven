@@ -38,7 +38,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         ProotInstallLog::class,
         TotpSecret::class,
     ],
-    version = 60,
+    version = 61,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -952,6 +952,24 @@ abstract class HavenDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "connection_profiles", "proxyUser", "TEXT")
                 addColumnIfMissing(db, "connection_profiles", "proxyPassword", "TEXT")
+            }
+        }
+
+        // #EMAIL: embedded email connection type. Proton (v1) uses provider +
+        // username + (mailbox)password + emailAuthMethods; the server/port/tls
+        // columns serve the stage-2 JVM IMAP/SMTP path. Passwords are encrypted
+        // at rest by ConnectionRepository, same as the other secret columns.
+        val MIGRATION_60_61 = object : Migration(60, 61) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "connection_profiles", "emailProvider", "TEXT")
+                addColumnIfMissing(db, "connection_profiles", "emailServer", "TEXT")
+                addColumnIfMissing(db, "connection_profiles", "emailPort", "INTEGER NOT NULL DEFAULT 993")
+                addColumnIfMissing(db, "connection_profiles", "emailSmtpPort", "INTEGER NOT NULL DEFAULT 465")
+                addColumnIfMissing(db, "connection_profiles", "emailTls", "INTEGER NOT NULL DEFAULT 1")
+                addColumnIfMissing(db, "connection_profiles", "emailUsername", "TEXT")
+                addColumnIfMissing(db, "connection_profiles", "emailPassword", "TEXT")
+                addColumnIfMissing(db, "connection_profiles", "emailMailboxPassword", "TEXT")
+                addColumnIfMissing(db, "connection_profiles", "emailAuthMethods", "TEXT NOT NULL DEFAULT ''")
             }
         }
 

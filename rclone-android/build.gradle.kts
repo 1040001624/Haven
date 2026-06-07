@@ -52,11 +52,12 @@ val buildRcloneNative by tasks.registering(Exec::class) {
     inputs.file(toolsDir.resolve("build-android.sh"))
     outputs.dir(jniDir)
 
-    // Skip if native libs already exist (avoids expensive Go cross-compile on every build)
-    onlyIf {
-        !jniDir.resolve("arm64-v8a/libgojni.so").exists() ||
-            !jniDir.resolve("x86_64/libgojni.so").exists()
-    }
+    // Up-to-date checking is driven by Gradle's inputs/outputs above: the
+    // expensive Go cross-compile is skipped when `go/` and build-android.sh are
+    // unchanged AND the jniLibs outputs exist, and re-runs when the Go source
+    // changes. (Do NOT gate with an `onlyIf { !so.exists() }` — that short-
+    // circuits staleness so a source change leaves a stale .so on disk, e.g. a
+    // pre-mailbridge build crashing at the first Mailbridge.mbRPC call.)
 
     workingDir = projectDir
     commandLine("bash", toolsDir.resolve("build-android.sh").absolutePath)

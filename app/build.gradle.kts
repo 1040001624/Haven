@@ -55,6 +55,15 @@ android {
             )
             vcsInfo.include = false
         }
+        debug {
+            // Sign debug with the release cert when the keystore env is present
+            // (source ~/.haven-release.env), so a debuggable build installs over
+            // a release-signed device build without a data-wiping uninstall.
+            // Falls back to the default debug keystore when the env is absent.
+            if (System.getenv("KEYSTORE_PASSWORD") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     // Version code scheme: base * 10 + abiOffset
@@ -91,6 +100,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/NOTICE.md"
             excludes += "/META-INF/LICENSE.md"
+            // Apache Mime4j (email MIME parsing) ships these in both its core and
+            // dom jars; drop the duplicates so the APK merge doesn't conflict.
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/{LICENSE,LICENSE.txt,NOTICE,NOTICE.txt}"
         }
         jniLibs {
             useLegacyPackaging = true
@@ -139,6 +152,8 @@ dependencies {
     implementation(project(":feature:connections"))
     implementation(project(":feature:terminal"))
     implementation(project(":feature:sftp"))
+    implementation(project(":feature:mail"))
+    implementation(project(":core:mail"))
     implementation(project(":feature:keys"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:editor"))

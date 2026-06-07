@@ -69,6 +69,7 @@ internal class McpTools(
     private val reticulumSessionManager: sh.haven.core.reticulum.ReticulumSessionManager,
     private val reticulumForwardServer: sh.haven.core.reticulum.ReticulumForwardServer,
     private val rcloneClient: RcloneClient,
+    private val mailSessionManager: sh.haven.core.mail.MailSessionManager,
     private val sftpStreamServer: SftpStreamServer,
     private val hlsStreamServer: HlsStreamServer,
     private val ffmpegExecutor: FfmpegExecutor,
@@ -210,6 +211,59 @@ internal class McpTools(
             description = "List rclone cloud storage remotes configured in Haven.",
             inputSchema = emptyObjectSchema(),
         ) { _ -> listRcloneRemotes() },
+
+        "list_mail_folders" to ToolHandler(
+            description = "List folders/labels for a connected EMAIL (ProtonMail) profile. Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, and type. Read-only.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "EMAIL connection profile id.")
+                    })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> listMailFolders(args) },
+
+        "list_mail_messages" to ToolHandler(
+            description = "List message envelopes in a folder of a connected EMAIL profile. Pass profileId and folderId (default '0' = Inbox; see list_mail_folders). Returns id, subject, from, unread, time, numAttachments per message, newest first. Read-only.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "EMAIL connection profile id.")
+                    })
+                    put("folderId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Folder/label id (default '0' = Inbox).")
+                    })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> listMailMessages(args) },
+
+        "read_mail_message" to ToolHandler(
+            description = "Fetch and decrypt one message from a connected EMAIL profile, returning parsed headers and plain-text body (HTML is stripped; remote content is never loaded). Pass profileId and messageId (from list_mail_messages). Read-only.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "EMAIL connection profile id.")
+                    })
+                    put("messageId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Message id from list_mail_messages.")
+                    })
+                })
+                put("required", JSONArray().put("profileId").put("messageId"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> readMailMessage(args) },
 
         "list_rclone_provider_options" to ToolHandler(
             description = "List a credentials-based rclone provider's basic config fields — the non-advanced options needed to configure a non-OAuth remote (ftp, sftp, webdav, s3, b2, mega, filen, …). Each entry has name, help, required, isPassword, default, type. Feed the collected values into configure_rclone_remote's `parameters`. OAuth providers (drive, dropbox, onedrive, box, pcloud) are configured via the in-app browser sign-in, not this. (#181)",
@@ -2746,6 +2800,97 @@ internal class McpTools(
             }
         } catch (e: Exception) {
             throw McpError(-32603, "Failed to list rclone remotes: ${e.message}")
+        }
+    }
+
+    // ---- EMAIL (ProtonMail) read tools — the MCP-drivable read path (#EMAIL) ----
+
+    private fun requireMailSession(profileId: String): String =
+        mailSessionManager.getSessionIdForProfile(profileId)
+            ?: throw McpError(-32603, "Profile $profileId is not a connected email account — call connect_profile first.")
+
+    private suspend fun listMailFolders(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val sessionId = requireMailSession(profileId)
+        return try {
+            val folders = mailSessionManager.mailClient.listFolders(sessionId)
+            JSONObject().apply {
+                put("count", folders.size)
+                put("folders", JSONArray().apply {
+                    folders.forEach { f ->
+                        put(JSONObject().apply {
+                            put("id", f.id)
+                            put("name", f.name)
+                            put("type", f.type)
+                        })
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to list mail folders: ${e.message}")
+        }
+    }
+
+    private suspend fun listMailMessages(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val folderId = args.optString("folderId").ifEmpty { sh.haven.core.mail.MailFolder.INBOX_ID }
+        val sessionId = requireMailSession(profileId)
+        return try {
+            val msgs = mailSessionManager.mailClient.listMessages(sessionId, folderId, desc = true)
+            JSONObject().apply {
+                put("folderId", folderId)
+                put("count", msgs.size)
+                put("messages", JSONArray().apply {
+                    msgs.forEach { m ->
+                        put(JSONObject().apply {
+                            put("id", m.id)
+                            put("subject", m.subject)
+                            put("from", m.from?.display() ?: "")
+                            put("unread", m.unread)
+                            put("time", m.timeSeconds)
+                            put("numAttachments", m.numAttachments)
+                        })
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to list mail messages: ${e.message}")
+        }
+    }
+
+    private suspend fun readMailMessage(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val messageId = args.optString("messageId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: messageId")
+        }
+        val sessionId = requireMailSession(profileId)
+        return try {
+            val raw = mailSessionManager.mailClient.getMessageRaw(sessionId, messageId)
+            val parsed = sh.haven.feature.mail.MimeParser.parse(raw)
+            JSONObject().apply {
+                put("subject", parsed.subject)
+                put("from", parsed.from)
+                put("to", JSONArray().apply { parsed.to.forEach { put(it) } })
+                parsed.dateMillis?.let { put("dateMillis", it) }
+                put("bodyWasHtml", parsed.bodyWasHtml)
+                put("body", parsed.bodyText)
+                put("attachments", JSONArray().apply {
+                    parsed.attachments.forEach { a ->
+                        put(JSONObject().apply {
+                            put("filename", a.filename)
+                            put("mimeType", a.mimeType)
+                        })
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to read mail message: ${e.message}")
         }
     }
 

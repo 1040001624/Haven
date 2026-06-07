@@ -65,7 +65,7 @@ gomobile bind \
     -javapkg=sh.haven.rclone.binding \
     -androidapi=26 \
     -o "$AAR_DIR/rcbridge.aar" \
-    . ./wgbridge ./tsbridge
+    . ./wgbridge ./tsbridge ./mailbridge
 
 echo ">>> Extracting native libraries from AAR"
 mkdir -p "$JNI_DIR"

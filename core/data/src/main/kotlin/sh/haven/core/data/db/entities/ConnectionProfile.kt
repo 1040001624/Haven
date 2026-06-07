@@ -126,6 +126,37 @@ data class ConnectionProfile(
     val rcloneRemoteName: String? = null,
     /** rclone provider type (e.g. "drive", "s3", "dropbox"). */
     val rcloneProvider: String? = null,
+    /**
+     * Embedded email (#EMAIL). Selects engine + auth chain: "proton" (Go
+     * mailbridge, SRP + native PGP) for v1, or "imap"/"gmail"/"outlook" (JVM
+     * Jakarta Mail, stage 2). Only meaningful when [connectionType] == "EMAIL".
+     */
+    val emailProvider: String? = null,
+    /** IMAP/host server for non-Proton providers (Proton ignores this). */
+    val emailServer: String? = null,
+    /** IMAP port (non-Proton). Default 993 (implicit TLS). */
+    val emailPort: Int = 993,
+    /** SMTP submission port (non-Proton). Default 465 (implicit TLS). */
+    val emailSmtpPort: Int = 465,
+    /** Use implicit TLS for IMAP/SMTP (non-Proton). Default true. */
+    val emailTls: Boolean = true,
+    /** Account username / email address. */
+    val emailUsername: String? = null,
+    /** Login password (Proton SRP password / IMAP password). Encrypted at rest. */
+    val emailPassword: String? = null,
+    /**
+     * Proton mailbox (second) password for two-password-mode accounts — unlocks
+     * the PGP keyrings, distinct from [emailPassword]. Encrypted at rest.
+     * Null/empty for single-password Proton and all non-Proton accounts.
+     */
+    val emailMailboxPassword: String? = null,
+    /**
+     * Ordered email auth methods (mirrors [authMethods]); tokens include
+     * `PROTON_SRP`, `PASSWORD`, `TOTP[:<secretId>]`, and (stage 2b)
+     * `XOAUTH2:<tokenId>`. Empty = derive from [emailProvider].
+     */
+    @ColumnInfo(defaultValue = "")
+    val emailAuthMethods: String = "",
     /** Use native Android shell instead of PRoot for local connections. */
     val useAndroidShell: Boolean = false,
     /** Custom mosh-server command (overrides the default `mosh-server new -s -c 256 -l LANG=en_US.UTF-8`). */
@@ -300,6 +331,16 @@ data class ConnectionProfile(
             override fun serialize() = if (secretId.isNullOrEmpty()) "TOTP" else "TOTP:$secretId"
         }
 
+        /**
+         * ProtonMail SRP login, handled by the Go mailbridge rather than JSch.
+         * Carries no JSch credential — the actual secrets live in
+         * [ConnectionProfile.emailPassword] / [emailMailboxPassword] — so like
+         * [Totp] it contributes no entry to a resolved JSch auth list. (#EMAIL)
+         */
+        data object ProtonSrp : AuthMethodSpec {
+            override fun serialize() = "PROTON_SRP"
+        }
+
         companion object {
             fun parseList(text: String?): List<AuthMethodSpec> =
                 text?.lineSequence()
@@ -319,6 +360,7 @@ data class ConnectionProfile(
                 token.startsWith("KEY:") -> Key(token.removePrefix("KEY:").ifEmpty { null })
                 token == "TOTP" -> Totp(null)
                 token.startsWith("TOTP:") -> Totp(token.removePrefix("TOTP:").ifEmpty { null })
+                token == "PROTON_SRP" -> ProtonSrp
                 else -> null
             }
         }
@@ -344,6 +386,7 @@ data class ConnectionProfile(
     val isSmb: Boolean get() = connectionType == "SMB"
     val isLocal: Boolean get() = connectionType == "LOCAL"
     val isRclone: Boolean get() = connectionType == "RCLONE"
+    val isEmail: Boolean get() = connectionType == "EMAIL"
     val isDesktop: Boolean get() = isVnc || isRdp
-    val isTerminal: Boolean get() = !isDesktop && !isSmb && !isRclone
+    val isTerminal: Boolean get() = !isDesktop && !isSmb && !isRclone && !isEmail
 }

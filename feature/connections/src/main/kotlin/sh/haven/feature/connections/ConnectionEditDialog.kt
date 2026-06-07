@@ -170,6 +170,7 @@ fun ConnectionEditDialog(
         existing?.isRdp == true -> "RDP"
         existing?.isSmb == true -> "SMB"
         existing?.isRclone == true -> "RCLONE"
+        existing?.isEmail == true -> "EMAIL"
         existing?.isEternalTerminal == true -> "ET"
         existing?.isMosh == true -> "MOSH"
         existing?.isReticulum == true -> "RETICULUM"
@@ -184,6 +185,7 @@ fun ConnectionEditDialog(
         "RDP" -> "RDP"
         "SMB" -> "SMB"
         "RCLONE" -> "RCLONE"
+        "EMAIL" -> "EMAIL"
         else -> "SSH"
     }
     var label by rememberSaveable { mutableStateOf(existing?.label ?: "") }
@@ -316,6 +318,12 @@ fun ConnectionEditDialog(
     var rnsHost by rememberSaveable { mutableStateOf(existing?.reticulumHost ?: "") }
     var rcloneRemoteName by rememberSaveable { mutableStateOf(existing?.rcloneRemoteName ?: "") }
     var rcloneProvider by rememberSaveable { mutableStateOf(existing?.rcloneProvider ?: "") }
+    // EMAIL (Proton in v1). emailProvider defaults to "proton" since that's the
+    // only v1 engine; generic IMAP/Gmail/Outlook land in stage 2.
+    var emailProvider by rememberSaveable { mutableStateOf(existing?.emailProvider ?: "proton") }
+    var emailUsername by rememberSaveable { mutableStateOf(existing?.emailUsername ?: "") }
+    var emailPassword by rememberSaveable { mutableStateOf(existing?.emailPassword ?: "") }
+    var emailMailboxPassword by rememberSaveable { mutableStateOf(existing?.emailMailboxPassword ?: "") }
     var rnsPort by rememberSaveable { mutableStateOf(existing?.reticulumPort?.toString() ?: "4242") }
     var rnsNetworkName by rememberSaveable { mutableStateOf(existing?.reticulumNetworkName ?: "") }
     var rnsPassphrase by rememberSaveable { mutableStateOf(existing?.reticulumPassphrase ?: "") }
@@ -927,6 +935,7 @@ fun ConnectionEditDialog(
                     "RDP" to "RDP (Desktop)",
                     "SMB" to "SMB (File Share)",
                     "RCLONE" to "Cloud Storage (rclone)",
+                    "EMAIL" to "Email (ProtonMail)",
                     "RETICULUM" to "Reticulum",
                 )
                 var transportExpanded by remember { mutableStateOf(false) }
@@ -984,6 +993,7 @@ fun ConnectionEditDialog(
                                 "RDP" -> "My RDP Desktop"
                                 "SMB" -> "My File Share"
                                 "RCLONE" -> "My Google Drive"
+                                "EMAIL" -> "My Proton Mail"
                                 "RETICULUM" -> "My Node"
                                 else -> "My Server"
                             }
@@ -1249,6 +1259,53 @@ fun ConnectionEditDialog(
                             else -> {}
                         }
                     }
+                } else if (connectionType == "EMAIL") {
+                    ConnectionSection(stringResource(R.string.connections_section_email))
+                    Text(
+                        stringResource(R.string.connections_email_provider_proton),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        stringResource(R.string.connections_email_proton_unofficial_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                    OutlinedTextField(
+                        value = emailUsername,
+                        onValueChange = { emailUsername = it },
+                        label = { Text(stringResource(R.string.connections_field_email_address)) },
+                        placeholder = { Text("you@proton.me") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    sh.haven.core.ui.PasswordField(
+                        value = emailPassword,
+                        onValueChange = { emailPassword = it },
+                        label = stringResource(R.string.connections_field_email_password),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    sh.haven.core.ui.PasswordField(
+                        value = emailMailboxPassword,
+                        onValueChange = { emailMailboxPassword = it },
+                        label = stringResource(R.string.connections_field_email_mailbox_password),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        stringResource(R.string.connections_email_mailbox_password_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    Text(
+                        stringResource(R.string.connections_email_2fa_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 } else if (connectionType == "VNC") {
                     ConnectionSection(stringResource(R.string.connections_section_vnc))
                     // VNC: same shape as RDP — tunnel toggle first (it changes
@@ -2691,11 +2748,11 @@ fun ConnectionEditDialog(
                 // Port knocking. Visible for any profile with a remote
                 // TCP host — skipped for LOCAL (no host), RCLONE (its own
                 // protocol), and RETICULUM (mesh, not TCP).
-                if (connectionType in setOf("VNC", "RDP", "SMB")) {
+                if (connectionType in setOf("VNC", "RDP", "SMB", "EMAIL")) {
                     ConnectionSection(stringResource(R.string.connections_section_routing))
                     routingBody()
                 }
-                if (connectionType in setOf("VNC", "RDP", "SMB")) {
+                if (connectionType in setOf("VNC", "RDP", "SMB", "EMAIL")) {
                     ConnectionSection(stringResource(R.string.connections_section_port_knock))
                     portKnockBody()
                     ConnectionSection(stringResource(R.string.connections_section_spa))
@@ -2726,6 +2783,7 @@ fun ConnectionEditDialog(
                 "RDP" -> host.isNotBlank() && rdpUsername.isNotBlank() && (!rdpSshForward || rdpSshProfileId != null)
                 "SMB" -> host.isNotBlank() && smbShare.isNotBlank() && (!smbSshForward || smbSshProfileId != null)
                 "RCLONE" -> rcloneProvider.isNotBlank()
+                "EMAIL" -> emailUsername.isNotBlank() && emailPassword.isNotBlank()
                 else -> destinationHash.length == 32 && (localSideband || rnsHost.isNotBlank())
             }
             TextButton(
@@ -2843,6 +2901,39 @@ fun ConnectionEditDialog(
                             rcloneProvider = rcloneProvider,
                             colorTag = colorTag,
                             groupId = groupId,
+                        )
+                    } else if (connectionType == "EMAIL") {
+                        (existing ?: ConnectionProfile(
+                            label = label,
+                            host = host,
+                            username = emailUsername,
+                        )).copy(
+                            label = label.ifBlank { emailUsername.ifBlank { "Proton Mail" } },
+                            // host carries the optional tunnel-ingress/bastion that
+                            // SPA/knock guards; the mail server itself is Proton's.
+                            host = host,
+                            port = 0,
+                            username = emailUsername,
+                            connectionType = "EMAIL",
+                            emailProvider = emailProvider,
+                            emailUsername = emailUsername,
+                            emailPassword = emailPassword.ifBlank { null },
+                            emailMailboxPassword = emailMailboxPassword.ifBlank { null },
+                            colorTag = colorTag,
+                            groupId = groupId,
+                            tunnelConfigId = tunnelConfigId,
+                            portKnockSequence = portKnockSequence.ifBlank { null },
+                            portKnockDelayMs = portKnockDelayMs.toIntOrNull()
+                                ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
+                            spaKey = spaKey.ifBlank { null },
+                            spaKeyBase64 = spaKeyBase64,
+                            spaHmacKey = spaHmacKey.ifBlank { null },
+                            spaHmacKeyBase64 = spaHmacKeyBase64,
+                            spaAccessSpec = spaAccessSpec.ifBlank { null },
+                            spaAllowMode = spaAllowMode,
+                            spaExplicitIp = spaExplicitIp.ifBlank { null },
+                            spaPort = spaPort.toIntOrNull()?.takeIf { it in 1..65535 }
+                                ?: SpaConfig.DEFAULT_SPA_PORT,
                         )
                     } else if (connectionType == "SMB") {
                         val smbPortInt = port.toIntOrNull() ?: 445
@@ -3333,6 +3424,14 @@ private fun AuthMethodsEditor(
                         }
                     }
                 }
+                // ProtonSrp is EMAIL-only (emailAuthMethods), not part of the SSH
+                // auth chain this editor manages; render a read-only label so the
+                // when stays exhaustive.
+                ConnectionProfile.AuthMethodSpec.ProtonSrp ->
+                    Text(
+                        stringResource(R.string.connections_auth_method_proton_srp),
+                        modifier = Modifier.weight(1f),
+                    )
             }
             IconButton(onClick = { swap(index, index - 1) }, enabled = index > 0) {
                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.connections_auth_move_up))

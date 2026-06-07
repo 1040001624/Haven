@@ -28,6 +28,7 @@ class ConnectionRepository @Inject constructor(
                     profile.sshPassword, profile.vncPassword,
                     profile.rdpPassword, profile.smbPassword,
                     profile.proxyPassword, profile.reticulumPassphrase,
+                    profile.emailPassword, profile.emailMailboxPassword,
                 ).any { !CredentialEncryption.isEncrypted(it) }
                 if (hasPlaintext) {
                     connectionDao.upsert(encryptPasswords(decryptPasswords(profile)))
@@ -80,6 +81,8 @@ class ConnectionRepository @Inject constructor(
         spaKey = profile.spaKey?.let { CredentialEncryption.encrypt(context, it) },
         spaHmacKey = profile.spaHmacKey?.let { CredentialEncryption.encrypt(context, it) },
         reticulumPassphrase = profile.reticulumPassphrase?.let { CredentialEncryption.encrypt(context, it) },
+        emailPassword = profile.emailPassword?.let { CredentialEncryption.encrypt(context, it) },
+        emailMailboxPassword = profile.emailMailboxPassword?.let { CredentialEncryption.encrypt(context, it) },
     )
 
     private fun decryptPasswords(profile: ConnectionProfile): ConnectionProfile = profile.copy(
@@ -91,5 +94,7 @@ class ConnectionRepository @Inject constructor(
         spaKey = profile.spaKey?.let { CredentialEncryption.decrypt(context, it) },
         spaHmacKey = profile.spaHmacKey?.let { CredentialEncryption.decrypt(context, it) },
         reticulumPassphrase = profile.reticulumPassphrase?.let { CredentialEncryption.decrypt(context, it) },
+        emailPassword = profile.emailPassword?.let { CredentialEncryption.decrypt(context, it) },
+        emailMailboxPassword = profile.emailMailboxPassword?.let { CredentialEncryption.decrypt(context, it) },
     )
 }

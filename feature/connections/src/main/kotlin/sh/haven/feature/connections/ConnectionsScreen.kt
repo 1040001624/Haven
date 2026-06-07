@@ -154,6 +154,7 @@ fun ConnectionsScreen(
     // composed (fixes Retry / connect_profile reliability, #121).
     onNavigateToSmb: (profileId: String) -> Unit = {},
     onNavigateToRclone: (profileId: String) -> Unit = {},
+    onNavigateToEmail: (profileId: String) -> Unit = {},
     onNavigateToWayland: () -> Unit = {},
     onNavigateToConnections: () -> Unit = {},
     onNavigateToAgentActivity: () -> Unit = {},
@@ -209,6 +210,7 @@ fun ConnectionsScreen(
     val navigateToTerminal by viewModel.navigateToTerminal.collectAsState()
     val navigateToSmb by viewModel.navigateToSmb.collectAsState()
     val navigateToRclone by viewModel.navigateToRclone.collectAsState()
+    val navigateToEmail by viewModel.navigateToEmail.collectAsState()
     val navigateToWayland by viewModel.navigateToWayland.collectAsState()
     val navigateBackToConnections by viewModel.navigateToConnections.collectAsState()
     val deploySuccess by viewModel.deploySuccess.collectAsState()
@@ -256,6 +258,13 @@ fun ConnectionsScreen(
     LaunchedEffect(navigateToRclone) {
         navigateToRclone?.let { profileId ->
             onNavigateToRclone(profileId)
+            viewModel.onNavigated()
+        }
+    }
+
+    LaunchedEffect(navigateToEmail) {
+        navigateToEmail?.let { profileId ->
+            onNavigateToEmail(profileId)
             viewModel.onNavigated()
         }
     }
@@ -1173,7 +1182,7 @@ fun ConnectionsScreen(
                                     hasKeys = sshKeys.isNotEmpty(),
                                     hasDependents = profile.id in dependentsByParent,
                                     jumpHostLabel = profile.jumpProfileId?.let { profileMap[it]?.label },
-                                    onTap = { onTapProfile(profile, profileStatuses[profile.id], sshKeys, viewModel, onNavigateToSmb, onNavigateToRclone) { connectingProfile = profile } },
+                                    onTap = { onTapProfile(profile, profileStatuses[profile.id], sshKeys, viewModel, onNavigateToSmb, onNavigateToRclone, onNavigateToEmail) { connectingProfile = profile } },
                                     onRename = { newLabel -> viewModel.saveConnection(profile.copy(label = newLabel)) },
                                     onEdit = { editingProfileId = profile.id },
                                     onDelete = { viewModel.deleteConnection(profile.id) },
@@ -1277,7 +1286,7 @@ fun ConnectionsScreen(
                                         hasKeys = sshKeys.isNotEmpty(),
                                         hasDependents = dep.id in dependentsByParent,
                                         jumpHostLabel = null,
-                                        onTap = { onTapProfile(dep, profileStatuses[dep.id], sshKeys, viewModel, onNavigateToSmb, onNavigateToRclone) { connectingProfile = dep } },
+                                        onTap = { onTapProfile(dep, profileStatuses[dep.id], sshKeys, viewModel, onNavigateToSmb, onNavigateToRclone, onNavigateToEmail) { connectingProfile = dep } },
                                         onRename = { newLabel -> viewModel.saveConnection(dep.copy(label = newLabel)) },
                                         onEdit = { editingProfileId = dep.id },
                                         onDelete = { viewModel.deleteConnection(dep.id) },
@@ -1342,10 +1351,13 @@ private fun onTapProfile(
     viewModel: ConnectionsViewModel,
     onNavigateToSmb: (String) -> Unit,
     onNavigateToRclone: (String) -> Unit,
+    onNavigateToEmail: (String) -> Unit,
     showPasswordDialog: () -> Unit,
 ) {
     if (profile.isLocal) {
         viewModel.connect(profile, "")
+    } else if (profileStatus == ProfileStatus.CONNECTED && profile.isEmail) {
+        onNavigateToEmail(profile.id)
     } else if (profileStatus == ProfileStatus.CONNECTED && profile.isRclone) {
         onNavigateToRclone(profile.id)
     } else if (profileStatus == ProfileStatus.CONNECTED && profile.isSmb) {
@@ -1376,6 +1388,11 @@ private fun onTapProfile(
             showPasswordDialog()
         }
     } else if (profile.isReticulum) {
+        viewModel.connect(profile, "")
+    } else if (profile.isEmail) {
+        // EMAIL profiles carry their own credentials (stored password / mailbox
+        // password / linked TOTP) — connectEmail handles SRP + unlock, so route
+        // straight through connect() like rclone rather than the password dialog.
         viewModel.connect(profile, "")
     } else if (profile.isRclone) {
         // Rclone profiles don't take a Haven-side password — credentials

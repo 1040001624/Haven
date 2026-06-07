@@ -76,6 +76,7 @@ import sh.haven.app.desktop.DesktopViewModel
 import sh.haven.feature.connections.ConnectionsScreen
 import sh.haven.feature.connections.ConnectionsViewModel
 import sh.haven.feature.keys.KeysScreen
+import sh.haven.feature.mail.MailScreen
 import sh.haven.feature.settings.SettingsScreen
 import androidx.compose.ui.unit.dp
 import sh.haven.feature.sftp.SftpScreen
@@ -129,6 +130,7 @@ fun HavenNavHost(
         .collectAsState(initial = false)
 
     val hasTerminalProfiles = connections.any { it.isTerminal }
+    val hasEmailProfiles = connections.any { it.isEmail }
     // Show Keys once the user has any key/CA config OR any SSH connection
     // to attach a key to — otherwise there's a chicken-and-egg: a fresh
     // SSH connection can't reach key management to generate/import a key
@@ -141,6 +143,7 @@ fun HavenNavHost(
     val screens = remember(
         screenOrderPref,
         hasTerminalProfiles,
+        hasEmailProfiles,
         hasKeysOrCaConfigs,
         alwaysShowAllTabs,
     ) {
@@ -170,6 +173,8 @@ fun HavenNavHost(
                 // SFTP file browser is useful even with no remote storage
                 // (local file paths work), so it stays visible.
                 Screen.Sftp -> true
+                // Mail hides until there's an EMAIL profile to open.
+                Screen.Mail -> hasEmailProfiles
                 // Terminal hides until there's any SSH/Mosh/ET/Reticulum
                 // profile (ConnectionProfile.isTerminal covers them all).
                 Screen.Terminal -> hasTerminalProfiles
@@ -414,6 +419,9 @@ fun HavenNavHost(
     // Rclone auto-connect params
     var pendingRcloneProfileId by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // Email (Mail) auto-open params
+    var pendingEmailProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+
     // Local-shell open requests from the Desktop → Manage shell button (#168).
     // Always-composed HavenNavHost collects them, sets the pending profile,
     // and animates to the Terminal page; TerminalScreen creates the tab once
@@ -513,6 +521,12 @@ fun HavenNavHost(
                         pendingRcloneProfileId = profileId
                         coroutineScope.launch {
                             requestScreen(Screen.Sftp)
+                        }
+                    },
+                    onNavigateToEmail = { profileId ->
+                        pendingEmailProfileId = profileId
+                        coroutineScope.launch {
+                            requestScreen(Screen.Mail)
                         }
                     },
                     onNavigateToWayland = {
@@ -700,6 +714,17 @@ fun HavenNavHost(
                     LaunchedEffect(pendingRcloneProfileId) {
                         if (pendingRcloneProfileId != null) {
                             pendingRcloneProfileId = null
+                        }
+                    }
+                }
+                Screen.Mail -> {
+                    MailScreen(
+                        pendingProfileId = pendingEmailProfileId,
+                        mailModifier = Modifier.fillMaxSize(),
+                    )
+                    LaunchedEffect(pendingEmailProfileId) {
+                        if (pendingEmailProfileId != null) {
+                            pendingEmailProfileId = null
                         }
                     }
                 }

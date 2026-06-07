@@ -181,6 +181,50 @@ class ConnectionProfileTest {
         assertEquals("TOTP:x", ConnectionProfile.AuthMethodSpec.Totp("x").serialize())
     }
 
+    // --- #EMAIL connection type ---
+
+    @Test
+    fun `isEmail returns true when connectionType is EMAIL`() {
+        val p = ConnectionProfile(
+            label = "mail", host = "mail.proton.me", username = "u",
+            connectionType = "EMAIL",
+        )
+        assert(p.isEmail) { "Expected isEmail == true for connectionType=EMAIL" }
+    }
+
+    @Test
+    fun `EMAIL is not a terminal connection`() {
+        val p = ConnectionProfile(
+            label = "mail", host = "h", username = "u", connectionType = "EMAIL",
+        )
+        assert(!p.isTerminal) { "Expected isTerminal == false for EMAIL" }
+        assert(!p.isDesktop) { "Expected isDesktop == false for EMAIL" }
+    }
+
+    @Test
+    fun `EMAIL field defaults`() {
+        val p = ConnectionProfile(label = "t", host = "h", username = "u")
+        assertNull(p.emailProvider)
+        assertEquals(993, p.emailPort)
+        assertEquals(465, p.emailSmtpPort)
+        assertEquals(true, p.emailTls)
+        assertEquals("", p.emailAuthMethods)
+        assertNull(p.emailPassword)
+        assertNull(p.emailMailboxPassword)
+    }
+
+    @Test
+    fun `AuthMethodSpec round-trips PROTON_SRP`() {
+        assertEquals("PROTON_SRP", ConnectionProfile.AuthMethodSpec.ProtonSrp.serialize())
+        assertEquals(
+            listOf(
+                ConnectionProfile.AuthMethodSpec.ProtonSrp,
+                ConnectionProfile.AuthMethodSpec.Totp("sec1"),
+            ),
+            ConnectionProfile.AuthMethodSpec.parseList("PROTON_SRP\nTOTP:sec1"),
+        )
+    }
+
     @Test
     fun `totpConfirmBeforeSend defaults to false`() {
         val p = ConnectionProfile(label = "t", host = "h", username = "u")

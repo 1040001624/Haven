@@ -54,6 +54,9 @@ import sh.haven.core.fido.FidoTouchPrompt
 import sh.haven.core.local.LocalSessionManager
 import sh.haven.core.rclone.RcloneClient
 import sh.haven.core.rclone.RcloneSessionManager
+import sh.haven.core.mail.MailException
+import sh.haven.core.mail.MailSessionManager
+import sh.haven.core.security.Totp
 import sh.haven.core.reticulum.DiscoveredDestination
 import sh.haven.core.reticulum.ReticulumSessionManager
 import sh.haven.core.reticulum.ReticulumTransport
@@ -113,6 +116,7 @@ class ConnectionsViewModel @Inject constructor(
     private val smbSessionManager: SmbSessionManager,
     private val rcloneSessionManager: RcloneSessionManager,
     private val rcloneClient: RcloneClient,
+    private val mailSessionManager: MailSessionManager,
     private val fidoAuthenticator: FidoAuthenticator,
     private val localSessionManager: LocalSessionManager,
     private val sessionManagerRegistry: SessionManagerRegistry,
@@ -608,6 +612,10 @@ class ConnectionsViewModel @Inject constructor(
     private val _navigateToRclone = MutableStateFlow<String?>(null)
     val navigateToRclone: StateFlow<String?> = _navigateToRclone.asStateFlow()
 
+    /** Emitted to navigate to the Mail tab for an EMAIL connection. */
+    private val _navigateToEmail = MutableStateFlow<String?>(null)
+    val navigateToEmail: StateFlow<String?> = _navigateToEmail.asStateFlow()
+
     /** Emitted to open a new session (new tab) on an already-connected profile. */
     private val _newSessionProfileId = MutableStateFlow<String?>(null)
     val newSessionProfileId: StateFlow<String?> = _newSessionProfileId.asStateFlow()
@@ -646,6 +654,7 @@ class ConnectionsViewModel @Inject constructor(
         _navigateToRdp.value = null
         _navigateToSmb.value = null
         _navigateToRclone.value = null
+        _navigateToEmail.value = null
         _navigateToConnections.value = false
         _newSessionProfileId.value = null
     }
@@ -1381,6 +1390,10 @@ class ConnectionsViewModel @Inject constructor(
             connectRclone(profile)
             return
         }
+        if (profile.isEmail) {
+            connectEmail(profile)
+            return
+        }
         if (profile.isReticulum) {
             connectReticulum(profile)
             return
@@ -1711,6 +1724,108 @@ class ConnectionsViewModel @Inject constructor(
                 _connectingProfileId.value = null
             }
         }
+    }
+
+    /**
+     * Connect a Proton EMAIL profile. Mirrors [connectRclone] but adds the
+     * pre-connect SPA/knock layer (which [connectRclone] lacks): SRP login +
+     * keyring unlock happen in the Go mailbridge, routed through the per-profile
+     * tunnel's SOCKS5 endpoint. Stored mailbox password + a linked TOTP secret
+     * satisfy two-password / 2FA accounts without a live prompt in v1; if the
+     * bridge still demands a missing factor, surface an actionable error.
+     */
+    private fun connectEmail(profile: ConnectionProfile) {
+        viewModelScope.launch {
+            _connectingProfileId.value = profile.id
+            val verbose = SshVerboseLogger()
+            val startedAt = System.currentTimeMillis()
+            try {
+                repository.markConnected(profile.id)
+
+                // Pre-connect SPA/knock (R1). For Proton the SOCKS destination is
+                // Proton's own servers, so any knock/SPA configured here guards the
+                // user's tunnel ingress (profile.host) and fires before the tunnel
+                // handshake — the receipt lands in this profile's connection log.
+                buildKnockHook(profile, verbose)?.invoke()
+
+                // Route Proton's HTTPS through the per-profile tunnel's SOCKS5
+                // listener. MailBridge wants a bare host:port (it prepends the
+                // socks5:// scheme itself) — NOT a URL like connectRclone passes.
+                val socks = tunnelResolver.socksEndpoint(profile)
+                    ?.let { "${it.hostString}:${it.port}" }
+                if (profile.tunnelConfigId != null && socks == null) {
+                    // Fail closed (R7): a tunnel is configured but yields no SOCKS
+                    // endpoint (e.g. Cloudflare Access) — refuse rather than leak
+                    // Proton traffic onto the clearnet.
+                    throw IllegalStateException(
+                        "Tunnel configured but provides no SOCKS endpoint — refusing to connect Proton directly.",
+                    )
+                }
+
+                val username = (profile.emailUsername ?: profile.username).trim()
+                val password = profile.emailPassword.orEmpty()
+                if (username.isBlank() || password.isBlank()) {
+                    throw IllegalStateException("Proton username and password are required.")
+                }
+                val sessionId = mailSessionManager.registerSession(profile.id, profile.label)
+
+                try {
+                    mailSessionManager.connectSession(
+                        sessionId = sessionId,
+                        username = username,
+                        password = password,
+                        mailboxPassword = profile.emailMailboxPassword?.ifBlank { null },
+                        twoFA = resolveEmailTotp(profile),
+                        socks = socks,
+                    )
+                } catch (e: MailException.MailboxPasswordRequired) {
+                    throw IllegalStateException(
+                        "This Proton account uses a separate mailbox password — add it in Edit → Email.",
+                    )
+                } catch (e: MailException.TwoFaRequired) {
+                    throw IllegalStateException(
+                        "This Proton account has 2FA enabled — link its TOTP secret in Edit → Email.",
+                    )
+                }
+
+                _navigateToEmail.value = profile.id
+                connectionLogRepository.logEvent(
+                    profileId = profile.id,
+                    status = ConnectionLog.Status.CONNECTED,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    details = "Proton mail connected",
+                    verboseLog = verbose.drain(),
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to connect email profile", e)
+                _error.value = "Email: ${e.message}"
+                connectionLogRepository.logEvent(
+                    profileId = profile.id,
+                    status = ConnectionLog.Status.FAILED,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    details = e.message,
+                    verboseLog = verbose.drain(),
+                )
+            } finally {
+                _connectingProfileId.value = null
+            }
+        }
+    }
+
+    /**
+     * Generate the current TOTP code from a TOTP secret linked via the profile's
+     * [ConnectionProfile.emailAuthMethods] (`TOTP[:<secretId>]`), or null when no
+     * TOTP factor is configured. Proton uses standard TOTP (SHA1/6/30).
+     */
+    private suspend fun resolveEmailTotp(profile: ConnectionProfile): String? {
+        val spec = ConnectionProfile.AuthMethodSpec.parseList(profile.emailAuthMethods)
+            .filterIsInstance<ConnectionProfile.AuthMethodSpec.Totp>()
+            .firstOrNull() ?: return null
+        val secretId = spec.secretId
+            ?: totpSecretRepository.observeAll().first().firstOrNull()?.id
+            ?: return null
+        val secret = totpSecretRepository.getDecryptedSecret(secretId) ?: return null
+        return runCatching { Totp.generate(secret) }.getOrNull()
     }
 
     val desktopSetupState: StateFlow<sh.haven.core.local.ProotManager.DesktopSetupState> =
@@ -3256,6 +3371,9 @@ class ConnectionsViewModel @Inject constructor(
                 // TOTP is auto-filled into the live keyboard-interactive
                 // round (#178), not registered as a JSch credential.
                 is ConnectionProfile.AuthMethodSpec.Totp -> null
+                // ProtonSrp is an EMAIL-only method handled by the Go mailbridge,
+                // never part of a JSch/SSH auth chain.
+                ConnectionProfile.AuthMethodSpec.ProtonSrp -> null
             }
         }
         return when {

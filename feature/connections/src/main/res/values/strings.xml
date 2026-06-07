@@ -374,6 +374,15 @@
     <string name="connections_section_vnc">VNC settings</string>
     <string name="connections_section_rdp">RDP settings</string>
     <string name="connections_section_smb">SMB settings</string>
+    <string name="connections_section_email">Email account</string>
+    <string name="connections_auth_method_proton_srp">ProtonMail SRP</string>
+    <string name="connections_email_provider_proton">Provider: ProtonMail</string>
+    <string name="connections_email_proton_unofficial_warning">Uses Proton\'s unofficial API. This is reverse-engineered and against Proton\'s terms — your account could be rate-limited or locked. Proceed at your own risk.</string>
+    <string name="connections_field_email_address">Email address</string>
+    <string name="connections_field_email_password">Password</string>
+    <string name="connections_field_email_mailbox_password">Mailbox password (two-password mode only)</string>
+    <string name="connections_email_mailbox_password_hint">Leave blank unless your Proton account has a separate mailbox password.</string>
+    <string name="connections_email_2fa_hint">If your account has 2FA, link its TOTP secret in the SSH key / TOTP manager and it will be applied automatically.</string>
     <string name="connections_section_connection">Connection</string>
     <string name="connections_section_terminal">Terminal</string>
     <string name="connections_section_authentication">Authentication</string>

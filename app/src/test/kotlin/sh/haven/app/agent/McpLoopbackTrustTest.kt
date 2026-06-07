@@ -54,6 +54,7 @@ class McpLoopbackTrustTest {
             sshSessionManager = mockk<SshSessionManager>(relaxed = true),
             sessionManagerRegistry = mockk<SessionManagerRegistry>(relaxed = true),
             rcloneClient = mockk<RcloneClient>(relaxed = true),
+            mailSessionManager = mockk<sh.haven.core.mail.MailSessionManager>(relaxed = true),
             sftpStreamServer = mockk<SftpStreamServer>(relaxed = true),
             hlsStreamServer = mockk<HlsStreamServer>(relaxed = true),
             ffmpegExecutor = mockk<FfmpegExecutor>(relaxed = true),
