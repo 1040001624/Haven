@@ -34,6 +34,15 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
+    // JVM IMAP/SMTP engine (Stage 2a). The android-mail build of JavaMail is
+    // purpose-built for Android: zero java.beans/java.awt refs (verified), the
+    // javax.mail namespace, and the IMAP/SMTP providers. CDDL-1.1 / GPL-2.0
+    // with classpath-exception — the exception is what permits linking from an
+    // AGPL app. ImapMailClient registers providers explicitly via Properties
+    // (mail.imap.class/…) because Android strips META-INF/javamail.* files.
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
+
     testImplementation(libs.junit)
 }
 
