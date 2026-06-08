@@ -1,37 +1,58 @@
 package sh.haven.feature.mail
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Forward
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.ReplyAll
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,10 +83,34 @@ fun MailScreen(
         viewModel.setPendingEmailProfile(pendingProfileId)
     }
 
+    // Compose/reply/forward overlays everything as a full-screen pane (CP-7).
+    ui.compose?.let { draft ->
+        ComposeView(
+            draft = draft,
+            onTo = viewModel::updateTo,
+            onCc = viewModel::updateCc,
+            onBcc = viewModel::updateBcc,
+            onSubject = viewModel::updateSubject,
+            onBody = viewModel::updateBody,
+            onToggleCcBcc = viewModel::toggleCcBcc,
+            onSend = viewModel::send,
+            onDiscard = viewModel::discardCompose,
+            modifier = mailModifier,
+        )
+        return
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val sentMessage = stringResource(R.string.mail_sent_ok)
+    LaunchedEffect(ui.sentSignal) {
+        if (ui.sentSignal > 0) snackbarHostState.showSnackbar(sentMessage)
+    }
+
     val title = when (ui.view) {
         MailViewModel.View.FOLDERS -> "Mail"
         MailViewModel.View.MESSAGES -> ui.selectedFolder?.name ?: "Mail"
         MailViewModel.View.READER -> ui.openMessage?.subject ?: "Message"
+        MailViewModel.View.COMPOSE -> ""
     }
 
     Scaffold(
@@ -86,8 +131,43 @@ fun MailScreen(
                         }
                     }
                 },
+                actions = {
+                    when (ui.view) {
+                        MailViewModel.View.FOLDERS, MailViewModel.View.MESSAGES -> {
+                            if (ui.canCompose) {
+                                IconButton(onClick = viewModel::startCompose) {
+                                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.mail_compose))
+                                }
+                            }
+                        }
+                        MailViewModel.View.READER -> {
+                            val open = ui.openMessage
+                            val attribution = if (open != null) {
+                                stringResource(
+                                    R.string.mail_reply_quote_header,
+                                    open.dateMillis?.let { formatDate(it) } ?: "",
+                                    open.from,
+                                )
+                            } else {
+                                ""
+                            }
+                            val forwardHeader = stringResource(R.string.mail_forward_header)
+                            IconButton(onClick = { viewModel.startReply(replyAll = false, attributionLine = attribution) }) {
+                                Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = stringResource(R.string.mail_reply))
+                            }
+                            IconButton(onClick = { viewModel.startReply(replyAll = true, attributionLine = attribution) }) {
+                                Icon(Icons.AutoMirrored.Filled.ReplyAll, contentDescription = stringResource(R.string.mail_reply_all))
+                            }
+                            IconButton(onClick = { viewModel.startForward(forwardHeader = forwardHeader) }) {
+                                Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = stringResource(R.string.mail_forward))
+                            }
+                        }
+                        else -> {}
+                    }
+                },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
@@ -98,6 +178,7 @@ fun MailScreen(
                     MailViewModel.View.FOLDERS -> FolderList(ui.folders, viewModel::openFolder)
                     MailViewModel.View.MESSAGES -> MessageList(ui.messages, ui.loading, viewModel::openMessage)
                     MailViewModel.View.READER -> ui.openMessage?.let { MessageReader(it) }
+                    MailViewModel.View.COMPOSE -> {} // handled by the early full-screen branch above
                 }
             }
             if (ui.error != null && ui.folders.isNotEmpty()) {
@@ -226,6 +307,146 @@ private fun MessageReader(msg: ParsedMessage) {
             )
         }
         Text(msg.bodyText, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/**
+ * Full-screen compose pane (portrait: no FAB, one pane at a time). Send lives in
+ * the app bar with an in-flight spinner; Close/system-back confirm a discard when
+ * the draft is dirty. Send failures stay in-form ([ComposeDraft.sendError]); send
+ * success is signalled by the parent's snackbar after this pane closes.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComposeView(
+    draft: ComposeDraft,
+    onTo: (String) -> Unit,
+    onCc: (String) -> Unit,
+    onBcc: (String) -> Unit,
+    onSubject: (String) -> Unit,
+    onBody: (String) -> Unit,
+    onToggleCcBcc: () -> Unit,
+    onSend: (String) -> Unit,
+    onDiscard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+    val recipientsRequired = stringResource(R.string.mail_recipients_required)
+
+    fun attemptDiscard() {
+        if (draft.isDirty) showDiscardConfirm = true else onDiscard()
+    }
+
+    BackHandler { attemptDiscard() }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(stringResource(R.string.mail_compose), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                navigationIcon = {
+                    IconButton(onClick = { attemptDiscard() }) {
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.mail_close))
+                    }
+                },
+                actions = {
+                    if (draft.sending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).padding(end = 12.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(
+                            onClick = { onSend(recipientsRequired) },
+                            enabled = draft.to.isNotBlank(),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.mail_send))
+                        }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        ) {
+            OutlinedTextField(
+                value = draft.to,
+                onValueChange = onTo,
+                label = { Text(stringResource(R.string.mail_to)) },
+                singleLine = true,
+                isError = draft.sendError != null,
+                supportingText = {
+                    Text(draft.sendError ?: stringResource(R.string.mail_recipients_hint))
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                trailingIcon = {
+                    TextButton(onClick = onToggleCcBcc) { Text(stringResource(R.string.mail_cc_bcc)) }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (draft.showCcBcc) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = draft.cc,
+                    onValueChange = onCc,
+                    label = { Text(stringResource(R.string.mail_cc)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = draft.bcc,
+                    onValueChange = onBcc,
+                    label = { Text(stringResource(R.string.mail_bcc)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = draft.subject,
+                onValueChange = onSubject,
+                label = { Text(stringResource(R.string.mail_subject)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = draft.body,
+                onValueChange = onBody,
+                label = { Text(stringResource(R.string.mail_message)) },
+                minLines = 8,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text(stringResource(R.string.mail_discard_title)) },
+            text = { Text(stringResource(R.string.mail_discard_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardConfirm = false
+                    onDiscard()
+                }) { Text(stringResource(R.string.mail_discard_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text(stringResource(R.string.mail_discard_cancel))
+                }
+            },
+        )
     }
 }
 

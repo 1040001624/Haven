@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose / reply / forward (CP-7) -->
+    <string name="mail_compose">Compose</string>
+    <string name="mail_reply">Reply</string>
+    <string name="mail_reply_all">Reply all</string>
+    <string name="mail_forward">Forward</string>
+    <string name="mail_send">Send</string>
+    <string name="mail_close">Close</string>
+
+    <string name="mail_to">To</string>
+    <string name="mail_cc">Cc</string>
+    <string name="mail_bcc">Bcc</string>
+    <string name="mail_cc_bcc">Cc/Bcc</string>
+    <string name="mail_subject">Subject</string>
+    <string name="mail_message">Message</string>
+
+    <string name="mail_recipients_hint">Separate addresses with commas</string>
+    <string name="mail_recipients_required">Add at least one recipient</string>
+    <string name="mail_sent_ok">Message sent</string>
+
+    <string name="mail_discard_title">Discard message?</string>
+    <string name="mail_discard_body">Your draft will be lost.</string>
+    <string name="mail_discard_confirm">Discard</string>
+    <string name="mail_discard_cancel">Keep editing</string>
+
+    <!-- "On <date>, <sender> wrote:" -->
+    <string name="mail_reply_quote_header">On %1$s, %2$s wrote:</string>
+    <string name="mail_forward_header">---------- Forwarded message ----------</string>
+</resources>
