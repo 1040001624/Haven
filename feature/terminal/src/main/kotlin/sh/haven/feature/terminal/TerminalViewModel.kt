@@ -1873,7 +1873,10 @@ class TerminalViewModel @Inject constructor(
             // canonical model. Scoped to tunnel-routed profiles so direct
             // connections keep independent-per-tab semantics.
             val reuseClient = if (connectionRepository.getById(profileId)?.tunnelConfigId != null) {
-                sessionManager.getSshClientForProfile(profileId)
+                // awaitReusableClient also waits for an in-flight connect (the MCP
+                // carrier on app launch) so a restored tab reuses it instead of
+                // racing a second dial.
+                sessionManager.awaitReusableClient(profileId)
             } else null
             val client = reuseClient ?: SshClient()
             val sessionId = sessionManager.registerSession(profileId, label, client)
@@ -2023,7 +2026,10 @@ class TerminalViewModel @Inject constructor(
             // by some peers; one SSH connection carries multiple tmux sessions).
             // Scoped to tunnel-routed profiles.
             val reuseClient = if (connectionRepository.getById(profileId)?.tunnelConfigId != null) {
-                sessionManager.getSshClientForProfile(profileId)
+                // awaitReusableClient also waits for an in-flight connect (the MCP
+                // carrier on app launch) so a restored tab reuses it instead of
+                // racing a second dial.
+                sessionManager.awaitReusableClient(profileId)
             } else null
             val client = reuseClient ?: SshClient()
             val sessionId = sessionManager.registerSession(profileId, label, client)

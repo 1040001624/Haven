@@ -2164,8 +2164,11 @@ class ConnectionsViewModel @Inject constructor(
             // WG→LAN flow), and one SSH connection carrying several tmux/zellij
             // sessions is the canonical model anyway. Scoped to tunnel-routed
             // profiles so direct connections keep independent-per-tab semantics.
+            // awaitReusableClient (not getSshClientForProfile) also waits for an
+            // in-flight connect to the same profile — closing the app-launch race
+            // where this restore runs before the MCP carrier reaches CONNECTED.
             val reuseClient = if (profile.tunnelConfigId != null) {
-                sshSessionManager.getSshClientForProfile(profile.id)
+                sshSessionManager.awaitReusableClient(profile.id)
             } else null
             val client = reuseClient ?: SshClient().apply {
                 fidoAuthenticator = this@ConnectionsViewModel.fidoAuthenticator

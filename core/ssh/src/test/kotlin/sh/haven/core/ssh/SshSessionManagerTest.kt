@@ -5,11 +5,14 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -743,6 +746,48 @@ class SshSessionManagerTest {
         manager.removeSession(s2)
         Thread.sleep(200)
         verify(exactly = 1) { shared.disconnect() }
+    }
+
+    // ---- awaitReusableClient (app-launch connect-race coordination) ----
+
+    @Test
+    fun `awaitReusableClient returns null when nothing is live or in flight`() = runBlocking {
+        assertNull(manager.awaitReusableClient("nobody", timeoutMs = 200))
+    }
+
+    @Test
+    fun `awaitReusableClient returns a connected client immediately`() = runBlocking {
+        val c = mockk<SshClient>(relaxed = true)
+        val sid = manager.registerSession("p1", "s", c)
+        manager.updateStatus(sid, SshSessionManager.SessionState.Status.CONNECTED)
+        assertSame(c, manager.awaitReusableClient("p1", timeoutMs = 200))
+    }
+
+    @Test
+    fun `awaitReusableClient waits for an in-flight connect then returns its client`() = runBlocking {
+        val carrier = mockk<SshClient>(relaxed = true)
+        val sid = manager.registerSession("p1", "MCP carrier", carrier) // CONNECTING
+        // The carrier reaches CONNECTED shortly after the wait begins.
+        val flip = launch {
+            delay(100)
+            manager.updateStatus(sid, SshSessionManager.SessionState.Status.CONNECTED)
+        }
+        val result = manager.awaitReusableClient("p1", timeoutMs = 5000)
+        flip.join()
+        assertSame("must reuse the in-flight connect's client, not dial", carrier, result)
+    }
+
+    @Test
+    fun `awaitReusableClient returns null when the in-flight connect fails`() = runBlocking {
+        val carrier = mockk<SshClient>(relaxed = true)
+        val sid = manager.registerSession("p1", "carrier", carrier) // CONNECTING
+        val flip = launch {
+            delay(50)
+            manager.updateStatus(sid, SshSessionManager.SessionState.Status.ERROR)
+        }
+        val result = manager.awaitReusableClient("p1", timeoutMs = 5000)
+        flip.join()
+        assertNull("a failed in-flight connect yields no reusable client", result)
     }
 
     private fun configWithPolicy(

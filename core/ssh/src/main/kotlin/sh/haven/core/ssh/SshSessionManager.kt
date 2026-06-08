@@ -13,6 +13,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -527,6 +529,37 @@ class SshSessionManager @Inject constructor(
     fun isClientShared(sessionId: String): Boolean {
         val target = _sessions.value[sessionId] ?: return false
         return _sessions.value.values.any { it.sessionId != sessionId && it.client === target.client }
+    }
+
+    /**
+     * Resolve a live [SshClient] to reuse for [profileId], coordinating with
+     * an in-flight connect. Returns a CONNECTED session's client immediately
+     * if one exists; otherwise, if a session for the profile is currently
+     * CONNECTING (e.g. the MCP carrier coming up on app launch), suspends
+     * until that connect resolves and returns its client (or null if it
+     * failed). Returns null when nothing is live and nothing is in flight.
+     * Bounded by [timeoutMs] so a stuck connect can't hang the caller.
+     *
+     * This closes the app-launch race where a restored terminal tab and the
+     * MCP carrier both target the same tunnel-routed profile: without the
+     * wait, the tab's reuse check runs before the carrier reaches CONNECTED,
+     * so it dials a second concurrent WireGuard flow the peer can't service
+     * and times out. MUST be called BEFORE the caller registers its own
+     * session, so it never waits on itself.
+     */
+    suspend fun awaitReusableClient(profileId: String, timeoutMs: Long = 35_000): SshClient? {
+        getSshClientForProfile(profileId)?.let { return it }
+        val pending = _sessions.value.values.firstOrNull {
+            it.profileId == profileId && it.status == SessionState.Status.CONNECTING
+        } ?: return null
+        Log.d(TAG, "awaitReusableClient($profileId): waiting on in-flight connect ${pending.sessionId}")
+        return withTimeoutOrNull(timeoutMs) {
+            _sessions.first { map ->
+                val s = map[pending.sessionId]
+                s == null || s.status != SessionState.Status.CONNECTING
+            }
+            getSshClientForProfile(profileId)
+        }
     }
 
     /**
