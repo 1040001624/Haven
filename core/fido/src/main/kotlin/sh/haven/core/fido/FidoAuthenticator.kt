@@ -478,32 +478,15 @@ class FidoAuthenticator @Inject constructor(
             CtapHidTransport(connection, endpointIn, endpointOut).use { transport ->
                 Log.d(TAG, "CTAPHID init...")
                 transport.init()
-
-                val (pinUvAuthParam, pinProtocol) = if (requireUv) {
-                    val (token, proto) = runUvPinProtocol(
-                        rpId, Ctap2Cbor.PERMISSION_GET_ASSERTION,
-                    ) { transport.sendCborCommand(it) }
-                    proto.authenticate(token, clientDataHash) to proto.version
-                } else null to null
-
-                Log.d(TAG, "CTAPHID init complete, sending GetAssertion (rpId=$rpId, uv=${pinUvAuthParam != null})")
-
-                _touchPrompt.value = FidoTouchPrompt.TouchKey(FidoTouchPrompt.TouchKey.Transport.USB)
-                val command = Ctap2Cbor.encodeGetAssertionCommand(
-                    rpId = rpId,
-                    clientDataHash = clientDataHash,
-                    credentialId = credentialId,
-                    pinUvAuthParam = pinUvAuthParam,
-                    pinUvAuthProtocol = pinProtocol,
-                )
-                val response = transport.sendCborCommand(command) {
-                    _touchPrompt.value = FidoTouchPrompt.TouchKey(FidoTouchPrompt.TouchKey.Transport.USB)
+                return runGetAssertionExchange(
+                    rpId, clientDataHash, credentialId, requireUv,
+                    FidoTouchPrompt.TouchKey.Transport.USB,
+                ) { cmd ->
+                    transport.sendCborCommand(cmd) {
+                        _touchPrompt.value =
+                            FidoTouchPrompt.TouchKey(FidoTouchPrompt.TouchKey.Transport.USB)
+                    }
                 }
-
-                Log.d(TAG, "CTAP response: ${response.size} bytes, status=0x${
-                    if (response.isNotEmpty()) "%02x".format(response[0]) else "empty"
-                }")
-                return parseCtap2AssertionResponse(response)
             }
         } catch (e: Exception) {
             Log.e(TAG, "USB FIDO assertion failed: ${e.javaClass.simpleName}: ${e.message}")
@@ -524,25 +507,83 @@ class FidoAuthenticator @Inject constructor(
         CtapNfcTransport(isoDep).use { transport ->
             transport.connect()
             transport.select()
+            return runGetAssertionExchange(
+                rpId, clientDataHash, credentialId, requireUv,
+                FidoTouchPrompt.TouchKey.Transport.NFC,
+            ) { cmd -> transport.sendCborCommand(cmd) }
+        }
+    }
 
-            val (pinUvAuthParam, pinProtocol) = if (requireUv) {
-                val (token, proto) = runUvPinProtocol(
-                    rpId, Ctap2Cbor.PERMISSION_GET_ASSERTION,
-                ) { transport.sendCborCommand(it) }
-                proto.authenticate(token, clientDataHash) to proto.version
-            } else null to null
+    /**
+     * Shared GetAssertion exchange for both USB and NFC. When [requireUv]
+     * (a verify-required SK key, `ssh-keygen -O verify-required`), runs the
+     * CTAP2 clientPIN/UV exchange up front and attaches a pinUvAuthParam to
+     * the assertion.
+     *
+     * always-uv fallback (#230): some authenticators are configured with a
+     * global "always require user verification" policy
+     * (`ykman fido config toggle-always-uv`). The credential itself was NOT
+     * registered verify-required, so [requireUv] is false and the first
+     * GetAssertion carries no pinUvAuthParam — but the key rejects it with
+     * STATUS_PIN_REQUIRED (0x36). Detect that, run the clientPIN exchange,
+     * and retry GetAssertion once with a derived pinUvAuthParam. Before this
+     * fallback the user saw an opaque "CTAP2 error 0x36" and could only
+     * connect by turning always-uv off.
+     *
+     * [send] is the transport round-trip (CTAPHID or ISO-DEP-NFC);
+     * [touchTransport] selects the UI prompt copy.
+     */
+    private suspend fun runGetAssertionExchange(
+        rpId: String,
+        clientDataHash: ByteArray,
+        credentialId: ByteArray,
+        requireUv: Boolean,
+        touchTransport: FidoTouchPrompt.TouchKey.Transport,
+        send: (ByteArray) -> ByteArray,
+    ): FidoAssertionResult {
+        var pinUvAuthParam: ByteArray? = null
+        var pinProtocol: Int? = null
+        if (requireUv) {
+            val (token, proto) = runUvPinProtocol(rpId, Ctap2Cbor.PERMISSION_GET_ASSERTION, send)
+            pinUvAuthParam = proto.authenticate(token, clientDataHash)
+            pinProtocol = proto.version
+        }
 
-            _touchPrompt.value = FidoTouchPrompt.TouchKey(FidoTouchPrompt.TouchKey.Transport.NFC)
-            val command = Ctap2Cbor.encodeGetAssertionCommand(
+        Log.d(TAG, "Sending GetAssertion (rpId=$rpId, uv=${pinUvAuthParam != null})")
+        _touchPrompt.value = FidoTouchPrompt.TouchKey(touchTransport)
+        var response = send(
+            Ctap2Cbor.encodeGetAssertionCommand(
                 rpId = rpId,
                 clientDataHash = clientDataHash,
                 credentialId = credentialId,
                 pinUvAuthParam = pinUvAuthParam,
                 pinUvAuthProtocol = pinProtocol,
             )
-            val response = transport.sendCborCommand(command)
-            return parseCtap2AssertionResponse(response)
+        )
+
+        if (pinUvAuthParam == null &&
+            response.isNotEmpty() &&
+            response[0] == Ctap2Cbor.STATUS_PIN_REQUIRED
+        ) {
+            Log.i(TAG, "GetAssertion returned PIN_REQUIRED (0x36) without UV — " +
+                "authenticator has always-uv enabled; running clientPIN and retrying")
+            val (token, proto) = runUvPinProtocol(rpId, Ctap2Cbor.PERMISSION_GET_ASSERTION, send)
+            _touchPrompt.value = FidoTouchPrompt.TouchKey(touchTransport)
+            response = send(
+                Ctap2Cbor.encodeGetAssertionCommand(
+                    rpId = rpId,
+                    clientDataHash = clientDataHash,
+                    credentialId = credentialId,
+                    pinUvAuthParam = proto.authenticate(token, clientDataHash),
+                    pinUvAuthProtocol = proto.version,
+                )
+            )
         }
+
+        Log.d(TAG, "CTAP response: ${response.size} bytes, status=0x${
+            if (response.isNotEmpty()) "%02x".format(response[0]) else "empty"
+        }")
+        return parseCtap2AssertionResponse(response)
     }
 
     // ---------- credentialManagement enumeration ----------
