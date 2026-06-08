@@ -23,13 +23,17 @@ import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.ReplyAll
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import sh.haven.core.mail.MailEngine
 import sh.haven.core.mail.MailFolder
 import sh.haven.core.mail.MailMessage
 import java.text.SimpleDateFormat
@@ -87,12 +92,14 @@ fun MailScreen(
     ui.compose?.let { draft ->
         ComposeView(
             draft = draft,
+            accounts = ui.accounts,
             onTo = viewModel::updateTo,
             onCc = viewModel::updateCc,
             onBcc = viewModel::updateBcc,
             onSubject = viewModel::updateSubject,
             onBody = viewModel::updateBody,
             onToggleCcBcc = viewModel::toggleCcBcc,
+            onFromSelected = viewModel::setComposeFrom,
             onSend = viewModel::send,
             onDiscard = viewModel::discardCompose,
             modifier = mailModifier,
@@ -117,7 +124,13 @@ fun MailScreen(
         modifier = mailModifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    if (ui.view == MailViewModel.View.FOLDERS) {
+                        AccountSwitcher(ui.accounts, ui.activeAccount, viewModel::selectAccount)
+                    } else {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
                 navigationIcon = {
                     if (ui.view != MailViewModel.View.FOLDERS) {
                         IconButton(onClick = {
@@ -320,12 +333,14 @@ private fun MessageReader(msg: ParsedMessage) {
 @Composable
 private fun ComposeView(
     draft: ComposeDraft,
+    accounts: List<MailViewModel.MailAccount>,
     onTo: (String) -> Unit,
     onCc: (String) -> Unit,
     onBcc: (String) -> Unit,
     onSubject: (String) -> Unit,
     onBody: (String) -> Unit,
     onToggleCcBcc: () -> Unit,
+    onFromSelected: (String) -> Unit,
     onSend: (String) -> Unit,
     onDiscard: () -> Unit,
     modifier: Modifier = Modifier,
@@ -376,6 +391,8 @@ private fun ComposeView(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            ComposeFromRow(accounts, draft.fromProfileId, onFromSelected)
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = draft.to,
                 onValueChange = onTo,
@@ -448,6 +465,110 @@ private fun ComposeView(
             },
         )
     }
+}
+
+/** Folder-view title: the active account, with a dropdown to switch when several are connected. */
+@Composable
+private fun AccountSwitcher(
+    accounts: List<MailViewModel.MailAccount>,
+    active: MailViewModel.MailAccount?,
+    onSelect: (String) -> Unit,
+) {
+    val label = active?.label ?: "Mail"
+    if (accounts.size <= 1) {
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier.clickable { expanded = true },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.mail_switch_account))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            accounts.forEach { acc ->
+                DropdownMenuItem(
+                    text = { Text("${acc.label} · ${engineLabel(acc.engine)}") },
+                    onClick = {
+                        expanded = false
+                        onSelect(acc.profileId)
+                    },
+                    leadingIcon = if (acc.profileId == active?.profileId) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Compose "From" row: names the sending account; a dropdown when more than one is connected. */
+@Composable
+private fun ComposeFromRow(
+    accounts: List<MailViewModel.MailAccount>,
+    fromProfileId: String,
+    onSelect: (String) -> Unit,
+) {
+    val selected = accounts.firstOrNull { it.profileId == fromProfileId }
+    val selectedText = selected?.let { "${it.label} · ${engineLabel(it.engine)}" } ?: ""
+    val multi = accounts.size > 1
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.mail_from),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (multi) Modifier.clickable { expanded = true } else Modifier)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    selectedText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (multi) Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.mail_switch_account))
+            }
+            if (multi) {
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    accounts.forEach { acc ->
+                        DropdownMenuItem(
+                            text = { Text("${acc.label} · ${engineLabel(acc.engine)}") },
+                            onClick = {
+                                expanded = false
+                                onSelect(acc.profileId)
+                            },
+                            leadingIcon = if (acc.profileId == fromProfileId) {
+                                { Icon(Icons.Filled.Check, contentDescription = null) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        Divider()
+    }
+}
+
+/** Short engine tag shown next to an account label (Proton vs generic IMAP). */
+@Composable
+private fun engineLabel(engine: MailEngine): String = when (engine) {
+    MailEngine.PROTON -> stringResource(R.string.mail_engine_proton)
+    MailEngine.IMAP -> stringResource(R.string.mail_engine_imap)
 }
 
 @Composable

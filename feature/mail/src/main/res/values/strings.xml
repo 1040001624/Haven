@@ -8,6 +8,10 @@
     <string name="mail_send">Send</string>
     <string name="mail_close">Close</string>
 
+    <string name="mail_from">From</string>
+    <string name="mail_switch_account">Switch account</string>
+    <string name="mail_engine_proton">Proton</string>
+    <string name="mail_engine_imap">IMAP</string>
     <string name="mail_to">To</string>
     <string name="mail_cc">Cc</string>
     <string name="mail_bcc">Bcc</string>

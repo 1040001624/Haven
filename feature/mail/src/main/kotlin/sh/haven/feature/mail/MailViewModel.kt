@@ -8,26 +8,41 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import sh.haven.core.mail.MailEngine
 import sh.haven.core.mail.MailFolder
 import sh.haven.core.mail.MailMessage
+import sh.haven.core.mail.MailSessionManager
 import sh.haven.core.mail.OutgoingMail
 import javax.inject.Inject
 
 /**
- * Drives the Mail screen: resolves the connected backend for the pending
- * profile, loads folders (auto-selecting the inbox), lists messages, parses a
- * message on open, and composes/sends (CP-7) over [MailBackend.sendMessage].
+ * Drives the Mail screen. Multi-account aware: observes every connected mail
+ * session, tracks an *active* account (whose folders/messages it shows), and
+ * lets the user switch accounts. Compose names the sending account ("From") and
+ * can target any connected account, so it's always clear whether a send goes via
+ * Proton, an IMAP/Gmail account, etc.
  */
 @HiltViewModel
 class MailViewModel @Inject constructor(
     private val transportSelector: MailTransportSelector,
+    private val mailSessionManager: MailSessionManager,
 ) : ViewModel() {
 
     /** Which sub-view the screen shows, derived from [UiState]. */
     enum class View { FOLDERS, MESSAGES, READER, COMPOSE }
 
+    /** A connected mail account the user can view or send from. */
+    data class MailAccount(
+        val profileId: String,
+        val label: String,
+        val engine: MailEngine,
+    )
+
     data class UiState(
-        val profileId: String? = null,
+        /** Every currently-connected mail account. */
+        val accounts: List<MailAccount> = emptyList(),
+        /** The account whose folders/messages are shown, and the default "From". */
+        val activeProfileId: String? = null,
         val loading: Boolean = false,
         val folders: List<MailFolder> = emptyList(),
         val selectedFolder: MailFolder? = null,
@@ -35,8 +50,6 @@ class MailViewModel @Inject constructor(
         val openMessage: ParsedMessage? = null,
         /** Non-null while the compose pane is open; overlays the pane underneath. */
         val compose: ComposeDraft? = null,
-        /** True once a backend resolved, so compose/reply are available. */
-        val canCompose: Boolean = false,
         /** Incremented after each successful send; the screen shows a one-shot snackbar on change. */
         val sentSignal: Int = 0,
         val error: String? = null,
@@ -47,28 +60,100 @@ class MailViewModel @Inject constructor(
             selectedFolder != null -> View.MESSAGES
             else -> View.FOLDERS
         }
+
+        /** The active account, or null when nothing is connected. */
+        val activeAccount: MailAccount? get() = accounts.firstOrNull { it.profileId == activeProfileId }
+
+        /** Compose/reply are available once an account is active. */
+        val canCompose: Boolean get() = activeProfileId != null
+
+        fun accountFor(profileId: String?): MailAccount? =
+            profileId?.let { id -> accounts.firstOrNull { it.profileId == id } }
     }
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    private var backend: MailBackend? = null
+    /** The account navigated to (via connect); preferred when picking the active account. */
+    private var pendingProfileId: String? = null
 
-    /** Called by the screen with the profile to open; ignores repeats. */
-    fun setPendingEmailProfile(profileId: String?) {
-        if (profileId == null || profileId == _ui.value.profileId) return
-        val resolved = transportSelector.resolve(profileId)
-        if (resolved == null) {
-            _ui.update { it.copy(profileId = profileId, error = "Not connected — open this account from Connections.") }
-            return
+    /** The account whose folders are currently loaded, to avoid redundant reloads. */
+    private var loadedProfileId: String? = null
+
+    init {
+        viewModelScope.launch {
+            mailSessionManager.sessions.collect { onSessionsChanged(it) }
         }
-        backend = resolved
-        _ui.update { UiState(profileId = profileId, loading = true, canCompose = true) }
-        viewModelScope.launch { loadFolders() }
     }
 
-    private suspend fun loadFolders() {
-        val b = backend ?: return
+    /** Keep [UiState.accounts] in sync with the live sessions and keep an account active. */
+    private fun onSessionsChanged(sessions: Map<String, MailSessionManager.SessionState>) {
+        val connected = sessions.values
+            .filter { it.status == MailSessionManager.SessionState.Status.CONNECTED }
+            .map { MailAccount(it.profileId, it.label, it.engine) }
+            .distinctBy { it.profileId }
+
+        val current = _ui.value
+        // Keep the current active account if it's still connected; otherwise prefer
+        // the pending (just-navigated) account, then fall back to the first connected.
+        val active = current.activeProfileId?.takeIf { id -> connected.any { it.profileId == id } }
+            ?: pendingProfileId?.takeIf { id -> connected.any { it.profileId == id } }
+            ?: connected.firstOrNull()?.profileId
+
+        _ui.update { it.copy(accounts = connected, activeProfileId = active) }
+
+        when {
+            active == null -> {
+                // Nothing connected: clear the view.
+                loadedProfileId = null
+                _ui.update {
+                    it.copy(folders = emptyList(), selectedFolder = null, messages = emptyList(), openMessage = null)
+                }
+            }
+            active != loadedProfileId -> activate(active)
+        }
+    }
+
+    /** Called by the screen with the profile to open (from the connect navigation). */
+    fun setPendingEmailProfile(profileId: String?) {
+        if (profileId == null) return
+        pendingProfileId = profileId
+        if (mailSessionManager.isProfileConnected(profileId) && _ui.value.activeProfileId != profileId) {
+            activate(profileId)
+        }
+    }
+
+    /** Switch the viewed account (from the header switcher). */
+    fun selectAccount(profileId: String) {
+        if (profileId != _ui.value.activeProfileId) activate(profileId)
+    }
+
+    /** Make [profileId] the active account and (re)load its folders. */
+    private fun activate(profileId: String) {
+        loadedProfileId = profileId
+        _ui.update {
+            it.copy(
+                activeProfileId = profileId,
+                loading = true,
+                folders = emptyList(),
+                selectedFolder = null,
+                messages = emptyList(),
+                openMessage = null,
+                compose = null,
+                error = null,
+            )
+        }
+        viewModelScope.launch { loadFolders(profileId) }
+    }
+
+    private fun backendFor(profileId: String?): MailBackend? =
+        profileId?.let { transportSelector.resolve(it) }
+
+    private suspend fun loadFolders(profileId: String) {
+        val b = backendFor(profileId) ?: run {
+            _ui.update { it.copy(loading = false, error = "Not connected — open this account from Connections.") }
+            return
+        }
         try {
             val folders = b.listFolders()
             val inbox = folders.firstOrNull { it.isInbox } ?: folders.firstOrNull()
@@ -80,7 +165,7 @@ class MailViewModel @Inject constructor(
     }
 
     fun openFolder(folder: MailFolder) {
-        val b = backend ?: return
+        val b = backendFor(_ui.value.activeProfileId) ?: return
         _ui.update { it.copy(selectedFolder = folder, messages = emptyList(), openMessage = null, loading = true) }
         viewModelScope.launch {
             try {
@@ -93,7 +178,7 @@ class MailViewModel @Inject constructor(
     }
 
     fun openMessage(message: MailMessage) {
-        val b = backend ?: return
+        val b = backendFor(_ui.value.activeProfileId) ?: return
         _ui.update { it.copy(loading = true) }
         viewModelScope.launch {
             try {
@@ -118,31 +203,43 @@ class MailViewModel @Inject constructor(
     // The compose pane overlays the current pane (View.COMPOSE wins in the
     // computed view), so discardCompose()/a successful send() simply clear
     // `compose` and the screen falls back to the reader or list underneath.
+    // Every draft carries the account it sends from (fromProfileId), defaulting
+    // to the active account and overridable in the From row.
 
-    /** Open a blank compose pane. */
+    /** Open a blank compose pane from the active account. */
     fun startCompose() {
-        if (backend == null) return
-        _ui.update { it.copy(compose = ComposeDraft()) }
+        val active = _ui.value.activeProfileId ?: return
+        _ui.update { it.copy(compose = ComposeDraft(fromProfileId = active)) }
     }
 
     /**
-     * Open a reply to the currently-open message. [attributionLine] is the
-     * locale-formatted "On <date>, <sender> wrote:" line built by the screen.
-     * Note: we don't surface the account's own address into feature/mail, so a
-     * reply-all may include the sender in Cc (honest limitation).
+     * Open a reply to the currently-open message, sending from the active account.
+     * [attributionLine] is the locale-formatted "On <date>, <sender> wrote:" line
+     * built by the screen. Note: we don't surface the account's own address into
+     * feature/mail, so a reply-all may include the sender in Cc (honest limitation).
      */
     fun startReply(replyAll: Boolean, attributionLine: String) {
         val parsed = _ui.value.openMessage ?: return
+        val active = _ui.value.activeProfileId ?: return
         _ui.update {
-            it.copy(compose = ComposeDrafting.buildReply(parsed, replyAll, attributionLine, selfAddress = null))
+            it.copy(
+                compose = ComposeDrafting.buildReply(parsed, replyAll, attributionLine, selfAddress = null)
+                    .copy(fromProfileId = active),
+            )
         }
     }
 
-    /** Open a forward of the currently-open message. [forwardHeader] is the localized separator line. */
+    /** Open a forward of the currently-open message from the active account. */
     fun startForward(forwardHeader: String) {
         val parsed = _ui.value.openMessage ?: return
-        _ui.update { it.copy(compose = ComposeDrafting.buildForward(parsed, forwardHeader)) }
+        val active = _ui.value.activeProfileId ?: return
+        _ui.update {
+            it.copy(compose = ComposeDrafting.buildForward(parsed, forwardHeader).copy(fromProfileId = active))
+        }
     }
+
+    /** Change the account a draft sends from (the compose "From" picker). */
+    fun setComposeFrom(profileId: String) = updateDraft { it.copy(fromProfileId = profileId) }
 
     fun updateTo(v: String) = updateDraft { it.copy(to = v, sendError = null) }
     fun updateCc(v: String) = updateDraft { it.copy(cc = v) }
@@ -158,15 +255,19 @@ class MailViewModel @Inject constructor(
     fun discardCompose() = _ui.update { it.copy(compose = null) }
 
     /**
-     * Send the current draft. On success the pane closes and [UiState.sentSignal]
-     * advances (the screen shows a snackbar). On failure the pane stays open with
-     * [ComposeDraft.sendError] so the user can retry. [recipientsRequiredMessage]
-     * is the localized error used when the To field parses to no addresses.
+     * Send the current draft via its [ComposeDraft.fromProfileId] account. On
+     * success the pane closes and [UiState.sentSignal] advances (the screen shows
+     * a snackbar). On failure the pane stays open with [ComposeDraft.sendError] so
+     * the user can retry. [recipientsRequiredMessage] is the localized error used
+     * when the To field parses to no addresses.
      */
     fun send(recipientsRequiredMessage: String) {
-        val b = backend ?: return
         val draft = _ui.value.compose ?: return
         if (draft.sending) return
+        val b = backendFor(draft.fromProfileId) ?: run {
+            updateDraft { it.copy(sendError = "Not connected — pick a connected account to send from.") }
+            return
+        }
         val toList = ComposeDrafting.parseRecipients(draft.to)
         if (toList.isEmpty()) {
             updateDraft { it.copy(sendError = recipientsRequiredMessage) }

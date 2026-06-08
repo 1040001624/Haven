@@ -15,6 +15,8 @@ data class ComposeDraft(
     val sending: Boolean = false,
     /** Non-null when the last send attempt failed; shown in-form so the user can retry. */
     val sendError: String? = null,
+    /** The connected account this draft sends from (the compose "From"); set by the ViewModel. */
+    val fromProfileId: String = "",
 ) {
     /** Any user-entered content — drives the discard-confirm on back/close. */
     val isDirty: Boolean
