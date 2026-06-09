@@ -88,7 +88,7 @@ func StartTunnel(configText string) (*TunnelHandle, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	tun, tnet, err := netstack.CreateNetTUN(parsed.addresses, parsed.dns, 1420)
+	tun, tnet, err := netstack.CreateNetTUN(parsed.addresses, parsed.dns, parsed.mtu)
 	if err != nil {
 		return nil, fmt.Errorf("create netstack TUN: %w", err)
 	}
@@ -341,7 +341,7 @@ func (c *Conn) Close() error {
 // behavioural parity with java.net.DatagramSocket.
 //
 // size caps the receive buffer. Mosh uses 2048 (RECV_BUF_SIZE) which is
-// well above the netstack's 1420-byte MTU; any pathological oversize
+// well above the netstack's MTU (see defaultMTU); any pathological oversize
 // datagram is truncated to size bytes.
 func (u *UDPConn) ReadFrom(size int, timeoutMs int) (*UDPRead, error) {
 	if size <= 0 {
@@ -390,9 +390,24 @@ func (u *UDPConn) Close() error {
 
 // --- config parsing --------------------------------------------------------
 
+// defaultMTU is the netstack tunnel MTU used when the [Interface] section
+// doesn't set one. wireguard-go's own default is 1420 (1500 − 80 B WG/IPv6
+// overhead), but the userspace gVisor netstack does no path-MTU discovery
+// on the *outer* carrier path: on a link whose MTU is under 1500 (mobile /
+// 4G, CGNAT, a nested tunnel) full-size inner segments become ~1500-byte WG
+// datagrams that get silently dropped — small packets (keystrokes) flow, but
+// sustained TCP (terminal output, transfers) stalls a few seconds in (#232).
+// The kernel WG client avoids this via PMTU/MSS clamping; we don't, so we
+// default to a conservative MTU instead. 1280 is the IPv6 minimum link MTU
+// and the widely-used WG mobile default — it leaves headroom on constrained
+// paths. Users on a clean 1500-MTU path can set `MTU = 1420` in [Interface]
+// to reclaim throughput.
+const defaultMTU = 1280
+
 type parsedConfig struct {
 	addresses []netip.Addr
 	dns       []netip.Addr
+	mtu       int    // [Interface] MTU, or defaultMTU when unset/invalid
 	uapi      string // UAPI-format text for device.IpcSet
 }
 
@@ -408,6 +423,7 @@ func parseConfig(text string) (*parsedConfig, error) {
 		privateKeyB64 string
 		addresses     []netip.Addr
 		dns           []netip.Addr
+		mtu           int
 		peerBlocks    []map[string]string
 		current       map[string]string
 	)
@@ -469,6 +485,12 @@ func parseConfig(text string) (*parsedConfig, error) {
 						continue
 					}
 					dns = append(dns, ip)
+				}
+			case "mtu":
+				// Respect an explicit [Interface] MTU; clamp to a sane
+				// range and otherwise fall through to defaultMTU.
+				if m, err := strconv.Atoi(val); err == nil && m >= 576 && m <= 1500 {
+					mtu = m
 				}
 			}
 		case "peer":
@@ -545,9 +567,13 @@ func parseConfig(text string) (*parsedConfig, error) {
 		}
 	}
 
+	if mtu == 0 {
+		mtu = defaultMTU
+	}
 	return &parsedConfig{
 		addresses: addresses,
 		dns:       dns,
+		mtu:       mtu,
 		uapi:      uapi.String(),
 	}, nil
 }

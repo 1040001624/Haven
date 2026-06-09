@@ -71,6 +71,42 @@ Endpoint = x:1`,
 	}
 }
 
+func TestParseConfigMTU(t *testing.T) {
+	base := `
+[Interface]
+PrivateKey = cEJxGEJjYIL8XHiCnVAhYQGzNuSrt7ZbQXGj4Bgn7nY=
+Address = 10.0.0.2/32
+%s
+[Peer]
+PublicKey = aV0TdsXGYmZBh2RM0V+g3xNkZwFxVzS3a0VqL2EXfDc=
+Endpoint = 203.0.113.5:51820
+AllowedIPs = 10.0.0.0/24
+`
+	cases := []struct {
+		name   string
+		mtuRow string
+		want   int
+	}{
+		{"unset defaults to conservative", "", defaultMTU},
+		{"explicit honoured", "MTU = 1380", 1380},
+		{"explicit 1420 honoured", "MTU = 1420", 1420},
+		{"too large clamped to default", "MTU = 9000", defaultMTU},
+		{"too small clamped to default", "MTU = 100", defaultMTU},
+		{"garbage clamped to default", "MTU = notanumber", defaultMTU},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := parseConfig(fmt.Sprintf(base, tc.mtuRow))
+			if err != nil {
+				t.Fatalf("parseConfig: %v", err)
+			}
+			if p.mtu != tc.want {
+				t.Fatalf("mtu = %d, want %d", p.mtu, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseConfigUnknownKeysIgnored(t *testing.T) {
 	// wg-quick configs may carry directives that aren't relevant to the
 	// userspace netstack (PostUp, Table, MTU…). Don't choke on them.
