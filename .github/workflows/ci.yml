@@ -114,3 +114,25 @@ jobs:
           name: app-debug
           path: app/build/outputs/apk/arm64/debug/haven-*-arm64-debug.apk
           retention-days: 7
+
+  # Release-only safety net. The build/test/lint jobs above all run *debug*,
+  # which doesn't run R8 — so an R8 rename of a reflectively-loaded class ships
+  # a feature 100% broken in release while every check stays green. That is
+  # exactly how the email feature shipped briefly broken: R8 renamed
+  # com.sun.mail.imap.IMAPSSLStore, so getStore("imaps") threw
+  # NoSuchProviderException in release builds only (fixed in v5.59.45). Here we
+  # run R8 on the release variant and assert the by-name-loaded classes survive.
+  # No keystore needed — minify runs before packaging/signing.
+  release-r8-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: false
+      - uses: ./.github/actions/init-submodules-with-retry
+      - uses: ./.github/actions/setup-toolchain
+      - name: R8 the release variant
+        run: ./gradlew :app:minifyArm64ReleaseWithR8
+      - name: Assert reflectively-loaded classes survived R8
+        run: ./scripts/check-r8-kept-classes.sh
