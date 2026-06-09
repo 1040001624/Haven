@@ -1,0 +1,1 @@
+A Linux desktop (Xfce4, etc.) installed in a PRoot distro now shows as "installed" only once its packages and configuration both finish — previously it could appear installed partway through, while the install was still running, because one of its programs had already been unpacked. This also makes uninstalling a desktop reflect correctly.
