@@ -48,11 +48,43 @@ data class SshKey(
      */
     val certIssuedAt: Long? = null,
 ) {
+    // Structural equality — NOT id-only. An id-only equals() means a row
+    // whose label (or cert) changed is `.equals()` to its old self, so a
+    // `StateFlow<List<SshKey>>` from `stateIn` conflates the change away
+    // and the Keys screen never re-renders the new label (#231 rename
+    // landed in the DB but the row stayed stale until a fresh load). The
+    // ByteArray fields use contentEquals so two reads of the same row
+    // still compare equal (plain `==` on ByteArray is reference identity).
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is SshKey) return false
-        return id == other.id
+        return id == other.id &&
+            label == other.label &&
+            keyType == other.keyType &&
+            privateKeyBytes.contentEquals(other.privateKeyBytes) &&
+            publicKeyOpenSsh == other.publicKeyOpenSsh &&
+            fingerprintSha256 == other.fingerprintSha256 &&
+            createdAt == other.createdAt &&
+            isEncrypted == other.isEncrypted &&
+            biometricProtected == other.biometricProtected &&
+            certificateBytes.contentEquals(other.certificateBytes) &&
+            caConfigId == other.caConfigId &&
+            certIssuedAt == other.certIssuedAt
     }
 
-    override fun hashCode(): Int = id.hashCode()
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + label.hashCode()
+        result = 31 * result + keyType.hashCode()
+        result = 31 * result + privateKeyBytes.contentHashCode()
+        result = 31 * result + publicKeyOpenSsh.hashCode()
+        result = 31 * result + fingerprintSha256.hashCode()
+        result = 31 * result + createdAt.hashCode()
+        result = 31 * result + isEncrypted.hashCode()
+        result = 31 * result + biometricProtected.hashCode()
+        result = 31 * result + (certificateBytes?.contentHashCode() ?: 0)
+        result = 31 * result + (caConfigId?.hashCode() ?: 0)
+        result = 31 * result + (certIssuedAt?.hashCode() ?: 0)
+        return result
+    }
 }
