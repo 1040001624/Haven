@@ -1,0 +1,1 @@
+Custom labels for SSH and FIDO2 security keys (#231). Rename any key via long-press on its row; name each resident key as you import it from a security key; and key files imported from disk default their label to the key's own comment. Makes it easy to tell apart several hardware keys registered to the same identity. Also fixes the key list not refreshing in place after a rename.
