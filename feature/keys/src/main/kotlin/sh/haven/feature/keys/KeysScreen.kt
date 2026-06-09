@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Fingerprint
@@ -106,6 +107,7 @@ fun KeysScreen(
     val pendingCertExportKeyId by viewModel.pendingCertExportKeyId.collectAsState()
     val pendingCertKeyId by viewModel.pendingCertKeyId.collectAsState()
     var pendingPasswordWipe by remember { mutableStateOf<KeystoreEntry?>(null) }
+    var renameTarget by remember { mutableStateOf<SshKey?>(null) }
 
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var showGenerateDialog by remember { mutableStateOf(false) }
@@ -215,7 +217,7 @@ fun KeysScreen(
     if (discovered.isNotEmpty()) {
         DiscoveredCredentialsPicker(
             credentials = discovered,
-            onImport = { ids -> viewModel.importDiscoveredCredentials(ids) },
+            onImport = { labels -> viewModel.importDiscoveredCredentials(labels) },
             onDismiss = { viewModel.dismissDiscoveryPicker() },
         )
     }
@@ -297,6 +299,7 @@ fun KeysScreen(
                             onMenuOpen = { contextMenuKeyId = sshKey.id },
                             onMenuDismiss = { contextMenuKeyId = null },
                             onCopyPublic = { copyPublicKey(context, sshKey) },
+                            onRename = { renameTarget = sshKey },
                             onExportPrivate = { viewModel.requestExport(sshKey.id) },
                             onDelete = { viewModel.deleteKey(sshKey.id) },
                             onBiometricToggle = { protected ->
@@ -425,6 +428,17 @@ fun KeysScreen(
         )
     }
 
+    renameTarget?.let { key ->
+        RenameKeyDialog(
+            currentLabel = key.label,
+            onConfirm = { newLabel ->
+                viewModel.renameKey(key.id, newLabel)
+                renameTarget = null
+            },
+            onDismiss = { renameTarget = null },
+        )
+    }
+
     if (needsPassphrase) {
         PassphraseDialog(
             onConfirm = { viewModel.retryImportWithPassphrase(it) },
@@ -436,6 +450,10 @@ fun KeysScreen(
         ImportLabelDialog(
             keyType = result.keyType,
             fingerprint = result.fingerprintSha256,
+            // Pre-fill from the key's trailing OpenSSH comment when present
+            // (`<type> <base64> [comment]`) — #231 asks for the comment as
+            // the default label, still editable before saving.
+            defaultLabel = commentOf(result.publicKeyOpenSsh),
             onConfirm = { label -> viewModel.saveImportedKey(label) },
             onDismiss = { viewModel.cancelImport() },
         )
@@ -711,10 +729,11 @@ private fun PassphraseDialog(
 private fun ImportLabelDialog(
     keyType: String,
     fingerprint: String,
+    defaultLabel: String = "",
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var label by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf(defaultLabel) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -757,6 +776,51 @@ private fun ImportLabelDialog(
     )
 }
 
+@Composable
+private fun RenameKeyDialog(
+    currentLabel: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var label by remember { mutableStateOf(currentLabel) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.keys_rename_title)) },
+        text = {
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text(stringResource(R.string.common_label)) },
+                placeholder = { Text(stringResource(R.string.keys_label_placeholder)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(label) },
+                enabled = label.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.keys_rename))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Extract the trailing comment from an OpenSSH public-key line
+ * (`<type> <base64> [comment]`), or "" if there's none. Used to seed the
+ * import-label field from the key's own comment (#231).
+ */
+private fun commentOf(publicKeyOpenSsh: String): String =
+    publicKeyOpenSsh.trim().split(Regex("\\s+"), limit = 3).getOrNull(2)?.trim().orEmpty()
+
 private fun copyPublicKey(context: Context, sshKey: SshKey) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(
@@ -791,6 +855,7 @@ private fun SshKeyAuditRow(
     onMenuOpen: () -> Unit,
     onMenuDismiss: () -> Unit,
     onCopyPublic: () -> Unit,
+    onRename: () -> Unit,
     onExportPrivate: () -> Unit,
     onDelete: () -> Unit,
     onBiometricToggle: (Boolean) -> Unit,
@@ -894,6 +959,14 @@ private fun SshKeyAuditRow(
                 text = { Text(stringResource(R.string.keys_copy_public_key)) },
                 onClick = { onCopyPublic(); onMenuDismiss() },
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+            )
+            // Rename applies to every key kind, FIDO2/SK included — the
+            // whole point of #231 is disambiguating same-identity hardware
+            // keys, which live under sk-* types.
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.keys_rename)) },
+                onClick = { onMenuDismiss(); onRename() },
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
             )
             if (!sshKey.keyType.startsWith("sk-")) {
                 DropdownMenuItem(

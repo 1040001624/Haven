@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">Elige una imagen con un código QR otpauth://</string>
     <string name="keys_totp_paste">Agregar autenticador desde portapapeles (TOTP)</string>
     <string name="keys_totp_paste_hint">Pega un URI otpauth:// o un secreto en base32</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">Cambiar nombre</string>
+    <string name="keys_rename_title">Cambiar nombre de la clave</string>
 </resources>

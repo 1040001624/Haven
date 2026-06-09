@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">otpauth:// QR code वाली छवि चुनें</string>
     <string name="keys_totp_paste">Clipboard से authenticator जोड़ें (TOTP)</string>
     <string name="keys_totp_paste_hint">otpauth:// URI या base32 secret पेस्ट करें</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">नाम बदलें</string>
+    <string name="keys_rename_title">कुंजी का नाम बदलें</string>
 </resources>

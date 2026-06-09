@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">Choisissez une image contenant un QR code otpauth://</string>
     <string name="keys_totp_paste">Ajouter un authentificateur depuis le presse-papiers (TOTP)</string>
     <string name="keys_totp_paste_hint">Collez un URI otpauth:// ou un secret base32</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">Renommer</string>
+    <string name="keys_rename_title">Renommer la clé</string>
 </resources>

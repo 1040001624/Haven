@@ -165,4 +165,7 @@
     <string name="keys_totp_scan_qr_hint">选取含有 otpauth:// QR 码的图片</string>
     <string name="keys_totp_paste">从剪贴板添加身份验证器（TOTP）</string>
     <string name="keys_totp_paste_hint">粘贴 otpauth:// URI 或 base32 密钥</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">重命名</string>
+    <string name="keys_rename_title">重命名密钥</string>
 </resources>

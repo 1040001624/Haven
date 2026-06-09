@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">Выберите изображение с QR-кодом otpauth://</string>
     <string name="keys_totp_paste">Добавить аутентификатор из буфера обмена (TOTP)</string>
     <string name="keys_totp_paste_hint">Вставьте URI otpauth:// или секрет base32</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">Переименовать</string>
+    <string name="keys_rename_title">Переименовать ключ</string>
 </resources>

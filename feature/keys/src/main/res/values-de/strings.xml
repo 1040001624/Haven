@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">Bild mit einem otpauth://-QR-Code auswählen</string>
     <string name="keys_totp_paste">Authenticator aus Zwischenablage hinzufügen (TOTP)</string>
     <string name="keys_totp_paste_hint">otpauth://-URI oder Base32-Secret einfügen</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">Umbenennen</string>
+    <string name="keys_rename_title">Schlüssel umbenennen</string>
 </resources>

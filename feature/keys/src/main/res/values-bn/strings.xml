@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">otpauth:// QR কোড সহ একটি ছবি বেছে নিন</string>
     <string name="keys_totp_paste">ক্লিপবোর্ড থেকে authenticator যোগ করুন (TOTP)</string>
     <string name="keys_totp_paste_hint">একটি otpauth:// URI বা base32 সিক্রেট পেস্ট করুন</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">পুনঃনামকরণ</string>
+    <string name="keys_rename_title">কী পুনঃনামকরণ করুন</string>
 </resources>

@@ -62,6 +62,10 @@
     <string name="keys_import_ssh_key">Import SSH Key</string>
     <string name="keys_import">Import</string>
 
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">Rename</string>
+    <string name="keys_rename_title">Rename key</string>
+
     <!-- copyPublicKey -->
     <string name="keys_ssh_public_key_clip_label">SSH Public Key</string>
     <string name="keys_section_certificate_authorities">Certificate authorities (%1$d)</string>

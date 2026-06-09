@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">otpauth:// QR コードが含まれた画像を選択</string>
     <string name="keys_totp_paste">クリップボードから認証アプリを追加 (TOTP)</string>
     <string name="keys_totp_paste_hint">otpauth:// URI または base32 シークレットを貼り付け</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">名前を変更</string>
+    <string name="keys_rename_title">キーの名前を変更</string>
 </resources>

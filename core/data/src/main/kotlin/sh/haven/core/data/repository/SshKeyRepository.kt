@@ -92,4 +92,17 @@ class SshKeyRepository @Inject constructor(
         val key = sshKeyDao.getById(id) ?: return
         sshKeyDao.upsert(key.copy(certificateBytes = certBytes))
     }
+
+    /**
+     * Change the user-facing [SshKey.label] for [id] (#231). Direct
+     * upsert of the already-stored row — unlike [save], this deliberately
+     * does NOT run [KeyEncryption.encrypt] over [SshKey.privateKeyBytes]:
+     * those bytes are the encrypted-at-rest form read straight back from
+     * the DB, so re-encrypting would corrupt the key (same reasoning as
+     * [setCertificateBytes]). No-op if the key was deleted meanwhile.
+     */
+    suspend fun rename(id: String, label: String) {
+        val key = sshKeyDao.getById(id) ?: return
+        sshKeyDao.upsert(key.copy(label = label))
+    }
 }

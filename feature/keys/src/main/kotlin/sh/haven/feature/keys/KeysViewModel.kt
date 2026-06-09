@@ -414,15 +414,30 @@ class KeysViewModel @Inject constructor(
         }
     }
 
-    private suspend fun saveSkKey(skData: SkKeyData) {
+    private suspend fun saveSkKey(skData: SkKeyData, label: String = "FIDO2: ${skData.application}") {
         val entity = SshKey(
-            label = "FIDO2: ${skData.application}",
+            label = label,
             keyType = skData.algorithmName,
             privateKeyBytes = SkKeyData.serialize(skData),
             publicKeyOpenSsh = SkKeyParser.formatPublicKeyLine(skData),
             fingerprintSha256 = SkKeyParser.fingerprintSha256(skData.publicKeyBlob),
         )
         repository.save(entity)
+    }
+
+    /**
+     * Rename an existing key (#231). Covers every key kind — generated,
+     * imported, and FIDO2/SK — since the only thing that changes is the
+     * display [SshKey.label]. Blank input is ignored so a key can't be
+     * left nameless. The keys list is Room-backed and observed, so the
+     * row re-renders with the new label without an explicit refresh.
+     */
+    fun renameKey(keyId: String, newLabel: String) {
+        val trimmed = newLabel.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            repository.rename(keyId, trimmed)
+        }
     }
 
     // ---------- FIDO resident key discovery (#152) ----------
@@ -482,16 +497,26 @@ class KeysViewModel @Inject constructor(
         }
     }
 
-    /** Save a subset of the discovered credentials. Pass empty to drop all. */
-    fun importDiscoveredCredentials(ids: Set<String>) {
-        val selected = _discoveredCredentials.value.filter { it.id in ids }
+    /**
+     * Save the selected discovered credentials, each under the label the
+     * user chose in the picker (#231). [labels] maps the
+     * [DiscoveredSkCredential.id] of every credential to import to its
+     * label; credentials absent from the map are dropped. A blank label
+     * falls back to the `FIDO2: <rpId>` default — importing several
+     * resident keys with the same rpId off different dongles is exactly
+     * the collision the per-key label solves.
+     */
+    fun importDiscoveredCredentials(labels: Map<String, String>) {
+        val selected = _discoveredCredentials.value.filter { it.id in labels.keys }
         _discoveredCredentials.value = emptyList()
         if (selected.isEmpty()) return
         viewModelScope.launch {
             var ok = 0
             for (cred in selected) {
                 try {
-                    saveSkKey(cred.data)
+                    val label = labels[cred.id]?.trim()?.ifBlank { null }
+                        ?: "FIDO2: ${cred.rpId}"
+                    saveSkKey(cred.data, label)
                     ok++
                 } catch (e: Exception) {
                     Log.e("KeysViewModel", "Save of discovered ${cred.rpId} failed", e)

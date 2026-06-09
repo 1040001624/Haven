@@ -6,17 +6,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -144,14 +143,24 @@ private fun PinEntryDialog(prompt: FidoTouchPrompt.EnterPin) {
  * import. The fingerprint per row lets the user disambiguate multiple
  * resident keys on the same RP (e.g. host-pinned ssh: keys for different
  * services).
+ *
+ * Each ticked credential exposes an editable label field (#231) so the
+ * user can name it as they import — the motivating case is several
+ * dongles that all expose the same `ssh:` rpId, which would otherwise be
+ * saved under identical default labels. [onImport] receives a map of the
+ * selected credential ids to their chosen labels.
  */
 @Composable
 internal fun DiscoveredCredentialsPicker(
     credentials: List<DiscoveredSkCredential>,
-    onImport: (Set<String>) -> Unit,
+    onImport: (Map<String, String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val selected = remember { mutableStateOf(setOf<String>()) }
+    // id -> user-edited label. Absent until the user types; the field
+    // shows the `FIDO2: <rpId>` default in the meantime, and import falls
+    // back to that default for any selected row left untouched.
+    val labelEdits = remember { mutableStateOf(mapOf<String, String>()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -167,40 +176,58 @@ internal fun DiscoveredCredentialsPicker(
                 HorizontalDivider()
                 credentials.forEach { cred ->
                     val isOn = cred.id in selected.value
-                    ListItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = isOn,
-                                onValueChange = { on ->
-                                    selected.value = if (on) selected.value + cred.id
-                                    else selected.value - cred.id
-                                },
-                            ),
-                        headlineContent = { Text(cred.rpId) },
-                        supportingContent = {
-                            Column {
-                                Text(
-                                    cred.algorithmName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    cred.fingerprint,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val defaultLabel = "FIDO2: ${cred.rpId}"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Checkbox(
+                            checked = isOn,
+                            onCheckedChange = { on ->
+                                selected.value = if (on) selected.value + cred.id
+                                else selected.value - cred.id
+                            },
+                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(cred.rpId, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                cred.algorithmName,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                cred.fingerprint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (isOn) {
+                                OutlinedTextField(
+                                    value = labelEdits.value[cred.id] ?: defaultLabel,
+                                    onValueChange = {
+                                        labelEdits.value = labelEdits.value + (cred.id to it)
+                                    },
+                                    label = { Text(stringResource(R.string.common_label)) },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp, bottom = 4.dp),
                                 )
                             }
-                        },
-                        leadingContent = {
-                            Checkbox(checked = isOn, onCheckedChange = null)
-                        },
-                    )
+                        }
+                    }
+                    HorizontalDivider()
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onImport(selected.value) },
+                onClick = {
+                    onImport(
+                        selected.value.associateWith { id ->
+                            val cred = credentials.first { it.id == id }
+                            labelEdits.value[id] ?: "FIDO2: ${cred.rpId}"
+                        },
+                    )
+                },
                 enabled = selected.value.isNotEmpty(),
             ) {
                 Text(stringResource(R.string.keys_discover_import_selected))

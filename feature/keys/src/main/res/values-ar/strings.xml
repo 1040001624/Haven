@@ -163,4 +163,7 @@
     <string name="keys_totp_scan_qr_hint">اختر صورة تحتوي على رمز QR بصيغة otpauth://</string>
     <string name="keys_totp_paste">إضافة مصادق من الحافظة (TOTP)</string>
     <string name="keys_totp_paste_hint">الصق رابط otpauth:// أو سر base32</string>
+    <!-- RenameKeyDialog (#231) -->
+    <string name="keys_rename">إعادة تسمية</string>
+    <string name="keys_rename_title">إعادة تسمية المفتاح</string>
 </resources>
