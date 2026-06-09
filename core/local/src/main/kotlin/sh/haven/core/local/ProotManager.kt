@@ -439,8 +439,19 @@ class ProotManager @Inject constructor(
         if (!java.nio.file.Files.exists(binSh, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             return emptySet()
         }
+        // Prefer Haven's `.haven-desktop` marker — written by [setupDesktop]
+        // only after a DE's packages AND config both succeed — over raw
+        // verifyBinary existence. apt unpacks a DE's binary partway through a
+        // multi-package install, so binary detection alone reports the DE as
+        // installed while setupDesktop is still running (and `desktopSetupState`
+        // is still "Installing") — the state-reporting lag. Marker absent =
+        // legacy rootfs from before this gating; fall back to binary detection.
+        val markedNames = File(rootfs, "root/.haven-desktop").takeIf { it.exists() }
+            ?.readText()?.lineSequence()
+            ?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
         return DesktopEnvironment.entries.filter { de ->
-            File(rootfs, de.verifyBinary).exists()
+            val binaryPresent = File(rootfs, de.verifyBinary).exists()
+            if (markedNames != null) de.name in markedNames && binaryPresent else binaryPresent
         }.toSet()
     }
 
@@ -1469,15 +1480,12 @@ class ProotManager @Inject constructor(
                 message = "Packages installed",
             )
 
-            // Update marker — append this DE to the installed set
-            File(activeRootfsDir, "root").mkdirs()
-            val updated = installedDesktops + de
-            File(activeRootfsDir, "root/.haven-desktop").writeText(updated.joinToString("\n") { it.name })
-            // Create DE-specific marker file for installedDesktops check
-            if (de.verifyBinary.startsWith("root/.haven-")) {
-                File(activeRootfsDir, de.verifyBinary).writeText(de.name)
-            }
             Log.d(TAG, "${de.label} packages installed")
+            // The "installed" markers (.haven-desktop list + per-DE marker)
+            // are written at the END of setupDesktop, after config succeeds —
+            // NOT here — so installedDesktops/list_desktop_environments don't
+            // report this DE while config still runs or if config later fails.
+            // (state-reporting lag fix)
             }
 
             if (de.spec.launch is LaunchSpec.X11Vnc) {
@@ -1554,6 +1562,16 @@ chmod +x /root/.vnc/xstartup""")
             }
 
             Log.d(TAG, "[de-config ${de.spec.id}] complete")
+            // Flag the DE installed only now that packages AND config both
+            // succeeded — this is the authoritative signal installedDesktopsFor
+            // reads, so the catalog never reports a DE that's still installing
+            // (apt may have unpacked its binary) or one whose config failed.
+            File(activeRootfsDir, "root").mkdirs()
+            File(activeRootfsDir, "root/.haven-desktop")
+                .writeText((installedDesktops + de).joinToString("\n") { it.name })
+            if (de.verifyBinary.startsWith("root/.haven-")) {
+                File(activeRootfsDir, de.verifyBinary).writeText(de.name)
+            }
             installLogRepository.logEvent(
                 distroId = activeDistro.id,
                 phase = "DeConfig:${de.spec.id}",
