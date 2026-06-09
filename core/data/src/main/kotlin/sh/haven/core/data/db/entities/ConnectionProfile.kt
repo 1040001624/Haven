@@ -134,6 +134,12 @@ data class ConnectionProfile(
     val emailProvider: String? = null,
     /** IMAP/host server for non-Proton providers (Proton ignores this). */
     val emailServer: String? = null,
+    /**
+     * SMTP submission host for non-Proton providers. Null = reuse [emailServer]
+     * (self-hosted where IMAP and SMTP share a host). Real providers split them —
+     * e.g. Gmail is imap.gmail.com / smtp.gmail.com — so a send must target this.
+     */
+    val emailSmtpServer: String? = null,
     /** IMAP port (non-Proton). Default 993 (implicit TLS). */
     val emailPort: Int = 993,
     /** SMTP submission port (non-Proton). Default 465 (implicit TLS). */

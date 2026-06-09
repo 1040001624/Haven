@@ -2,7 +2,9 @@ package sh.haven.feature.mail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -54,16 +58,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import sh.haven.core.mail.MailEngine
 import sh.haven.core.mail.MailFolder
 import sh.haven.core.mail.MailMessage
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -83,6 +90,8 @@ fun MailScreen(
     viewModel: MailViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsState()
+    val baseFontSize by viewModel.terminalFontSize.collectAsState()
+    val mailFontScale by viewModel.mailFontScale.collectAsState()
 
     LaunchedEffect(pendingProfileId) {
         viewModel.setPendingEmailProfile(pendingProfileId)
@@ -160,6 +169,11 @@ fun MailScreen(
                 actions = {
                     when (ui.view) {
                         MailViewModel.View.FOLDERS, MailViewModel.View.MESSAGES -> {
+                            if (ui.activeAccount != null) {
+                                IconButton(onClick = viewModel::refresh) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.mail_refresh))
+                                }
+                            }
                             if (ui.canCompose) {
                                 IconButton(onClick = viewModel::startCompose) {
                                     Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.mail_compose))
@@ -202,7 +216,17 @@ fun MailScreen(
                     Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> when (ui.view) {
                     MailViewModel.View.FOLDERS -> FolderList(ui.folders, viewModel::openFolder)
-                    MailViewModel.View.MESSAGES -> MessageList(ui.messages, ui.loading, viewModel::openMessage)
+                    MailViewModel.View.MESSAGES -> MessageList(
+                        messages = ui.messages,
+                        loading = ui.loading,
+                        fontSize = baseFontSize * mailFontScale,
+                        hasMore = ui.hasMore,
+                        loadingOlder = ui.loadingOlder,
+                        onZoom = viewModel::zoomMailFont,
+                        onZoomEnd = viewModel::commitMailFontScale,
+                        onLoadOlder = viewModel::loadOlder,
+                        onOpen = viewModel::openMessage,
+                    )
                     MailViewModel.View.READER -> ui.openMessage?.let { MessageReader(it) }
                     MailViewModel.View.COMPOSE -> {} // handled by the early full-screen branch above
                 }
@@ -239,8 +263,25 @@ private fun FolderList(folders: List<MailFolder>, onOpen: (MailFolder) -> Unit) 
     }
 }
 
+/**
+ * One compact row per message — sender · subject · time on a single line, sized to
+ * the terminal font ([fontSize] sp, after the pinch-zoom factor) so the list reads at
+ * roughly one termlib row per email instead of a tall multi-line card. Unread = bold
+ * sender + emphasised subject. Two-finger pinch zooms via [onZoom]/[onZoomEnd]; a
+ * single-finger drag still scrolls (only multi-touch events are consumed).
+ */
 @Composable
-private fun MessageList(messages: List<MailMessage>, loading: Boolean, onOpen: (MailMessage) -> Unit) {
+private fun MessageList(
+    messages: List<MailMessage>,
+    loading: Boolean,
+    fontSize: Float,
+    hasMore: Boolean,
+    loadingOlder: Boolean,
+    onZoom: (Float) -> Unit,
+    onZoomEnd: () -> Unit,
+    onLoadOlder: () -> Unit,
+    onOpen: (MailMessage) -> Unit,
+) {
     if (messages.isEmpty() && loading) {
         Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
         return
@@ -249,47 +290,107 @@ private fun MessageList(messages: List<MailMessage>, loading: Boolean, onOpen: (
         CenterText("No messages")
         return
     }
-    LazyColumn(Modifier.fillMaxSize()) {
+    val fs = fontSize.sp
+    val lh = (fontSize + 4).sp
+    val timeFs = (fontSize - 2).coerceAtLeast(9f).sp
+    LazyColumn(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Pinch-to-zoom: only consume when ≥2 pointers are down, so a
+                // one-finger drag is left for the LazyColumn to scroll.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var pinched = false
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.count { it.pressed } >= 2) {
+                            val zoom = event.calculateZoom()
+                            if (zoom != 1f) {
+                                onZoom(zoom)
+                                pinched = true
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                    if (pinched) onZoomEnd()
+                }
+            },
+    ) {
         items(messages, key = { it.id }) { msg ->
-            Column(
+            // Memoised per message (keyed on the timestamp), so the pinch-zoom's
+            // continuous recomposition never re-runs the date formatting.
+            val timeLabel = remember(msg.timeSeconds) {
+                if (msg.timeSeconds > 0) formatTimeCompact(msg.timeSeconds * 1000) else ""
+            }
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .clickable { onOpen(msg) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        msg.from?.let { if (it.name.isNotBlank()) it.name else it.address } ?: "(unknown)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (msg.unread) FontWeight.Bold else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (msg.numAttachments > 0) {
-                        Icon(
-                            Icons.Filled.AttachFile,
-                            contentDescription = "Has attachments",
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
                 Text(
-                    msg.subject.ifBlank { "(no subject)" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (msg.unread) FontWeight.SemiBold else FontWeight.Normal,
+                    msg.from?.let { if (it.name.isNotBlank()) it.name else it.address } ?: "(unknown)",
+                    fontSize = fs,
+                    lineHeight = lh,
+                    fontWeight = if (msg.unread) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(0.38f),
                 )
-                if (msg.timeSeconds > 0) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    msg.subject.ifBlank { "(no subject)" },
+                    fontSize = fs,
+                    lineHeight = lh,
+                    fontWeight = if (msg.unread) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (msg.unread) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (msg.numAttachments > 0) {
+                    Icon(
+                        Icons.Filled.AttachFile,
+                        contentDescription = "Has attachments",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp).size(fontSize.dp),
+                    )
+                }
+                if (timeLabel.isNotEmpty()) {
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        formatDate(msg.timeSeconds * 1000),
-                        style = MaterialTheme.typography.labelSmall,
+                        timeLabel,
+                        fontSize = timeFs,
+                        lineHeight = lh,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
                     )
                 }
             }
-            Divider()
+        }
+        if (hasMore) {
+            item(key = "__load_older__") {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !loadingOlder) { onLoadOlder() }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (loadingOlder) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            stringResource(R.string.mail_load_older),
+                            fontSize = fs,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -591,5 +692,40 @@ private fun CenterText(text: String) {
     }
 }
 
-private fun formatDate(millis: Long): String =
-    SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date(millis))
+/**
+ * Shared, pre-built date formatters. Constructing a `SimpleDateFormat` (and two
+ * `Calendar`s) per row per recomposition was the message list's jank source —
+ * during a pinch-zoom every visible row reformatted on every frame. These are
+ * created once and reused; all access is on the Compose main thread, so the
+ * (non-thread-safe) formatters and the single `Calendar` are safe to share.
+ */
+private object MailDateFormats {
+    val time = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val dayMonth = SimpleDateFormat("d MMM", Locale.getDefault())
+    val dayMonthYear = SimpleDateFormat("d/MM/yy", Locale.getDefault())
+    val full = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault())
+    private val cal: Calendar = Calendar.getInstance()
+
+    /** (sameDayAsNow, sameYearAsNow) for [millis], using one reused Calendar. */
+    fun dayYear(millis: Long): Pair<Boolean, Boolean> {
+        cal.timeInMillis = System.currentTimeMillis()
+        val nowYear = cal.get(Calendar.YEAR)
+        val nowDay = cal.get(Calendar.DAY_OF_YEAR)
+        cal.timeInMillis = millis
+        val sameYear = cal.get(Calendar.YEAR) == nowYear
+        return (sameYear && cal.get(Calendar.DAY_OF_YEAR) == nowDay) to sameYear
+    }
+}
+
+private fun formatDate(millis: Long): String = MailDateFormats.full.format(Date(millis))
+
+/** A short list-row timestamp: time of day for today, "d MMM" this year, else "d/MM/yy". */
+private fun formatTimeCompact(millis: Long): String {
+    val (sameDay, sameYear) = MailDateFormats.dayYear(millis)
+    val fmt = when {
+        sameDay -> MailDateFormats.time
+        sameYear -> MailDateFormats.dayMonth
+        else -> MailDateFormats.dayMonthYear
+    }
+    return fmt.format(Date(millis))
+}

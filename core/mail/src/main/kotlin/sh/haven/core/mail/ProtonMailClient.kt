@@ -58,11 +58,18 @@ class ProtonMailClient @Inject constructor() : MailClient {
         sessionId: String,
         folderId: String,
         desc: Boolean,
+        limit: Int,
+        offset: Int,
     ): List<MailMessage> = withContext(Dispatchers.IO) {
         val res = MailBridge.listMessages(sessionId, folderId, desc)
         if (res.status != 200) throw mapError(res.status, res.output)
         val arr = JSONArray(res.output)
-        (0 until arr.length()).map { i -> parseMessage(arr.getJSONObject(i)) }
+        val all = (0 until arr.length()).map { i -> parseMessage(arr.getJSONObject(i)) }
+        // The Go bridge still fetches the whole label (server-side paging is a
+        // follow-up); apply the page window client-side so the UI list is bounded
+        // and "Load older" advances consistently with the IMAP engine.
+        if (offset >= all.size) emptyList()
+        else all.drop(offset).take(limit.coerceAtLeast(0))
     }
 
     override suspend fun getMessageRaw(sessionId: String, messageId: String): ByteArray =

@@ -24,8 +24,8 @@ class RfcMailBackend(
 
     override suspend fun listFolders(): List<MailFolder> = client.listFolders(sessionId)
 
-    override suspend fun listMessages(folderId: String): List<MailMessage> =
-        client.listMessages(sessionId, folderId, desc = true)
+    override suspend fun listMessages(folderId: String, limit: Int, offset: Int): List<MailMessage> =
+        client.listMessages(sessionId, folderId, desc = true, limit = limit, offset = offset)
 
     override suspend fun readMessage(messageId: String): ParsedMessage {
         val raw = client.getMessageRaw(sessionId, messageId)

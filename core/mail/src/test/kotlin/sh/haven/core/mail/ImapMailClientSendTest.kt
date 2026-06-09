@@ -64,6 +64,32 @@ class ImapMailClientSendTest {
         assertEquals("false", props["mail.smtp.socketFactory.fallback"])
     }
 
+    /**
+     * The implicit-TLS vs STARTTLS decision keys off the SMTP **port**, not the
+     * account's IMAP `tls` flag: an iCloud/Outlook-shaped account is 993-implicit
+     * on IMAP (tls=true) yet 587-STARTTLS on SMTP — a single flag can't serve both,
+     * so 587 must still produce a STARTTLS (not implicit-smtps) transport.
+     */
+    @Test
+    fun implicitTlsImapButPort587SmtpStillUsesStarttls() {
+        val props = client.buildSmtpProps(imapParams(tls = true, smtpPort = 587))
+        assertEquals("smtp", props["mail.transport.protocol"])
+        assertEquals("true", props["mail.smtp.starttls.enable"])
+        assertSame(stubFactory, props["mail.smtp.socketFactory"])
+        assertTrue(props["mail.smtps.socketFactory"] == null)
+    }
+
+    @Test
+    fun smtpHostPrefersDedicatedSmtpServerThenFallsBackToImapHost() {
+        // Gmail: SMTP host differs from the IMAP host.
+        val gmail = imapParams(tls = true, smtpPort = 465)
+            .copy(server = "imap.gmail.com", smtpServer = "smtp.gmail.com")
+        assertEquals("smtp.gmail.com", client.smtpHost(gmail))
+        // Self-hosted: no dedicated SMTP host → reuse the IMAP host.
+        val selfHosted = imapParams(tls = true, smtpPort = 465).copy(server = "mail.example.com")
+        assertEquals("mail.example.com", client.smtpHost(selfHosted))
+    }
+
     @Test
     fun buildsMimeMessageWithHeadersBodyAndMessageId() {
         val p = imapParams(tls = true, smtpPort = 465)

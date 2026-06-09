@@ -1,5 +1,6 @@
 package sh.haven.feature.mail
 
+import sh.haven.core.mail.MailClient
 import sh.haven.core.mail.MailFolder
 import sh.haven.core.mail.MailMessage
 import sh.haven.core.mail.OutgoingMail
@@ -13,7 +14,12 @@ import sh.haven.core.mail.SendResult
  */
 interface MailBackend {
     suspend fun listFolders(): List<MailFolder>
-    suspend fun listMessages(folderId: String): List<MailMessage>
+    /** A page of envelopes, newest first: most-recent [limit], skipping [offset] from the top. */
+    suspend fun listMessages(
+        folderId: String,
+        limit: Int = MailClient.DEFAULT_PAGE_SIZE,
+        offset: Int = 0,
+    ): List<MailMessage>
     suspend fun readMessage(messageId: String): ParsedMessage
     suspend fun sendMessage(mail: OutgoingMail): SendResult
 }

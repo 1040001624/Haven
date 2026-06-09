@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Message list -->
+    <string name="mail_refresh">Refresh</string>
+    <string name="mail_load_older">Load older</string>
     <!-- Compose / reply / forward (CP-7) -->
     <string name="mail_compose">Compose</string>
     <string name="mail_reply">Reply</string>

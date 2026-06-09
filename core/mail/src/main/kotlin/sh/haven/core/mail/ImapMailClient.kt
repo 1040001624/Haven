@@ -86,12 +86,21 @@ class ImapMailClient @Inject constructor() : MailClient {
         sessionId: String,
         folderId: String,
         desc: Boolean,
+        limit: Int,
+        offset: Int,
     ): List<MailMessage> = withContext(Dispatchers.IO) {
         val s = session(sessionId)
         val folder = s.store.getFolder(folderId)
         folder.open(Folder.READ_ONLY)
         try {
-            val msgs = folder.messages
+            // Fetch only the most-recent [limit] envelopes (skipping [offset] from
+            // the newest end) instead of the whole folder — a large inbox over the
+            // tunnel was the dominant cost. IMAP message numbers are 1..count,
+            // oldest..newest.
+            val count = folder.messageCount
+            val range = recentSlice(count, limit, offset)
+                ?: return@withContext emptyList()
+            val msgs = folder.getMessages(range.first, range.last)
             val fp = FetchProfile().apply {
                 add(FetchProfile.Item.ENVELOPE)
                 add(FetchProfile.Item.FLAGS)
@@ -100,7 +109,7 @@ class ImapMailClient @Inject constructor() : MailClient {
             folder.fetch(msgs, fp)
             val uf = folder as UIDFolder
             val list = msgs.map { m -> toMailMessage(m, uf, folderId) }
-            // IMAP returns oldest-first; newest-first when desc.
+            // The slice is oldest-first within the window; newest-first when desc.
             if (desc) list.asReversed() else list
         } catch (e: MessagingException) {
             throw MailException.ProtocolError(0, e.message ?: "IMAP list failed")
@@ -137,12 +146,15 @@ class ImapMailClient @Inject constructor() : MailClient {
             val smtpSession = Session.getInstance(buildSmtpProps(p))
             val msg = buildMimeMessage(smtpSession, p, mail)
             try {
-                val transport = smtpSession.getTransport(if (p.tls) "smtps" else "smtp")
+                val transport = smtpSession.getTransport(if (smtpImplicitTls(p)) "smtps" else "smtp")
                 try {
                     // Pass the creds — JavaMail authenticates only when the server
                     // advertises AUTH (so a no-auth relay/test sink still works);
                     // mail.smtp.auth is intentionally NOT forced on.
-                    transport.connect(p.server, p.smtpPort, p.username, p.password)
+                    // Dial the SMTP host, which differs from the IMAP host on real
+                    // providers (smtp.gmail.com vs imap.gmail.com); falls back to
+                    // the IMAP host for self-hosted same-host setups.
+                    transport.connect(smtpHost(p), p.smtpPort, p.username, p.password)
                     transport.sendMessage(msg, msg.allRecipients)
                 } finally {
                     runCatching { transport.close() }
@@ -165,6 +177,12 @@ class ImapMailClient @Inject constructor() : MailClient {
     }
 
     // ---- helpers ----
+
+    /** Implicit-TLS SMTP iff the submission port is 465 (vs STARTTLS/plaintext on 587/25). */
+    internal fun smtpImplicitTls(p: MailConnectParams.Imap): Boolean = p.smtpPort == 465
+
+    /** SMTP host — the dedicated [MailConnectParams.Imap.smtpServer], or the IMAP host as a fallback. */
+    internal fun smtpHost(p: MailConnectParams.Imap): String = p.smtpServer ?: p.server
 
     private fun session(sessionId: String): ImapSession =
         sessions[sessionId] ?: throw MailException.SessionExpired("IMAP session $sessionId not found")
@@ -238,6 +256,13 @@ class ImapMailClient @Inject constructor() : MailClient {
      * with `fallback=false`, so a dead/blocked tunnel fails the connect instead of
      * silently leaking onto the clearnet. `.ssl.socketFactory` is only the wrap
      * factory and would leave the base socket on the default direct factory.
+     *
+     * The implicit-TLS vs STARTTLS decision keys off the SMTP **port**, not the
+     * account's [MailConnectParams.Imap.tls] flag: 465 is the conventional
+     * implicit-TLS submission port, everything else (587 submission, 25 relay,
+     * test sinks) is plaintext-with-opportunistic-STARTTLS. `tls` governs the IMAP
+     * side, where a provider is commonly 993-implicit while its SMTP is 587-STARTTLS
+     * (iCloud, Outlook) — so a single flag can't serve both.
      */
     internal fun buildSmtpProps(p: MailConnectParams.Imap): Properties = Properties().apply {
         // Register providers explicitly — Android strips META-INF/javamail.* so
@@ -248,8 +273,8 @@ class ImapMailClient @Inject constructor() : MailClient {
         this["mail.smtps.timeout"] = TIMEOUT_MS
 
         val sf = p.socketFactory
-        if (p.tls) {
-            // Implicit TLS (typically 465). JavaMail's SocketFetcher creates the
+        if (smtpImplicitTls(p)) {
+            // Implicit TLS (465). JavaMail's SocketFetcher creates the
             // base socket with `mail.smtps.socketFactory`, then wraps it in TLS.
             this["mail.transport.protocol"] = "smtps"
             if (sf != null) {
@@ -260,9 +285,10 @@ class ImapMailClient @Inject constructor() : MailClient {
                 this["mail.smtps.connectiontimeout"] = TIMEOUT_MS
             }
         } else {
-            // Plaintext / STARTTLS (typically 587). Opportunistically upgrade to
-            // TLS when the server offers STARTTLS (protects creds on a TLS-capable
-            // server); not *required*, so a plaintext relay/test sink still works.
+            // Plaintext / STARTTLS (587 submission, 25 relay, test sinks).
+            // Opportunistically upgrade to TLS when the server offers STARTTLS
+            // (protects creds on a TLS-capable server); not *required*, so a
+            // plaintext relay/test sink still works.
             this["mail.transport.protocol"] = "smtp"
             this["mail.smtp.starttls.enable"] = "true"
             if (sf != null) {
@@ -335,6 +361,21 @@ class ImapMailClient @Inject constructor() : MailClient {
     companion object {
         private const val TAG = "ImapMailClient"
         private const val TIMEOUT_MS = "30000"
+
+        /**
+         * The 1-based IMAP message-number window for the most-recent [limit]
+         * messages, skipping [offset] from the newest end (messages are numbered
+         * 1=oldest .. [count]=newest). Returns null when there's nothing to fetch
+         * (empty folder, or [offset] past the start). Clamps the low end to 1, so a
+         * final short page returns the remaining oldest messages.
+         */
+        internal fun recentSlice(count: Int, limit: Int, offset: Int): IntRange? {
+            if (count <= 0 || limit <= 0 || offset < 0) return null
+            val end = count - offset
+            if (end < 1) return null
+            val start = maxOf(1, end - limit + 1)
+            return start..end
+        }
 
         /**
          * Encode a stable opaque message id as `"<folderFullName> <uid>"`. The

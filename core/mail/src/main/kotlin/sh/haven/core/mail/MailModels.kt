@@ -151,6 +151,12 @@ sealed interface MailConnectParams {
         val port: Int,
         val smtpPort: Int,
         val tls: Boolean,
+        /**
+         * SMTP submission host. Null = reuse [server] (self-hosted where IMAP and
+         * SMTP share a host). Real providers split them — Gmail's SMTP is
+         * smtp.gmail.com, not imap.gmail.com — so [send] must dial this.
+         */
+        val smtpServer: String? = null,
         /** SocketFactory wrapping the per-profile tunnel, or null for a direct connection. */
         val socketFactory: javax.net.SocketFactory? = null,
     ) : MailConnectParams

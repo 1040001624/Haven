@@ -1866,6 +1866,8 @@ class ConnectionsViewModel @Inject constructor(
             port = profile.emailPort,
             smtpPort = profile.emailSmtpPort,
             tls = profile.emailTls,
+            // SMTP host (smtp.gmail.com vs imap.gmail.com); null falls back to `server`.
+            smtpServer = profile.emailSmtpServer?.trim()?.ifBlank { null },
             socketFactory = factory,
         )
     }

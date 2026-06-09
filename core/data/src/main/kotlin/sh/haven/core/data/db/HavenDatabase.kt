@@ -38,7 +38,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         ProotInstallLog::class,
         TotpSecret::class,
     ],
-    version = 62,
+    version = 63,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -978,6 +978,16 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_61_62 = object : Migration(61, 62) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "connection_profiles", "prootDistroId", "TEXT")
+            }
+        }
+
+        // Separate SMTP host for EMAIL/IMAP profiles. Real providers split the
+        // IMAP and SMTP hosts (e.g. imap.gmail.com vs smtp.gmail.com), so a send
+        // needs its own coordinate; null falls back to emailServer for the
+        // self-hosted same-host case.
+        val MIGRATION_62_63 = object : Migration(62, 63) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "connection_profiles", "emailSmtpServer", "TEXT")
             }
         }
 

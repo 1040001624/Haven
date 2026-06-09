@@ -2301,7 +2301,7 @@ internal class McpTools(
         ) { args -> setProfileRouting(args) },
 
         "create_connection" to ToolHandler(
-            description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, EMAIL. SSH-family fields: username (required), password (optional, stored), keyId (optional — references list_ssh_keys), ignoreSavedKeys (force password-only auth, never offer saved keys), useMosh (turn an SSH profile into a Mosh profile). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort, and vncSshForward + vncSshProfileId to tunnel VNC through a saved SSH profile. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. EMAIL: emailProvider (\"imap\" default, or \"proton\"); username = the email address; password = the account/app-password; for IMAP set emailServer (required) + emailPort (993) + emailSmtpPort (465) + emailTls (true); for Proton add emailMailboxPassword if two-password mode. EMAIL host is optional (the tunnel-ingress/bastion SPA/knock guards), not the mail server. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
+            description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, EMAIL. SSH-family fields: username (required), password (optional, stored), keyId (optional — references list_ssh_keys), ignoreSavedKeys (force password-only auth, never offer saved keys), useMosh (turn an SSH profile into a Mosh profile). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort, and vncSshForward + vncSshProfileId to tunnel VNC through a saved SSH profile. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. EMAIL: emailProvider (\"imap\" default, or \"proton\"); username = the email address; password = the account/app-password; for IMAP set emailServer (required) + emailPort (993) + emailSmtpPort (465) + emailTls (true), plus emailSmtpServer when the SMTP host differs (e.g. smtp.gmail.com); for Proton add emailMailboxPassword if two-password mode. EMAIL host is optional (the tunnel-ingress/bastion SPA/knock guards), not the mail server. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -2322,6 +2322,7 @@ internal class McpTools(
                     put("rdpDomain", JSONObject().apply { put("type", "string"); put("description", "AD domain (RDP). Optional.") })
                     put("emailProvider", JSONObject().apply { put("type", "string"); put("description", "EMAIL only: \"imap\" (generic IMAP/SMTP, default) or \"proton\".") })
                     put("emailServer", JSONObject().apply { put("type", "string"); put("description", "EMAIL/imap only: IMAP server hostname (required for imap). Reached through the tunnel when one is set.") })
+                    put("emailSmtpServer", JSONObject().apply { put("type", "string"); put("description", "EMAIL/imap only: SMTP submission host, when it differs from the IMAP host (e.g. smtp.gmail.com vs imap.gmail.com). Optional — defaults to emailServer.") })
                     put("emailPort", JSONObject().apply { put("type", "integer"); put("description", "EMAIL/imap only: IMAP port. Default 993.") })
                     put("emailSmtpPort", JSONObject().apply { put("type", "integer"); put("description", "EMAIL/imap only: SMTP port. Default 465.") })
                     put("emailTls", JSONObject().apply { put("type", "boolean"); put("description", "EMAIL/imap only: implicit TLS (SSL). Default true.") })
@@ -6751,6 +6752,7 @@ internal class McpTools(
                     emailPassword = password.ifBlank { null },
                     emailMailboxPassword = args.optString("emailMailboxPassword").ifBlank { null },
                     emailServer = server,
+                    emailSmtpServer = args.optString("emailSmtpServer").ifBlank { null },
                     emailPort = if (args.has("emailPort")) args.optInt("emailPort", 993) else 993,
                     emailSmtpPort = if (args.has("emailSmtpPort")) args.optInt("emailSmtpPort", 465) else 465,
                     emailTls = args.optBoolean("emailTls", true),

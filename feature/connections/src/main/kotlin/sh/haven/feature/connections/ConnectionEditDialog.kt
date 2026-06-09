@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -70,6 +71,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -323,16 +325,23 @@ fun ConnectionEditDialog(
     var rnsHost by rememberSaveable { mutableStateOf(existing?.reticulumHost ?: "") }
     var rcloneRemoteName by rememberSaveable { mutableStateOf(existing?.rcloneRemoteName ?: "") }
     var rcloneProvider by rememberSaveable { mutableStateOf(existing?.rcloneProvider ?: "") }
-    // EMAIL engines: "proton" (Go bridge, SRP) or "imap" (JVM, password/app-
-    // password). Gmail/Outlook (OAuth) land in stage 2b on the same IMAP engine.
-    var emailProvider by rememberSaveable { mutableStateOf(existing?.emailProvider ?: "proton") }
+    // EMAIL engines: "imap" (JVM, password/app-password — the common case, listed
+    // first) or "proton" (Go bridge, SRP). Gmail/Outlook (OAuth) land in stage 2b
+    // on the same IMAP engine.
+    var emailProvider by rememberSaveable { mutableStateOf(existing?.emailProvider ?: "imap") }
     var emailUsername by rememberSaveable { mutableStateOf(existing?.emailUsername ?: "") }
     var emailPassword by rememberSaveable { mutableStateOf(existing?.emailPassword ?: "") }
     var emailMailboxPassword by rememberSaveable { mutableStateOf(existing?.emailMailboxPassword ?: "") }
     var emailServer by rememberSaveable { mutableStateOf(existing?.emailServer ?: "") }
+    var emailSmtpServer by rememberSaveable { mutableStateOf(existing?.emailSmtpServer ?: "") }
     var emailPort by rememberSaveable { mutableStateOf(existing?.emailPort?.toString() ?: "993") }
     var emailSmtpPort by rememberSaveable { mutableStateOf(existing?.emailSmtpPort?.toString() ?: "465") }
     var emailTls by rememberSaveable { mutableStateOf(existing?.emailTls ?: true) }
+    // IMAP provider preset (UI-only prefill; not persisted). Re-derived from the
+    // stored IMAP host so re-opening a Gmail profile re-selects "Gmail".
+    var emailPreset by rememberSaveable {
+        mutableStateOf(EmailProviderPreset.fromServer(existing?.emailServer).name)
+    }
     var rnsPort by rememberSaveable { mutableStateOf(existing?.reticulumPort?.toString() ?: "4242") }
     var rnsNetworkName by rememberSaveable { mutableStateOf(existing?.reticulumNetworkName ?: "") }
     var rnsPassphrase by rememberSaveable { mutableStateOf(existing?.reticulumPassphrase ?: "") }
@@ -944,7 +953,7 @@ fun ConnectionEditDialog(
                     "RDP" to "RDP (Desktop)",
                     "SMB" to "SMB (File Share)",
                     "RCLONE" to "Cloud Storage (rclone)",
-                    "EMAIL" to "Email (Proton / IMAP)",
+                    "EMAIL" to "Email (IMAP / Proton)",
                     "RETICULUM" to "Reticulum",
                 )
                 var transportExpanded by remember { mutableStateOf(false) }
@@ -1318,8 +1327,8 @@ fun ConnectionEditDialog(
                     ConnectionSection(stringResource(R.string.connections_section_email))
                     // Engine picker — one compact segmented row (portrait-friendly).
                     val emailProviderOptions = listOf(
-                        "proton" to stringResource(R.string.connections_email_provider_proton_short),
                         "imap" to stringResource(R.string.connections_email_provider_imap_short),
+                        "proton" to stringResource(R.string.connections_email_provider_proton_short),
                     )
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         emailProviderOptions.forEachIndexed { index, (key, label) ->
@@ -1362,6 +1371,65 @@ fun ConnectionEditDialog(
                     if (isImapProvider) {
                         // Generic IMAP/SMTP fields — gated, so they never bloat the
                         // dialog for Proton (the common case).
+                        val preset = EmailProviderPreset.valueOf(emailPreset)
+                        Spacer(Modifier.height(4.dp))
+                        // Provider preset: prefills server/ports/TLS for the major
+                        // providers; "Custom" leaves the fields manual. UI-only —
+                        // not persisted; re-derived from the saved IMAP host.
+                        var presetExpanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = presetExpanded,
+                            onExpandedChange = { presetExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = preset.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.connections_email_preset_label)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(presetExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = presetExpanded,
+                                onDismissRequest = { presetExpanded = false },
+                            ) {
+                                EmailProviderPreset.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.displayName) },
+                                        onClick = {
+                                            emailPreset = option.name
+                                            presetExpanded = false
+                                            if (option != EmailProviderPreset.GENERIC) {
+                                                option.imapServer?.let { emailServer = it }
+                                                option.smtpServer?.let { emailSmtpServer = it }
+                                                emailPort = option.imapPort.toString()
+                                                emailSmtpPort = option.smtpPort.toString()
+                                                emailTls = option.tls
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        preset.appPasswordUrl?.let { url ->
+                            val uriHandler = LocalUriHandler.current
+                            TextButton(onClick = { uriHandler.openUri(url) }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    stringResource(
+                                        R.string.connections_email_app_password_link,
+                                        preset.displayName,
+                                    ),
+                                )
+                            }
+                        }
                         Text(
                             stringResource(R.string.connections_email_app_password_hint),
                             style = MaterialTheme.typography.bodySmall,
@@ -1374,6 +1442,18 @@ fun ConnectionEditDialog(
                             onValueChange = { emailServer = it },
                             label = { Text(stringResource(R.string.connections_field_imap_server)) },
                             placeholder = { Text("imap.example.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = emailSmtpServer,
+                            onValueChange = { emailSmtpServer = it },
+                            label = { Text(stringResource(R.string.connections_field_smtp_server)) },
+                            placeholder = { Text("smtp.example.com") },
+                            supportingText = {
+                                Text(stringResource(R.string.connections_field_smtp_server_help))
+                            },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -3045,6 +3125,7 @@ fun ConnectionEditDialog(
                             emailPassword = emailPassword.ifBlank { null },
                             emailMailboxPassword = emailMailboxPassword.ifBlank { null },
                             emailServer = emailServer.ifBlank { null },
+                            emailSmtpServer = emailSmtpServer.ifBlank { null },
                             emailPort = emailPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: 993,
                             emailSmtpPort = emailSmtpPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: 465,
                             emailTls = emailTls,

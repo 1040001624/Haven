@@ -386,7 +386,11 @@
     <string name="connections_email_provider_proton_short">ProtonMail</string>
     <string name="connections_email_provider_imap_short">IMAP/SMTP</string>
     <string name="connections_email_app_password_hint">Use your password, or an app-password if your provider requires one (Fastmail, iCloud, Yahoo, Gmail/2FA).</string>
+    <string name="connections_email_preset_label">Provider preset</string>
+    <string name="connections_email_app_password_link">Create an app-password for %1$s</string>
     <string name="connections_field_imap_server">IMAP server</string>
+    <string name="connections_field_smtp_server">SMTP server</string>
+    <string name="connections_field_smtp_server_help">Leave blank to use the IMAP server.</string>
     <string name="connections_field_imap_port">IMAP port</string>
     <string name="connections_field_smtp_port">SMTP port</string>
     <string name="connections_toggle_imap_tls">Use TLS (implicit SSL)</string>

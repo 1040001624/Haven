@@ -2,6 +2,7 @@ package sh.haven.core.mail
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -59,5 +60,26 @@ class ImapMailClientTest {
         assertTrue(MailFolder(id = "inbox", name = "inbox", type = 0).isInbox)
         assertTrue("Proton inbox id still works", MailFolder(id = "0", name = "Inbox", type = 3).isInbox)
         assertTrue(!MailFolder(id = "Archive", name = "Archive", type = 0).isInbox)
+    }
+
+    @Test
+    fun recentSliceWindowsTheNewestMessages() {
+        // 1-based message numbers 1=oldest .. count=newest.
+        // First page: the most-recent `limit`.
+        assertEquals(901..1000, ImapMailClient.recentSlice(count = 1000, limit = 100, offset = 0))
+        // Second page ("Load older").
+        assertEquals(801..900, ImapMailClient.recentSlice(count = 1000, limit = 100, offset = 100))
+        // Final short page clamps the low end to 1 (the remaining oldest).
+        assertEquals(1..50, ImapMailClient.recentSlice(count = 1000, limit = 100, offset = 950))
+        // A folder smaller than a page returns all of it.
+        assertEquals(1..50, ImapMailClient.recentSlice(count = 50, limit = 100, offset = 0))
+    }
+
+    @Test
+    fun recentSliceReturnsNullWhenNothingToFetch() {
+        assertNull("empty folder", ImapMailClient.recentSlice(count = 0, limit = 100, offset = 0))
+        assertNull("offset == count", ImapMailClient.recentSlice(count = 1000, limit = 100, offset = 1000))
+        assertNull("offset past end", ImapMailClient.recentSlice(count = 1000, limit = 100, offset = 5000))
+        assertNull("non-positive limit", ImapMailClient.recentSlice(count = 1000, limit = 0, offset = 0))
     }
 }

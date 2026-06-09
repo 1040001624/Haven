@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -19,6 +20,8 @@ class UserPreferencesRepository @Inject constructor(
 ) {
     private val biometricEnabledKey = booleanPreferencesKey("biometric_enabled")
     private val terminalFontSizeKey = intPreferencesKey("terminal_font_size")
+    // Mail message-list pinch-zoom factor, multiplied onto the terminal font size.
+    private val mailFontScaleKey = floatPreferencesKey("mail_font_scale")
     private val terminalScrollbackRowsKey = intPreferencesKey("terminal_scrollback_rows")
     private val terminalTapToPositionCursorKey = booleanPreferencesKey("terminal_tap_to_position_cursor")
     // Absolute path to a user-chosen Nerd Font (or any TTF/OTF). #123.
@@ -848,6 +851,18 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    /** Mail message-list pinch-zoom factor (× the terminal font size). 1.0 = match terminal. */
+    val mailFontScale: Flow<Float> = dataStore.data.map { prefs ->
+        (prefs[mailFontScaleKey] ?: DEFAULT_MAIL_FONT_SCALE)
+            .coerceIn(MIN_MAIL_FONT_SCALE, MAX_MAIL_FONT_SCALE)
+    }
+
+    suspend fun setMailFontScale(scale: Float) {
+        dataStore.edit { prefs ->
+            prefs[mailFontScaleKey] = scale.coerceIn(MIN_MAIL_FONT_SCALE, MAX_MAIL_FONT_SCALE)
+        }
+    }
+
     suspend fun setToolbarMinButtonWidth(dp: Int) {
         dataStore.edit { prefs ->
             prefs[toolbarMinButtonWidthKey] =
@@ -1343,6 +1358,10 @@ class UserPreferencesRepository @Inject constructor(
         const val DEFAULT_FONT_SIZE = 14
         const val MIN_FONT_SIZE = 8
         const val MAX_FONT_SIZE = 32
+        // Mail list pinch-zoom: 75% of the terminal font size up to 300%.
+        const val DEFAULT_MAIL_FONT_SCALE = 1.0f
+        const val MIN_MAIL_FONT_SCALE = 0.75f
+        const val MAX_MAIL_FONT_SCALE = 3.0f
         // Terminal toolbar minimum key width (dp). Default 0 = keys hug content.
         const val DEFAULT_TOOLBAR_MIN_BUTTON_WIDTH = 0
         const val MIN_TOOLBAR_MIN_BUTTON_WIDTH = 0

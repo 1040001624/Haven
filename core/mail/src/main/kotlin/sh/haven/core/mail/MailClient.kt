@@ -28,8 +28,19 @@ interface MailClient {
     /** List the account's folders/labels. */
     suspend fun listFolders(sessionId: String): List<MailFolder>
 
-    /** List message envelopes in [folderId], newest first when [desc]. */
-    suspend fun listMessages(sessionId: String, folderId: String, desc: Boolean = true): List<MailMessage>
+    /**
+     * List a page of message envelopes in [folderId], newest first when [desc].
+     * [limit] caps how many are fetched (so a multi-thousand-message inbox doesn't
+     * pull every envelope over the tunnel); [offset] skips that many from the
+     * newest end, so `offset = page * limit` walks older pages ("Load older").
+     */
+    suspend fun listMessages(
+        sessionId: String,
+        folderId: String,
+        desc: Boolean = true,
+        limit: Int = DEFAULT_PAGE_SIZE,
+        offset: Int = 0,
+    ): List<MailMessage>
 
     /** Fetch and decrypt one message, returning the raw RFC822 MIME bytes. */
     suspend fun getMessageRaw(sessionId: String, messageId: String): ByteArray
@@ -44,4 +55,9 @@ interface MailClient {
 
     /** Revoke and drop the session. */
     suspend fun logout(sessionId: String)
+
+    companion object {
+        /** Default message-list page size — most-recent N envelopes per fetch. */
+        const val DEFAULT_PAGE_SIZE = 100
+    }
 }
