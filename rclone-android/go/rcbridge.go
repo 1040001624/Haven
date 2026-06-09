@@ -170,7 +170,7 @@ func RbStartMediaServer(remoteName string, preferredPort int64) *RbResult {
 	opt.ChunkSizeLimit = 64 * fs.Mebi  // grow up to 64 MB per chunk
 	opt.ReadAhead = 32 * fs.Mebi       // 32 MB read-ahead buffer
 	opt.CacheMaxSize = 512 * fs.Mebi   // cap disk cache at 512 MB
-	v := vfs.New(f, &opt)
+	v := vfs.New(ctx, f, &opt)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
