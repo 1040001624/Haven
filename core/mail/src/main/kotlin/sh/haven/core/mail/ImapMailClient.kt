@@ -181,12 +181,29 @@ class ImapMailClient @Inject constructor() : MailClient {
             val src = s.store.getFolder(folderId)
             src.open(Folder.READ_WRITE)
             try {
-                val m = (src as UIDFolder).getMessageByUID(uid)
-                    ?: throw MailException.ProtocolError(404, "Message $uid not found in $folderId")
-                // Portable move: server-side COPY to dest, then \Deleted + expunge here.
-                // (A capability-gated MOVE could replace this later; copy+delete works on all IMAP.)
-                src.copyMessages(arrayOf<Message>(m), dest)
-                m.setFlag(Flags.Flag.DELETED, true)
+                val imap = src as com.sun.mail.imap.IMAPFolder
+                // Prefer the IMAP MOVE extension (RFC 6851). Gmail supports it, and unlike a
+                // COPY *into* Bin/Trash — which Gmail accepts on the server but answers with a
+                // response JavaMail surfaces as a (spurious) error — UID MOVE completes cleanly.
+                val movedViaExtension = imap.doCommand { protocol ->
+                    if (!protocol.hasCapability("MOVE")) return@doCommand java.lang.Boolean.FALSE
+                    val args = com.sun.mail.iap.Argument()
+                    args.writeAtom(uid.toString())
+                    args.writeString(com.sun.mail.imap.protocol.BASE64MailboxEncoder.encode(destFolderId))
+                    val responses = protocol.command("UID MOVE", args)
+                    val last = responses[responses.size - 1]
+                    protocol.notifyResponseHandlers(responses)
+                    protocol.handleResult(last) // throws on a NO/BAD server response
+                    java.lang.Boolean.TRUE
+                } as? Boolean ?: false
+
+                if (!movedViaExtension) {
+                    // Portable fallback for servers without MOVE: COPY to dest, then \Deleted + expunge.
+                    val m = (imap as UIDFolder).getMessageByUID(uid)
+                        ?: throw MailException.ProtocolError(404, "Message $uid not found in $folderId")
+                    imap.copyMessages(arrayOf<Message>(m), dest)
+                    m.setFlag(Flags.Flag.DELETED, true)
+                }
             } catch (e: MessagingException) {
                 throw MailException.ProtocolError(0, e.message ?: "IMAP move failed")
             } finally {
