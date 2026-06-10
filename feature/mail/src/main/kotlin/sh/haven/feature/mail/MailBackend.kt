@@ -24,6 +24,9 @@ interface MailBackend {
     /** Decode one attachment of [messageId] by its [index] (from [ParsedMessage.attachments]). */
     suspend fun readAttachment(messageId: String, index: Int): MimeParser.ExtractedAttachment
     suspend fun sendMessage(mail: OutgoingMail): SendResult
+
+    /** Delete [messageId]. On Gmail this moves it to Trash (recoverable); plain IMAP is permanent. */
+    suspend fun deleteMessage(messageId: String)
 }
 
 /** A decrypted, MIME-parsed message ready for the reader UI. */

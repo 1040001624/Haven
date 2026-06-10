@@ -51,4 +51,12 @@ class RfcMailBackend(
         }
         return result
     }
+
+    override suspend fun deleteMessage(messageId: String) {
+        client.deleteMessage(sessionId, messageId)
+        // Audit the delete so it shows in Settings → connection log; never fail the delete.
+        runCatching {
+            connectionLog.logEvent(profileId, ConnectionLog.Status.CONNECTED, details = "Deleted 1 message")
+        }
+    }
 }

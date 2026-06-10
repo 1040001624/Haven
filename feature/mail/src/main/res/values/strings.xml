@@ -42,4 +42,11 @@
     <string name="mail_attachment_save_failed">Couldn\'t save attachment</string>
     <string name="mail_attach_file">Attach file</string>
     <string name="mail_remove_attachment">Remove attachment</string>
+    <string name="mail_delete">Delete</string>
+    <string name="mail_cancel">Cancel</string>
+    <string name="mail_select_all">Select all</string>
+    <string name="mail_selection_clear">Clear selection</string>
+    <string name="mail_selection_count">%1$d selected</string>
+    <string name="mail_delete_selection_title">Delete messages?</string>
+    <string name="mail_delete_selection_message">Delete %1$d message(s)? On Gmail they move to Trash.</string>
 </resources>

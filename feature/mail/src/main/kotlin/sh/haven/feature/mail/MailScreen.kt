@@ -4,7 +4,9 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -34,7 +36,10 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Edit
@@ -140,6 +145,15 @@ fun MailScreen(
     LaunchedEffect(ui.sentSignal) {
         if (ui.sentSignal > 0) snackbarHostState.showSnackbar(sentMessage)
     }
+    // One-shot snackbar for delete results.
+    LaunchedEffect(ui.snackbarMessage) {
+        ui.snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeSnackbar()
+        }
+    }
+    // Back exits selection mode instead of leaving the message list.
+    BackHandler(enabled = ui.selectionMode) { viewModel.clearSelection() }
 
     // Save-an-attachment-to-device: tapping Save in the reader stashes the chosen
     // attachment, launches the SAF "create document" picker, then writes the
@@ -185,6 +199,15 @@ fun MailScreen(
     Scaffold(
         modifier = mailModifier.fillMaxSize(),
         topBar = {
+            if (ui.view == MailViewModel.View.MESSAGES && ui.selectionMode) {
+                MailSelectionTopBar(
+                    count = ui.selectedMessageIds.size,
+                    total = ui.messages.size,
+                    onClose = viewModel::clearSelection,
+                    onSelectAll = viewModel::selectAllMessages,
+                    onDelete = viewModel::deleteSelected,
+                )
+            } else {
             TopAppBar(
                 title = {
                     if (ui.view == MailViewModel.View.FOLDERS) {
@@ -254,11 +277,16 @@ fun MailScreen(
                             IconButton(onClick = { viewModel.startForward(forwardHeader = forwardHeader) }) {
                                 Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = stringResource(R.string.mail_forward))
                             }
+                            // Delete is immediate (one tap; Gmail keeps it in Trash).
+                            IconButton(onClick = { viewModel.deleteOpenMessage() }) {
+                                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.mail_delete))
+                            }
                         }
                         else -> {}
                     }
                 },
             )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -275,10 +303,14 @@ fun MailScreen(
                         fontSize = baseFontSize * mailFontScale,
                         hasMore = ui.hasMore,
                         loadingOlder = ui.loadingOlder,
+                        selectionMode = ui.selectionMode,
+                        selectedIds = ui.selectedMessageIds,
                         onZoom = viewModel::zoomMailFont,
                         onZoomEnd = viewModel::commitMailFontScale,
                         onLoadOlder = viewModel::loadOlder,
                         onOpen = viewModel::openMessage,
+                        onToggleSelect = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection,
                     )
                     MailViewModel.View.READER -> ui.openMessage?.let { msg ->
                         MessageReader(msg) { att ->
@@ -336,6 +368,53 @@ private fun folderIcon(role: MailFolderRole) = when (role) {
     MailFolderRole.NONE -> Icons.Filled.Folder
 }
 
+/** Contextual top bar shown while messages are selected: count, select-all, and bulk delete (confirmed). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MailSelectionTopBar(
+    count: Int,
+    total: Int,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    TopAppBar(
+        title = { Text(stringResource(R.string.mail_selection_count, count)) },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.mail_selection_clear))
+            }
+        },
+        actions = {
+            if (count < total) {
+                IconButton(onClick = onSelectAll) {
+                    Icon(Icons.Filled.DoneAll, contentDescription = stringResource(R.string.mail_select_all))
+                }
+            }
+            IconButton(onClick = { confirmDelete = true }) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.mail_delete))
+            }
+        },
+    )
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.mail_delete_selection_title)) },
+            text = { Text(stringResource(R.string.mail_delete_selection_message, count)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDelete()
+                }) { Text(stringResource(R.string.mail_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.mail_cancel)) }
+            },
+        )
+    }
+}
+
 /**
  * One compact row per message — sender · subject · time on a single line, sized to
  * the terminal font ([fontSize] sp, after the pinch-zoom factor) so the list reads at
@@ -350,10 +429,14 @@ private fun MessageList(
     fontSize: Float,
     hasMore: Boolean,
     loadingOlder: Boolean,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
     onZoom: (Float) -> Unit,
     onZoomEnd: () -> Unit,
     onLoadOlder: () -> Unit,
     onOpen: (MailMessage) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onEnterSelection: (String) -> Unit,
 ) {
     if (messages.isEmpty() && loading) {
         Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
@@ -396,13 +479,30 @@ private fun MessageList(
             val timeLabel = remember(msg.timeSeconds) {
                 if (msg.timeSeconds > 0) formatTimeCompact(msg.timeSeconds * 1000) else ""
             }
+            val selected = msg.id in selectedIds
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { onOpen(msg) }
+                    .then(
+                        if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                        else Modifier,
+                    )
+                    .combinedClickable(
+                        onClick = { if (selectionMode) onToggleSelect(msg.id) else onOpen(msg) },
+                        onLongClick = { onEnterSelection(msg.id) },
+                    )
                     .padding(horizontal = 12.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (selectionMode) {
+                    Icon(
+                        if (selected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 8.dp).size((fontSize + 2).dp),
+                    )
+                }
                 Text(
                     msg.from?.let { if (it.name.isNotBlank()) it.name else it.address } ?: "(unknown)",
                     fontSize = fs,
