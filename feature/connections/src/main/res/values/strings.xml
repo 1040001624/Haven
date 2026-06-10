@@ -504,4 +504,6 @@
     <string name="connections_vm_copied_short">Copied</string>
     <string name="connections_vm_terminal_not_found">Terminal app not found</string>
     <string name="connections_mcp_badge">MCP</string>
+    <string name="connections_mcp_active">Agent is operating on this connection — tap to disable MCP for it</string>
+    <string name="connections_mcp_disabled">MCP disabled for this connection — tap to enable</string>
 </resources>

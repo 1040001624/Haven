@@ -40,4 +40,11 @@ interface ConnectionDao {
 
     @Query("UPDATE connection_profiles SET sortOrder = :sortOrder WHERE id = :id")
     suspend fun updateSortOrder(id: String, sortOrder: Int)
+
+    @Query("UPDATE connection_profiles SET mcpEnabled = :enabled WHERE id = :id")
+    suspend fun updateMcpEnabled(id: String, enabled: Boolean)
+
+    /** Cheap mcpEnabled lookup (no password decryption) for the MCP dispatch hot path. */
+    @Query("SELECT mcpEnabled FROM connection_profiles WHERE id = :id")
+    suspend fun isMcpEnabled(id: String): Boolean?
 }

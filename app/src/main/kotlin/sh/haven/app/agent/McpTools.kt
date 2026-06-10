@@ -90,6 +90,7 @@ internal class McpTools(
     private val syncProfileRepository: sh.haven.core.data.repository.SyncProfileRepository,
     private val mailRuleRepository: sh.haven.core.data.repository.MailRuleRepository,
     private val mailWatchManager: sh.haven.app.agent.mailrules.MailWatchManager,
+    private val agentActivityHolder: sh.haven.core.data.agent.AgentActivityHolder,
     private val terminalInputQueue: TerminalInputQueue,
     private val prootInstallLogRepository: sh.haven.core.data.repository.ProotInstallLogRepository,
     private val sshKeyRepository: sh.haven.core.data.repository.SshKeyRepository,
@@ -2738,6 +2739,15 @@ internal class McpTools(
     /** Call a tool by name. Throws [McpError] for bad input. */
     suspend fun call(name: String, arguments: JSONObject, clientHint: String? = null): JSONObject {
         currentClientHint = clientHint
+        // Per-connection MCP gate + activity light: if the tool targets a connection
+        // (a profileId arg, or a sessionId that maps to one), refuse when the user has
+        // disabled MCP for it, otherwise mark it agent-active so its row indicator lights.
+        resolveTargetProfile(arguments)?.let { profileId ->
+            if (connectionRepository.isMcpEnabled(profileId) == false) {
+                throw McpError(-32603, "MCP is disabled for this connection — re-enable it from its MCP icon on the Connections screen.")
+            }
+            agentActivityHolder.touch(profileId)
+        }
         tools[name]?.let { return it.handle(arguments) }
 
         // Proxied guest-MCP tool: forward to the guest server and pass its
@@ -2762,6 +2772,13 @@ internal class McpTools(
         } else {
             result
         }
+    }
+
+    /** The connection a tool call targets: an explicit profileId arg, else the profile behind a sessionId. */
+    private fun resolveTargetProfile(args: JSONObject): String? {
+        args.optString("profileId").ifBlank { null }?.let { return it }
+        val sid = args.optString("sessionId").ifBlank { null } ?: return null
+        return sessionManagerRegistry.allSessions.firstOrNull { it.sessionId == sid }?.profileId
     }
 
     // --- Tool implementations ---

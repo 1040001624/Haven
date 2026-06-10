@@ -108,6 +108,7 @@ data class GroupLaunchState(
 class ConnectionsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: ConnectionRepository,
+    private val agentActivityHolder: sh.haven.core.data.agent.AgentActivityHolder,
     private val connectionGroupDao: sh.haven.core.data.db.ConnectionGroupDao,
     private val portForwardRepository: PortForwardRepository,
     private val sshSessionManager: SshSessionManager,
@@ -236,6 +237,14 @@ class ConnectionsViewModel @Inject constructor(
      * Absence = not exposed. Drives the connections-row MCP badge so it's clear
      * which connection serves `:8730` to all of its sessions.
      */
+    /** `profileId → last-agent-activity-millis`, for the per-connection MCP indicator glow. */
+    val agentActiveProfiles: StateFlow<Map<String, Long>> = agentActivityHolder.activeProfiles
+
+    /** Toggle whether the MCP agent may operate on [profileId]. */
+    fun toggleMcpEnabled(profileId: String, enabled: Boolean) {
+        viewModelScope.launch { repository.updateMcpEnabled(profileId, enabled) }
+    }
+
     val mcpExposure: StateFlow<Map<String, McpExposureKind>> =
         combine(
             portForwardRepository.observeAll(),

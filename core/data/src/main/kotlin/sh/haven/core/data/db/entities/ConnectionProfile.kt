@@ -252,6 +252,13 @@ data class ConnectionProfile(
      */
     val tunnelOnly: Boolean = false,
     /**
+     * Whether the MCP agent may operate on this connection. When false, agent tools
+     * that target this profile are refused, and the per-row MCP indicator shows a
+     * disabled state. Default true (current behaviour). Toggled from the Connections
+     * row's MCP icon.
+     */
+    val mcpEnabled: Boolean = true,
+    /**
      * Optional port-knock sequence sent before the real socket open.
      * Format: whitespace- or comma-separated `port[/proto]` tokens, e.g.
      * `"7000 8000 9000"` (all TCP) or `"7000/tcp 8000/udp 9000/tcp"`.

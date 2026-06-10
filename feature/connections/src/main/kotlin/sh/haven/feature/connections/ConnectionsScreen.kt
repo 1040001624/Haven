@@ -188,6 +188,7 @@ fun ConnectionsScreen(
     // (showDesktopsScreen removed in 3c — Desktops UI moved to top-level Desktop tab.)
     val profileStatuses by viewModel.profileStatuses.collectAsState()
     val mcpExposure by viewModel.mcpExposure.collectAsState()
+    val agentActiveProfiles by viewModel.agentActiveProfiles.collectAsState()
     val sessions by viewModel.sessions.collectAsState()
 
     // Derive profile colors matching terminal tab colors (by session registration order)
@@ -1182,6 +1183,8 @@ fun ConnectionsScreen(
                                     isLastChild = false,
                                     profileStatuses = profileStatuses,
                                     mcpExposure = mcpExposure,
+                                    agentActiveProfiles = agentActiveProfiles,
+                                    onToggleMcp = { enabled -> viewModel.toggleMcpEnabled(profile.id, enabled) },
                                     profileColors = profileColors,
                                     isConnecting = connectingProfileId == profile.id ||
                                         groupLaunchState?.connectingIds?.contains(profile.id) == true,
@@ -1286,6 +1289,8 @@ fun ConnectionsScreen(
                                         isLastChild = isLastAtLevel,
                                         profileStatuses = profileStatuses,
                                         mcpExposure = mcpExposure,
+                                        agentActiveProfiles = agentActiveProfiles,
+                                        onToggleMcp = { enabled -> viewModel.toggleMcpEnabled(dep.id, enabled) },
                                         profileColors = profileColors,
                                         isConnecting = connectingProfileId == dep.id ||
                                             groupLaunchState?.connectingIds?.contains(dep.id) == true,
@@ -1428,6 +1433,8 @@ private fun ConnectionTreeItem(
     isLastChild: Boolean,
     profileStatuses: Map<String, ProfileStatus>,
     mcpExposure: Map<String, McpExposureKind>,
+    agentActiveProfiles: Map<String, Long>,
+    onToggleMcp: (Boolean) -> Unit,
     profileColors: Map<String, Color>,
     isConnecting: Boolean,
     hasKeys: Boolean,
@@ -1623,31 +1630,40 @@ private fun ConnectionTreeItem(
                         )
                     }
                 },
-                trailingContent = mcpExposureKind?.let { kind ->
-                    {
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         // MCP-exposure badge: this connection serves Haven's MCP to
                         // all its sessions. Filled = always-on (headless endpoint);
                         // outlined = per-connection (rides interactive sessions).
-                        val headless = kind == McpExposureKind.HEADLESS
-                        AssistChip(
-                            onClick = onEdit,
-                            label = { Text(stringResource(R.string.connections_mcp_badge)) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Filled.Cable,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                )
-                            },
-                            colors = if (headless) {
-                                AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            } else {
-                                AssistChipDefaults.assistChipColors()
-                            },
+                        mcpExposureKind?.let { kind ->
+                            val headless = kind == McpExposureKind.HEADLESS
+                            AssistChip(
+                                onClick = onEdit,
+                                label = { Text(stringResource(R.string.connections_mcp_badge)) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Cable,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                    )
+                                },
+                                colors = if (headless) {
+                                    AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                } else {
+                                    AssistChipDefaults.assistChipColors()
+                                },
+                            )
+                        }
+                        // Per-connection MCP indicator: glows red-eyed while the agent is
+                        // operating on this connection; tap to disable/enable MCP for it.
+                        ConnectionMcpIndicator(
+                            lastActiveAt = agentActiveProfiles[profile.id],
+                            mcpEnabled = profile.mcpEnabled,
+                            onToggle = { onToggleMcp(!profile.mcpEnabled) },
                         )
                     }
                 },

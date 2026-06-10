@@ -46,7 +46,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         MailRuleFiring::class,
         MailRulePendingAction::class,
     ],
-    version = 64,
+    version = 65,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -1082,6 +1082,13 @@ abstract class HavenDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /** Per-connection MCP/agent enable flag (default 1 = current behaviour). */
+        val MIGRATION_64_65 = object : Migration(64, 65) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "connection_profiles", "mcpEnabled", "INTEGER NOT NULL DEFAULT 1")
             }
         }
 
