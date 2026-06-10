@@ -1,0 +1,1 @@
+Mail: the folder list now recognises special folders on Gmail/IMAP accounts — Inbox, Starred, Sent, Drafts, Spam, Trash — showing each with its own icon and sorting them to the top, with your own labels below. It also stops listing (and crashing on) Gmail's non-openable "[Gmail]" container.
