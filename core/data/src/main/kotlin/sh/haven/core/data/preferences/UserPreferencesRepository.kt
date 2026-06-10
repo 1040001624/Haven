@@ -52,6 +52,7 @@ class UserPreferencesRepository @Inject constructor(
     private val keepScreenOnInTerminalKey = booleanPreferencesKey("keep_screen_on_in_terminal")
     private val connectionLoggingEnabledKey = booleanPreferencesKey("connection_logging_enabled")
     private val mailAutomationEnabledKey = booleanPreferencesKey("mail_automation_enabled")
+    private val mailDeleteToBinKey = booleanPreferencesKey("mail_delete_to_bin")
     private val alwaysShowAllTabsKey = booleanPreferencesKey("always_show_all_tabs")
     private val usbGuestExposureEnabledKey = booleanPreferencesKey("usb_guest_exposure_enabled")
     private val verboseLoggingEnabledKey = booleanPreferencesKey("verbose_logging_enabled")
@@ -216,6 +217,21 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setMailAutomationEnabled(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[mailAutomationEnabledKey] = enabled
+        }
+    }
+
+    /**
+     * Whether deleting an email moves it to the Bin/Trash folder (recoverable) rather than
+     * expunging it. On by default. On Gmail a plain delete already lands in Trash; this
+     * matters most for plain IMAP servers where an expunge is permanent.
+     */
+    val mailDeleteToBin: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[mailDeleteToBinKey] ?: true
+    }
+
+    suspend fun setMailDeleteToBin(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[mailDeleteToBinKey] = enabled
         }
     }
 

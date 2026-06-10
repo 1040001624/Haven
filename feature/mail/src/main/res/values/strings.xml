@@ -49,4 +49,6 @@
     <string name="mail_selection_count">%1$d selected</string>
     <string name="mail_delete_selection_title">Delete messages?</string>
     <string name="mail_delete_selection_message">Delete %1$d message(s)? On Gmail they move to Trash.</string>
+    <string name="mail_more">More options</string>
+    <string name="mail_delete_to_bin">Move deleted to Bin</string>
 </resources>

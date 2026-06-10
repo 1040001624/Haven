@@ -27,6 +27,9 @@ interface MailBackend {
 
     /** Delete [messageId]. On Gmail this moves it to Trash (recoverable); plain IMAP is permanent. */
     suspend fun deleteMessage(messageId: String)
+
+    /** Move [messageId] to [destFolderId] (used for the recoverable "move to Bin" delete). */
+    suspend fun moveMessage(messageId: String, destFolderId: String)
 }
 
 /** A decrypted, MIME-parsed message ready for the reader UI. */

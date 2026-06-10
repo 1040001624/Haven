@@ -59,4 +59,11 @@ class RfcMailBackend(
             connectionLog.logEvent(profileId, ConnectionLog.Status.CONNECTED, details = "Deleted 1 message")
         }
     }
+
+    override suspend fun moveMessage(messageId: String, destFolderId: String) {
+        client.moveMessage(sessionId, messageId, destFolderId)
+        runCatching {
+            connectionLog.logEvent(profileId, ConnectionLog.Status.CONNECTED, details = "Moved 1 message to $destFolderId")
+        }
+    }
 }

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Save
@@ -253,6 +254,26 @@ fun MailScreen(
                             if (ui.canCompose) {
                                 IconButton(onClick = viewModel::startCompose) {
                                     Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.mail_compose))
+                                }
+                            }
+                            if (ui.activeAccount != null) {
+                                var menuOpen by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.mail_more))
+                                    }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.mail_delete_to_bin)) },
+                                            trailingIcon = {
+                                                if (ui.deleteToBin) Icon(Icons.Filled.Check, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                viewModel.setDeleteToBin(!ui.deleteToBin)
+                                                menuOpen = false
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
