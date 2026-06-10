@@ -88,6 +88,8 @@ internal class McpTools(
     private val connectionLogRepository: sh.haven.core.data.repository.ConnectionLogRepository,
     private val servedFileTracker: sh.haven.core.data.agent.ServedFileTracker,
     private val syncProfileRepository: sh.haven.core.data.repository.SyncProfileRepository,
+    private val mailRuleRepository: sh.haven.core.data.repository.MailRuleRepository,
+    private val mailWatchManager: sh.haven.app.agent.mailrules.MailWatchManager,
     private val terminalInputQueue: TerminalInputQueue,
     private val prootInstallLogRepository: sh.haven.core.data.repository.ProotInstallLogRepository,
     private val sshKeyRepository: sh.haven.core.data.repository.SshKeyRepository,
@@ -211,6 +213,61 @@ internal class McpTools(
             description = "List rclone cloud storage remotes configured in Haven.",
             inputSchema = emptyObjectSchema(),
         ) { _ -> listRcloneRemotes() },
+
+        "list_mail_rules" to ToolHandler(
+            description = "List inbound-email automation rules (Mail Rules). Returns each rule's id, name, enabled, orderIndex, accountProfileId (null=any), folderId, criteria, actions, lastFiredAt. Read-only.",
+            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            consentLevel = ConsentLevel.NEVER,
+        ) { listMailRules() },
+
+        "create_mail_rule" to ToolHandler(
+            description = "Create an inbound-email automation rule: when a message in folderId (default INBOX) of accountProfileId (omit = any connected email account) matches `criteria`, run the ordered `actions`. criteria = {combinator:\"ALL\"|\"ANY\", conditions:[{type, op, value}]} where type is from|to|subject|is_unread|body|has_attachment|attachment_name|attachment_mime|header and op is CONTAINS|EQUALS|REGEX|GLOB. actions = an ordered array of {type, …}: save_attachments{destProfileId,destDir,nameGlob?,mimeGlob?} | run_command{template,background?} | send_to_agent{messageTemplate,targetSessionId?} | notify{titleTemplate,bodyTemplate} | imap_filter{op: MARK_READ|MARK_UNREAD|SET_FLAGGED|UNSET_FLAGGED|MOVE|DELETE, destFolderId?} | forward{to[],template?} | invoke_mcp_tool{toolName,argsTemplateJson}. Templates may use {from} {fromName} {subject} {to} {uid}. Creating + enabling a rule is your standing authorization for its actions (they fire without a per-call prompt); destructive actions (move/delete/forward/run-command, or a non-NEVER MCP tool) are queued for foreground approval when Haven is backgrounded. Turn the master switch on with set_preference mail_automation_enabled=true.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("name", JSONObject().apply { put("type", "string"); put("description", "Human label for the rule.") })
+                    put("accountProfileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL profile id to watch; omit for any connected email account.") })
+                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder to watch (default INBOX).") })
+                    put("criteria", JSONObject().apply { put("type", "object"); put("description", "{combinator, conditions:[…]} — see the tool description.") })
+                    put("actions", JSONObject().apply { put("type", "array"); put("description", "Ordered actions — see the tool description.") })
+                    put("enabled", JSONObject().apply { put("type", "boolean"); put("description", "Default true.") })
+                    put("orderIndex", JSONObject().apply { put("type", "integer"); put("description", "Evaluation order; lower runs first.") })
+                    put("stopOnMatch", JSONObject().apply { put("type", "boolean"); put("description", "Stop evaluating later rules when this one matches.") })
+                    put("notifyOnFire", JSONObject().apply { put("type", "boolean"); put("description", "Raise a notification each time the rule fires.") })
+                })
+                put("required", JSONArray().put("name").put("criteria").put("actions"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Create mail rule \"${args.optString("name")}\" (grants standing authorization for its actions)?" },
+        ) { args -> createMailRule(args) },
+
+        "delete_mail_rule" to ToolHandler(
+            description = "Delete a Mail Rule by id (see list_mail_rules).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("id", JSONObject().apply { put("type", "string"); put("description", "Rule id from list_mail_rules.") })
+                })
+                put("required", JSONArray().put("id"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args -> "Delete mail rule ${args.optString("id")}?" },
+        ) { args -> deleteMailRule(args) },
+
+        "get_mail_automation_status" to ToolHandler(
+            description = "Mail-Rules automation status: master switch, rule counts, recent firings (the audit log), and destructive actions queued for foreground approval. Read-only.",
+            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            consentLevel = ConsentLevel.NEVER,
+        ) { getMailAutomationStatus() },
+
+        "poke_mail_watch" to ToolHandler(
+            description = "Force a Mail-Rules poll cycle now instead of waiting for the periodic timer (for testing/immediacy). No-op when the master switch is off. Returns { poked }.",
+            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            consentLevel = ConsentLevel.NEVER,
+        ) {
+            mailWatchManager.pokeNow()
+            JSONObject().put("poked", true)
+        },
 
         "list_mail_folders" to ToolHandler(
             description = "List folders/labels for a connected EMAIL (ProtonMail) profile. Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, and type. Read-only.",
@@ -2932,6 +2989,107 @@ internal class McpTools(
     private fun mailClientFor(sessionId: String): sh.haven.core.mail.MailClient =
         mailSessionManager.clientForSession(sessionId)
             ?: throw McpError(-32603, "Session $sessionId has no registered mail engine.")
+
+    // --- Mail Rules (inbound-email automation) ---
+
+    private suspend fun listMailRules(): JSONObject {
+        val rules = mailRuleRepository.observeRules().first()
+        return JSONObject().apply {
+            put("count", rules.size)
+            put("rules", JSONArray().apply {
+                rules.forEach { r ->
+                    put(JSONObject().apply {
+                        put("id", r.id)
+                        put("name", r.name)
+                        put("enabled", r.enabled)
+                        put("orderIndex", r.orderIndex)
+                        put("accountProfileId", r.accountProfileId ?: JSONObject.NULL)
+                        put("folderId", r.folderId)
+                        put("stopOnMatch", r.stopOnMatch)
+                        put("notifyOnFire", r.notifyOnFire)
+                        put("criteria", JSONObject(r.criteriaJson))
+                        put("actions", JSONArray(r.actionsJson))
+                        put("lastFiredAt", r.lastFiredAt ?: JSONObject.NULL)
+                    })
+                }
+            })
+        }
+    }
+
+    private suspend fun createMailRule(args: JSONObject): JSONObject {
+        val name = args.optString("name").ifBlank { throw McpError(-32602, "Missing required argument: name") }
+        val criteria = args.optJSONObject("criteria") ?: throw McpError(-32602, "Missing required argument: criteria")
+        val actions = args.optJSONArray("actions") ?: throw McpError(-32602, "Missing required argument: actions")
+        // Validate by round-tripping through the parser; reject empty/unrecognised input.
+        val parsedCriteria = runCatching { sh.haven.core.data.mailrule.MailRuleJson.criteriaFromJson(criteria.toString()) }
+            .getOrElse { throw McpError(-32602, "Invalid criteria: ${it.message}") }
+        if (parsedCriteria.conditions.isEmpty()) throw McpError(-32602, "criteria has no recognised conditions")
+        val parsedActions = runCatching { sh.haven.core.data.mailrule.MailRuleJson.actionsFromJson(actions.toString()) }
+            .getOrElse { throw McpError(-32602, "Invalid actions: ${it.message}") }
+        if (parsedActions.isEmpty()) throw McpError(-32602, "actions is empty or has no recognised entries")
+
+        val rule = sh.haven.core.data.db.entities.MailRule(
+            name = name,
+            enabled = args.optBoolean("enabled", true),
+            orderIndex = args.optInt("orderIndex", 0),
+            accountProfileId = args.optString("accountProfileId").ifBlank { null },
+            folderId = args.optString("folderId").ifBlank { "INBOX" },
+            criteriaJson = criteria.toString(),
+            actionsJson = actions.toString(),
+            stopOnMatch = args.optBoolean("stopOnMatch", false),
+            notifyOnFire = args.optBoolean("notifyOnFire", false),
+        )
+        mailRuleRepository.saveRule(rule)
+        return JSONObject().apply {
+            put("created", true)
+            put("id", rule.id)
+            put("conditions", parsedCriteria.conditions.size)
+            put("actions", parsedActions.size)
+            put("masterEnabled", preferencesRepository.mailAutomationEnabled.first())
+        }
+    }
+
+    private suspend fun deleteMailRule(args: JSONObject): JSONObject {
+        val id = args.optString("id").ifBlank { throw McpError(-32602, "Missing required argument: id") }
+        val existed = mailRuleRepository.getRule(id) != null
+        mailRuleRepository.deleteRule(id)
+        return JSONObject().put("deleted", existed).put("id", id)
+    }
+
+    private suspend fun getMailAutomationStatus(): JSONObject {
+        val rules = mailRuleRepository.observeRules().first()
+        val firings = mailRuleRepository.recentFirings(50)
+        val pending = mailRuleRepository.pendingActions()
+        return JSONObject().apply {
+            put("masterEnabled", preferencesRepository.mailAutomationEnabled.first())
+            put("ruleCount", rules.size)
+            put("enabledRuleCount", rules.count { it.enabled })
+            put("recentFirings", JSONArray().apply {
+                firings.forEach { f ->
+                    put(JSONObject().apply {
+                        put("ruleId", f.ruleId ?: JSONObject.NULL)
+                        put("kind", f.kind)
+                        put("profileId", f.profileId)
+                        put("folderId", f.folderId)
+                        put("uid", f.uid)
+                        put("subject", f.messageSubject ?: JSONObject.NULL)
+                        put("firedAt", f.firedAt)
+                        put("outcome", f.outcomeSummary ?: JSONObject.NULL)
+                    })
+                }
+            })
+            put("pendingActions", JSONArray().apply {
+                pending.forEach { p ->
+                    put(JSONObject().apply {
+                        put("id", p.id)
+                        put("ruleId", p.ruleId)
+                        put("subject", p.messageSubject ?: JSONObject.NULL)
+                        put("queuedAt", p.queuedAt)
+                    })
+                }
+            })
+        }
+    }
 
     private suspend fun listMailFolders(args: JSONObject): JSONObject {
         val profileId = args.optString("profileId").ifEmpty {
