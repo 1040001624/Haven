@@ -92,6 +92,14 @@ class LocalSessionManager @Inject constructor(
         useAndroidShell: Boolean = false,
         prootDistroId: String? = null,
     ): String {
+        // Reap any superseded dead shells for this profile before minting a
+        // fresh one. A local shell never reconnects, so a DISCONNECTED entry is
+        // dead forever — its only value is letting the agent read the final
+        // output, which is moot once a new shell opens on the same profile.
+        // Without this, every disconnect→reconnect (or a proot stream drop that
+        // exits the PTY via LocalSession.onExited) leaves the old DISCONNECTED
+        // session and its ring behind, piling up in list_sessions.
+        reapDeadSessionsForProfile(profileId)
         val sessionId = UUID.randomUUID().toString()
         _sessions.update { map ->
             map + (sessionId to SessionState(
@@ -104,6 +112,21 @@ class LocalSessionManager @Inject constructor(
             ))
         }
         return sessionId
+    }
+
+    /**
+     * Remove DISCONNECTED (process-exited) local sessions for [profileId] and
+     * free their agent-scrollback rings. Live (CONNECTING / CONNECTED) sessions
+     * are untouched. Called from [registerSession] so dead shells for the
+     * profile being (re)opened don't accumulate in the session list.
+     */
+    private fun reapDeadSessionsForProfile(profileId: String) {
+        val deadIds = _sessions.value.values
+            .filter { it.profileId == profileId && it.status == SessionState.Status.DISCONNECTED }
+            .map { it.sessionId }
+        if (deadIds.isEmpty()) return
+        _sessions.update { map -> map - deadIds.toSet() }
+        deadIds.forEach { agentScrollback.remove(it) }
     }
 
     /**
@@ -256,6 +279,20 @@ class LocalSessionManager @Inject constructor(
 
         val (cmd, args, env) = buildCommand(session.useAndroidShell, plain = plain, distroId = session.prootDistroId)
 
+        // Permanent agent-scope mirror of PTY stdout, wired here so EVERY local
+        // shell — UI-opened or headless — feeds the ring that
+        // read_terminal_scrollback consumes (matches SshSessionManager's
+        // permanent onMirror tee). Previously only startHeadlessShell created
+        // the ring, so a shell the user opened by tapping Terminal had no ring
+        // and the agent saw "No scrollback available".
+        val ring = agentScrollback.computeIfAbsent(sessionId) {
+            ScrollbackRing(agentScrollbackBytes)
+        }
+        val mirroredOnData: (ByteArray, Int, Int) -> Unit = { data, off, len ->
+            ring.append(data, off, len)
+            onDataReceived(data, off, len)
+        }
+
         val localSession = LocalSession(
             sessionId = sessionId,
             profileId = session.profileId,
@@ -263,7 +300,7 @@ class LocalSessionManager @Inject constructor(
             command = cmd,
             args = args,
             env = env,
-            onDataReceived = onDataReceived,
+            onDataReceived = mirroredOnData,
             onExited = { exitCode ->
                 Log.d(TAG, "Session $sessionId process exited: $exitCode")
                 // Mark DISCONNECTED and drop the dead LocalSession in one
@@ -373,14 +410,14 @@ class LocalSessionManager @Inject constructor(
     ) {
         val session = _sessions.value[sessionId] ?: return
         if (session.localSession != null) return
-        val ring = agentScrollback.computeIfAbsent(sessionId) {
-            ScrollbackRing(agentScrollbackBytes)
-        }
-        val onData: (ByteArray, Int, Int) -> Unit = { data, off, len ->
-            ring.append(data, off, len)
-            extraOnData?.invoke(data, off, len)
-        }
-        val ls = createTerminalSession(sessionId, onData, plain = plain) ?: return
+        // createTerminalSession now owns the agent-scrollback ring tee, so the
+        // headless path only forwards the optional extra tee (open_local_shell
+        // uses it to also feed an agent-side TerminalEmulator).
+        val ls = createTerminalSession(
+            sessionId,
+            onDataReceived = { data, off, len -> extraOnData?.invoke(data, off, len) },
+            plain = plain,
+        ) ?: return
         // Default to a sensible PTY size; the UI will resize once a tab
         // attaches. 80x24 keeps line wrapping predictable for an agent
         // that's about to do `printf` glyph tests.
