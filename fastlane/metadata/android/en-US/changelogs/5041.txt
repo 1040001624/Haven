@@ -1,0 +1,5 @@
+Mail Rules now have an in-app manager. Open it from the Mail screen's overflow menu (⋮) to see, create, edit, enable/disable, and delete the inbound-email automation rules that previously only the agent could manage over MCP.
+
+The manager has a master automation switch, a curated rule editor (match conditions → mark read/flag/move/delete/notify), a per-rule last-fired indicator, a firing-history log, and an approvals queue for destructive actions parked while Haven was in the background — approve to run, or reject to discard. Agent-authored rules that use advanced features open read-only so the app never alters them.
+
+The entry point lives only inside the Mail tab, so it stays out of the way if you don't use Haven for email.
