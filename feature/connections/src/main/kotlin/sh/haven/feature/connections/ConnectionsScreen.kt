@@ -1569,6 +1569,41 @@ private fun ConnectionTreeItem(
                 }
             }
 
+            // Status dot lives in the outer Row (which centres vertically — same reason
+            // the drag handle is centred) rather than ListItem.leadingContent, which
+            // Material top-aligns on three-line items, floating the dot above the row's
+            // midline when the host text wraps to two lines. Fixed-width slot so the
+            // headline doesn't shift between the 12dp dot and the 24dp connecting spinner.
+            Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+                when {
+                    isConnecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    profileStatus == ProfileStatus.RECONNECTING ->
+                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                    profileStatus == ProfileStatus.CONNECTED -> {
+                        val connectedColor = if (profile.colorTag in 1..PROFILE_COLORS.size)
+                            PROFILE_COLORS[profile.colorTag - 1] else Color(0xFF4CAF50)
+                        Icon(
+                            Icons.Filled.Circle,
+                            contentDescription = stringResource(R.string.connections_status_connected),
+                            tint = connectedColor,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                    profileStatus == ProfileStatus.ERROR -> Icon(
+                        Icons.Filled.Circle,
+                        contentDescription = stringResource(R.string.connections_status_error),
+                        tint = Color(0xFFF44336),
+                        modifier = Modifier.size(12.dp),
+                    )
+                    else -> Icon(
+                        Icons.Filled.Circle,
+                        contentDescription = stringResource(R.string.connections_status_disconnected),
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
+
             ListItem(
                 headlineContent = { Text(profile.label) },
                 supportingContent = {
@@ -1599,34 +1634,6 @@ private fun ConnectionTreeItem(
                             else -> ""
                         }
                         Text("${profile.username}@${profile.host}:${profile.port}$via")
-                    }
-                },
-                leadingContent = {
-                    when {
-                        isConnecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        profileStatus == ProfileStatus.RECONNECTING -> CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
-                        profileStatus == ProfileStatus.CONNECTED -> {
-                            val connectedColor = if (profile.colorTag in 1..PROFILE_COLORS.size)
-                                PROFILE_COLORS[profile.colorTag - 1] else Color(0xFF4CAF50)
-                            Icon(
-                                Icons.Filled.Circle,
-                                contentDescription = stringResource(R.string.connections_status_connected),
-                                tint = connectedColor,
-                                modifier = Modifier.size(12.dp),
-                            )
-                        }
-                        profileStatus == ProfileStatus.ERROR -> Icon(
-                            Icons.Filled.Circle,
-                            contentDescription = stringResource(R.string.connections_status_error),
-                            tint = Color(0xFFF44336),
-                            modifier = Modifier.size(12.dp),
-                        )
-                        else -> Icon(
-                            Icons.Filled.Circle,
-                            contentDescription = stringResource(R.string.connections_status_disconnected),
-                            tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(12.dp),
-                        )
                     }
                 },
                 trailingContent = {
