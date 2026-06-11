@@ -55,6 +55,19 @@ data class ConnectionConfig(
 
     sealed interface AuthMethod {
         /**
+         * True if a FIDO2 SK key appears anywhere in this method, including
+         * inside a [Multi] chain. A profile that lists several security keys
+         * is a `Multi([FidoKey, …])`, so a plain `is FidoKey` check misses it
+         * and the auth-failure UX wrongly offers a password fallback even when
+         * the server is publickey-only (#237).
+         */
+        fun containsFidoKey(): Boolean = when (this) {
+            is FidoKey -> true
+            is Multi -> methods.any { it.containsFidoKey() }
+            else -> false
+        }
+
+        /**
          * Several auth methods presented together in one connect attempt,
          * in [methods] order, so a server requiring a multi-factor chain
          * (e.g. `AuthenticationMethods publickey,password`) can complete it

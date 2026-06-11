@@ -2235,7 +2235,7 @@ class ConnectionsViewModel @Inject constructor(
                         sshSessionManager.storeConnectionConfig(sessionId, config, sshSessionMgr, cmdOverride, profile.postLoginCommand, profile.postLoginBeforeSessionManager)
                     } else {
                         val authMethod = resolveAuthMethods(profile, password)
-                        isFidoAuth = authMethod is ConnectionConfig.AuthMethod.FidoKey
+                        isFidoAuth = authMethod.containsFidoKey()
                         val config = ConnectionConfig(
                             host = profile.host,
                             port = profile.port,
