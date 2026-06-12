@@ -98,6 +98,8 @@ internal class McpTools(
     private val desktopSessionRegistry: sh.haven.core.data.desktop.DesktopSessionRegistry,
     private val usbBroker: sh.haven.core.usb.UsbBroker,
     private val presentationManager: sh.haven.core.data.agent.AgentPresentationManager,
+    // Capture + drive Haven's OWN rendered UI for the self-hosting loop (§1a).
+    private val havenUiBridge: HavenUiBridge,
     private val mcpTunnelManager: McpTunnelManager,
     /**
      * The MCP HTTP server's live bound port. Evaluated lazily so the
@@ -1872,6 +1874,68 @@ internal class McpTools(
                 "Let the agent see what $who is rendering"
             },
         ) { args -> captureDesktopTab(args) },
+
+        "capture_haven_ui" to ToolHandler(
+            description = "Capture HAVEN'S OWN rendered screen — the app UI the user is looking at right now (Connections list, terminal tab, a dialog, the file browser, an agent overlay), NOT a remote desktop (capture_desktop_tab) or the terminal text (read_terminal_snapshot). This is the 'perceive' half of the self-hosting loop: after install_apk_from_backend deploys a build, capture_haven_ui lets the agent see the result and diff it. Returns the image plus { width, height, imageWidth, imageHeight, format }. width/height are the FULL window in pixels — pass tap_haven_ui / swipe_haven_ui coordinates in THAT space even when the returned image was downscaled via maxWidth. If Settings → screen security (FLAG_SECURE) is on, returns { secure: true } with no image (capture is intentionally blocked). Errors if Haven is not in the foreground.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("maxWidth", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Downscale so the returned image is at most this many pixels wide (the reported width/height stay full-window). Default 1080 (clamped 160–4096).")
+                    })
+                    put("format", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
+                    })
+                })
+            },
+            // A screen capture is a "let the agent SEE Haven's screen" act,
+            // matching capture_desktop_tab — ONCE_PER_SESSION, not NEVER,
+            // because Haven's own UI can show credentials/keys. Loopback /
+            // paired clients bypass per the standard consent model.
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { _ -> "Let the agent see Haven's own screen" },
+        ) { args -> captureHavenUi(args) },
+
+        "tap_haven_ui" to ToolHandler(
+            description = "Inject a tap (or, with holdMs > 0, a press-and-hold) into HAVEN'S OWN UI at window-pixel (x, y) — the same coordinate space capture_haven_ui reports in its width/height. This is the 'drive' half of the self-hosting loop: read a control's position from a capture_haven_ui image, then tap it. Drives the real touch pipeline (Compose clickables, nav tabs, dialog buttons). Refused while a consent prompt is showing (so an injected tap can't self-confirm) and when Haven is not foreground. Returns { delivered, reason?, x, y, holdMs }. Verify the effect with a follow-up capture_haven_ui.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("x", JSONObject().apply { put("type", "integer"); put("description", "Window-pixel X (0..width from capture_haven_ui).") })
+                    put("y", JSONObject().apply { put("type", "integer"); put("description", "Window-pixel Y (0..height from capture_haven_ui).") })
+                    put("holdMs", JSONObject().apply { put("type", "integer"); put("description", "Press-and-hold duration. 0 (default) = a quick tap; >~500 triggers a long-press. Clamped 0–10000.") })
+                })
+                put("required", JSONArray().put("x").put("y"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val hold = args.optLong("holdMs", 0L)
+                val verb = if (hold > 0) "Press-and-hold (${hold}ms)" else "Tap"
+                "$verb Haven's own UI at (${args.optInt("x")}, ${args.optInt("y")})?"
+            },
+        ) { args -> tapHavenUi(args) },
+
+        "swipe_haven_ui" to ToolHandler(
+            description = "Inject a swipe/drag into HAVEN'S OWN UI from (fromX, fromY) to (toX, toY) in window pixels (the coordinate space capture_haven_ui reports), over durationMs split into N steps. Drives pager flings (swipe between Connections/Terminal/Files tabs), list scrolls, and bottom-sheet drags. Refused while a consent prompt is showing and when Haven is not foreground. Returns { delivered, reason?, fromX, fromY, toX, toY, durationMs, steps }. Verify with capture_haven_ui.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("fromX", JSONObject().apply { put("type", "integer"); put("description", "Start X (window px).") })
+                    put("fromY", JSONObject().apply { put("type", "integer"); put("description", "Start Y (window px).") })
+                    put("toX", JSONObject().apply { put("type", "integer"); put("description", "End X (window px).") })
+                    put("toY", JSONObject().apply { put("type", "integer"); put("description", "End Y (window px).") })
+                    put("durationMs", JSONObject().apply { put("type", "integer"); put("description", "Total swipe time. Default 200 (clamped 1–10000). Longer = slower drag (less fling momentum).") })
+                    put("steps", JSONObject().apply { put("type", "integer"); put("description", "ACTION_MOVE events between down and up. Default 16 (clamped 1–200).") })
+                })
+                put("required", JSONArray().put("fromX").put("fromY").put("toX").put("toY"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                "Swipe Haven's own UI (${args.optInt("fromX")}, ${args.optInt("fromY")}) → (${args.optInt("toX")}, ${args.optInt("toY")})?"
+            },
+        ) { args -> swipeHavenUi(args) },
 
         "launch_app_in_desktop" to ToolHandler(
             description = "Launch a GUI application into a RUNNING X11/VNC desktop (deId), with DISPLAY/XAUTHORITY/HOME and the software-GL fallback (LIBGL_ALWAYS_SOFTWARE=1, GALLIUM_DRIVER=llvmpipe) already exported so GPU-less GL apps like KiCad/eeschema don't crash their canvas. Optionally waits for the app's window to appear and returns its windowId — pass that to capture_desktop to screenshot just that window. The app keeps running after this returns. For looking at saved design FILES prefer view_file (headless, no desktop needed); use this when you need the live interactive app.",
@@ -8077,6 +8141,107 @@ internal class McpTools(
             put("__imageBase64", b64)
             put("__mimeType", if (format == "jpeg") "image/jpeg" else "image/png")
         }
+    }
+
+    /**
+     * Capture Haven's OWN rendered UI via [HavenUiBridge], encode it inline
+     * as an image, and report the FULL window dimensions so a follow-up
+     * tap_haven_ui / swipe_haven_ui lands in the same pixel space (even when
+     * the returned image was downscaled). Maps the bridge's secure /
+     * no-foreground outcomes to an honest signal rather than a black frame.
+     */
+    private suspend fun captureHavenUi(args: JSONObject): JSONObject {
+        val maxWidth = args.optInt("maxWidth", 1080).coerceIn(160, 4096)
+        val format = if (args.optString("format", "jpeg").lowercase() == "png") "png" else "jpeg"
+        return when (val result = havenUiBridge.captureScreen()) {
+            is HavenUiBridge.CaptureResult.Ok -> {
+                val (b64, iw, ih) = withContext(Dispatchers.Default) {
+                    encodeBitmapScaled(result.bitmap, maxWidth, format)
+                }
+                result.bitmap.recycle()
+                JSONObject().apply {
+                    // Full window pixels — the coordinate space for tap_haven_ui.
+                    put("width", result.width)
+                    put("height", result.height)
+                    // Dimensions of the (possibly downscaled) returned image.
+                    put("imageWidth", iw)
+                    put("imageHeight", ih)
+                    put("format", format)
+                    // Reserved keys: McpServer lifts these into an MCP image content block.
+                    put("__imageBase64", b64)
+                    put("__mimeType", if (format == "jpeg") "image/jpeg" else "image/png")
+                }
+            }
+            HavenUiBridge.CaptureResult.Secure -> JSONObject().apply {
+                put("secure", true)
+                put(
+                    "message",
+                    "Screen security (FLAG_SECURE) is on — Haven's own UI cannot be captured. " +
+                        "Turn off Settings → screen security to allow it.",
+                )
+            }
+            is HavenUiBridge.CaptureResult.NoForeground -> throw McpError(-32603, result.reason)
+            is HavenUiBridge.CaptureResult.Failed -> throw McpError(-32603, result.reason)
+        }
+    }
+
+    private suspend fun tapHavenUi(args: JSONObject): JSONObject {
+        val x = requireIntArg(args, "x")
+        val y = requireIntArg(args, "y")
+        val holdMs = args.optLong("holdMs", 0L).coerceIn(0L, 10_000L)
+        return injectResultJson(havenUiBridge.dispatchTap(x, y, holdMs)).apply {
+            put("x", x); put("y", y); put("holdMs", holdMs)
+        }
+    }
+
+    private suspend fun swipeHavenUi(args: JSONObject): JSONObject {
+        val fromX = requireIntArg(args, "fromX")
+        val fromY = requireIntArg(args, "fromY")
+        val toX = requireIntArg(args, "toX")
+        val toY = requireIntArg(args, "toY")
+        val durationMs = args.optLong("durationMs", 200L).coerceIn(1L, 10_000L)
+        val steps = args.optInt("steps", 16).coerceIn(1, 200)
+        val result = havenUiBridge.dispatchSwipe(fromX, fromY, toX, toY, durationMs, steps)
+        return injectResultJson(result).apply {
+            put("fromX", fromX); put("fromY", fromY); put("toX", toX); put("toY", toY)
+            put("durationMs", durationMs); put("steps", steps)
+        }
+    }
+
+    private fun injectResultJson(result: HavenUiBridge.InjectResult): JSONObject = JSONObject().apply {
+        when (result) {
+            HavenUiBridge.InjectResult.Delivered -> put("delivered", true)
+            is HavenUiBridge.InjectResult.Refused -> {
+                put("delivered", false)
+                put("reason", result.reason)
+            }
+        }
+    }
+
+    private fun requireIntArg(args: JSONObject, name: String): Int {
+        if (!args.has(name)) throw McpError(-32602, "$name is required")
+        return args.optInt(name)
+    }
+
+    /**
+     * Scale [bmp] so its width is at most [maxWidth] (aspect-preserving),
+     * encode to [format] ("jpeg"/"png"), and return (base64, width, height).
+     * A copy is made only when downscaling; the scratch copy is recycled,
+     * the caller's [bmp] is never touched.
+     */
+    private fun encodeBitmapScaled(bmp: Bitmap, maxWidth: Int, format: String): Triple<String, Int, Int> {
+        val out = if (maxWidth in 1 until bmp.width) {
+            val nh = (bmp.height.toFloat() * maxWidth / bmp.width).toInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(bmp, maxWidth, nh, true)
+        } else {
+            bmp
+        }
+        val baos = java.io.ByteArrayOutputStream()
+        if (format == "jpeg") out.compress(Bitmap.CompressFormat.JPEG, 75, baos)
+        else out.compress(Bitmap.CompressFormat.PNG, 100, baos)
+        val result = Triple(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP), out.width, out.height)
+        if (out !== bmp) out.recycle()
+        return result
     }
 
     /**

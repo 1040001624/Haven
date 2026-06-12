@@ -162,6 +162,9 @@ class McpServer @Inject constructor(
     private val presentationManager: sh.haven.core.data.agent.AgentPresentationManager,
     private val mcpStatusHolder: sh.haven.core.data.agent.McpStatusHolder,
     private val mcpTunnelManager: McpTunnelManager,
+    // Capture + drive Haven's OWN rendered UI (self-hosting loop, §1a).
+    // Registered with the foreground activity by MainActivity.onResume.
+    private val havenUiBridge: HavenUiBridge,
 ) : Closeable {
 
     /**
@@ -345,6 +348,7 @@ class McpServer @Inject constructor(
         desktopSessionRegistry = desktopSessionRegistry,
         usbBroker = usbBroker,
         presentationManager = presentationManager,
+        havenUiBridge = havenUiBridge,
         mcpTunnelManager = mcpTunnelManager,
         mcpPortProvider = { port },
     )

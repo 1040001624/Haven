@@ -101,6 +101,10 @@ class MainActivity : AppCompatActivity() {
     // the overlay→PiP→overlay round-trip.
     @Inject lateinit var pipController: PipController
     @Inject lateinit var appWindowConnectionStore: AppWindowConnectionStore
+    // Lets the MCP agent endpoint capture and drive Haven's own UI
+    // (self-hosting loop, §1a). Holds a weak ref to the foreground
+    // activity; attach/detach mirror fidoAuthenticator's lifecycle.
+    @Inject lateinit var havenUiBridge: sh.haven.app.agent.HavenUiBridge
 
     private fun exitIfDisconnected() {
         if (SshConnectionService.disconnectedAll) {
@@ -116,12 +120,14 @@ class MainActivity : AppCompatActivity() {
         fidoAuthenticator.setActiveActivity(this)
         agentConsentManager.setForegroundActive(true)
         biometricGate.setForegroundActive(true)
+        havenUiBridge.attach(this)
     }
 
     override fun onPause() {
         fidoAuthenticator.clearActiveActivity(this)
         agentConsentManager.setForegroundActive(false)
         biometricGate.setForegroundActive(false)
+        havenUiBridge.detach(this)
         super.onPause()
     }
 
