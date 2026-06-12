@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Radar
@@ -3226,8 +3227,13 @@ fun ConnectionEditDialog(
                             // read them (list_connections, audit labels) stay
                             // correct.
                             authMethods = authMethodsText,
+                            // Reflect a key in the legacy authType when ANY method
+                            // is a key (not just the first) — a [Password, Key]
+                            // chain previously reported authType=PASSWORD/keyId=null,
+                            // hiding the pinned key from list_connections and the
+                            // legacy resolve path.
                             authType = if (ConnectionProfile.AuthMethodSpec.parseList(authMethodsText)
-                                    .firstOrNull() is ConnectionProfile.AuthMethodSpec.Key
+                                    .any { it is ConnectionProfile.AuthMethodSpec.Key }
                             ) ConnectionProfile.AuthType.KEY else ConnectionProfile.AuthType.PASSWORD,
                             keyId = ConnectionProfile.AuthMethodSpec.parseList(authMethodsText)
                                 .filterIsInstance<ConnectionProfile.AuthMethodSpec.Key>()
@@ -3625,6 +3631,19 @@ private fun AuthMethodsEditor(
                                     },
                                 )
                             }
+                            // One-tap exclusivity: clear the other methods so
+                            // ONLY this key is offered (e.g. require a YubiKey).
+                            // Only meaningful when there's more than one method.
+                            if (specs.size > 1) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.connections_auth_key_only)) },
+                                    onClick = {
+                                        emit(listOf(spec))
+                                        expanded = false
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -3682,29 +3701,57 @@ private fun AuthMethodsEditor(
     }
 
     var addExpanded by remember { mutableStateOf(false) }
+    // When the user picks "SSH key", switch the same menu to a key picker so
+    // they choose WHICH key in one gesture, instead of dropping a generic
+    // "Any" row they then have to tap again.
+    var addKeyPicker by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { addExpanded = true }) {
+        TextButton(onClick = { addKeyPicker = false; addExpanded = true }) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(4.dp))
             Text(stringResource(R.string.connections_auth_add_method))
         }
-        DropdownMenu(expanded = addExpanded, onDismissRequest = { addExpanded = false }) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.common_password)) },
-                onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.Password); addExpanded = false },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.connections_auth_method_ssh_key)) },
-                onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.Key(null)); addExpanded = false },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.connections_auth_method_keyboard_interactive)) },
-                onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.KeyboardInteractive); addExpanded = false },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.connections_auth_method_totp)) },
-                onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.Totp(null)); addExpanded = false },
-            )
+        DropdownMenu(
+            expanded = addExpanded,
+            onDismissRequest = { addExpanded = false; addKeyPicker = false },
+        ) {
+            if (!addKeyPicker) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.common_password)) },
+                    onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.Password); addExpanded = false },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_auth_method_ssh_key)) },
+                    trailingIcon = { Icon(Icons.Default.KeyboardArrowRight, contentDescription = null) },
+                    onClick = { addKeyPicker = true },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_auth_method_keyboard_interactive)) },
+                    onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.KeyboardInteractive); addExpanded = false },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_auth_method_totp)) },
+                    onClick = { emit(specs + ConnectionProfile.AuthMethodSpec.Totp(null)); addExpanded = false },
+                )
+            } else {
+                // Step 2: choose which key (or "Any saved key") to add.
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_auth_key_any_menu)) },
+                    onClick = {
+                        emit(specs + ConnectionProfile.AuthMethodSpec.Key(null))
+                        addExpanded = false; addKeyPicker = false
+                    },
+                )
+                sshKeys.forEach { key ->
+                    DropdownMenuItem(
+                        text = { Text(key.label) },
+                        onClick = {
+                            emit(specs + ConnectionProfile.AuthMethodSpec.Key(key.id))
+                            addExpanded = false; addKeyPicker = false
+                        },
+                    )
+                }
+            }
         }
     }
 }

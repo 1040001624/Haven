@@ -490,12 +490,13 @@
 
     <!-- #210 i18n sweep: ordered multi-factor auth methods editor (#166). -->
     <string name="connections_auth_methods_title">Authentication methods</string>
-    <string name="connections_auth_methods_description">Attempted in order in a single connect — for servers that require more than one (e.g. key + password, or PAM/OTP chains).</string>
+    <string name="connections_auth_methods_description">All listed methods are offered to the server, in order — for chains that need more than one (e.g. key + password). To require just one (e.g. a YubiKey), remove the others, or use a key\'s \"Use only this key\".</string>
     <string name="connections_auth_method_keyboard_interactive">Keyboard-interactive (OTP)</string>
     <string name="connections_auth_method_ssh_key">SSH key</string>
     <string name="connections_auth_method_totp">Authenticator code (TOTP)</string>
     <string name="connections_auth_key_any">Any</string>
     <string name="connections_auth_key_picker">Key: %1$s ▾</string>
+    <string name="connections_auth_key_only">✓ Use only this key</string>
     <string name="connections_auth_key_any_menu">Any key</string>
     <string name="connections_auth_totp_any">Authenticator: any</string>
     <string name="connections_auth_totp_any_menu">Any authenticator</string>
