@@ -83,6 +83,8 @@ class McpLoopbackTrustTest {
             usbBroker = mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
             presentationManager = sh.haven.core.data.agent.AgentPresentationManager(),
             havenUiBridge = mockk(relaxed = true),
+            standingPolicyEnforcer = StandingPolicyEnforcer(mockk(relaxed = true)),
+            standingPolicyRepository = mockk(relaxed = true),
             mcpStatusHolder = sh.haven.core.data.agent.McpStatusHolder(),
             mcpTunnelManager = mockk(relaxed = true),
             reticulumSessionManager = mockk(relaxed = true),

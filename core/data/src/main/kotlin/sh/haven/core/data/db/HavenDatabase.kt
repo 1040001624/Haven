@@ -17,6 +17,7 @@ import sh.haven.core.data.db.entities.PasteQueueEntry
 import sh.haven.core.data.db.entities.PortForwardRule
 import sh.haven.core.data.db.entities.ProotInstallLog
 import sh.haven.core.data.db.entities.SshKey
+import sh.haven.core.data.db.entities.StandingPolicy
 import sh.haven.core.data.db.entities.StepCaConfig
 import sh.haven.core.data.db.entities.SyncProfile
 import sh.haven.core.data.db.entities.TotpSecret
@@ -45,8 +46,9 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         MailWatermark::class,
         MailRuleFiring::class,
         MailRulePendingAction::class,
+        StandingPolicy::class,
     ],
-    version = 65,
+    version = 66,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -68,6 +70,7 @@ abstract class HavenDatabase : RoomDatabase() {
     abstract fun mailWatermarkDao(): MailWatermarkDao
     abstract fun mailRuleFiringDao(): MailRuleFiringDao
     abstract fun mailRulePendingActionDao(): MailRulePendingActionDao
+    abstract fun standingPolicyDao(): StandingPolicyDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1089,6 +1092,28 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_64_65 = object : Migration(64, 65) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "connection_profiles", "mcpEnabled", "INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        /** Tier-3 standing policies: scoped, rate-capped, expiring no-prompt grants. */
+        val MIGRATION_65_66 = object : Migration(65, 66) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `standing_policies` (
+                        `id` TEXT NOT NULL,
+                        `clientHint` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `toolNamesJson` TEXT NOT NULL,
+                        `argConstraintsJson` TEXT,
+                        `maxCallsPerMinute` INTEGER NOT NULL,
+                        `expiresAt` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
 

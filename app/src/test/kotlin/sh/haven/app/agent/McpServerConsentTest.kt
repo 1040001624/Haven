@@ -58,6 +58,7 @@ class McpServerConsentTest {
         consentManager: AgentConsentManager = AgentConsentManager(),
         auditRecorder: AgentAuditRecorder = mockk(relaxed = true),
         pairedClients: Set<String> = setOf(testClientName),
+        standingPolicyRepository: sh.haven.core.data.repository.StandingPolicyRepository = mockk(relaxed = true),
     ): Pair<McpServer, AgentAuditRecorder> {
         val prefs = mockk<UserPreferencesRepository>(relaxed = true)
         // McpServer.handleInitialize reads this as the authoritative
@@ -101,6 +102,8 @@ class McpServerConsentTest {
             usbBroker = mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
             presentationManager = sh.haven.core.data.agent.AgentPresentationManager(),
             havenUiBridge = mockk(relaxed = true),
+            standingPolicyEnforcer = StandingPolicyEnforcer(standingPolicyRepository),
+            standingPolicyRepository = standingPolicyRepository,
             mcpStatusHolder = sh.haven.core.data.agent.McpStatusHolder(),
             mcpTunnelManager = mockk(relaxed = true),
             reticulumSessionManager = mockk(relaxed = true),
@@ -481,6 +484,8 @@ class McpServerConsentTest {
             usbBroker = mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
             presentationManager = sh.haven.core.data.agent.AgentPresentationManager(),
             havenUiBridge = mockk(relaxed = true),
+            standingPolicyEnforcer = StandingPolicyEnforcer(mockk(relaxed = true)),
+            standingPolicyRepository = mockk(relaxed = true),
             mcpStatusHolder = sh.haven.core.data.agent.McpStatusHolder(),
             mcpTunnelManager = mockk(relaxed = true),
             reticulumSessionManager = mockk(relaxed = true),
@@ -664,6 +669,74 @@ class McpServerConsentTest {
         server.pair()
         val response = server.handleJsonRpc(
             rpc("resources/read", JSONObject().put("uri", "ui://haven/screen")),
+        )
+        assertEquals(-32000, JSONObject(response).getJSONObject("error").getInt("code"))
+    }
+
+    // --- Tier-3 standing policies at the consent gate ---
+
+    private fun policyRepo(vararg policies: sh.haven.core.data.db.entities.StandingPolicy):
+        sh.haven.core.data.repository.StandingPolicyRepository {
+        val repo = mockk<sh.haven.core.data.repository.StandingPolicyRepository>(relaxed = true)
+        coEvery { repo.activePolicies(any()) } returns policies.toList()
+        return repo
+    }
+
+    private fun testPolicy(tool: String, rate: Int = 10) =
+        sh.haven.core.data.db.entities.StandingPolicy(
+            clientHint = testClientName,
+            description = "test grant",
+            toolNamesJson = """["$tool"]""",
+            maxCallsPerMinute = rate,
+            expiresAt = Long.MAX_VALUE,
+        )
+
+    @Test
+    fun `a standing policy lets a covered non-NEVER tool run without a prompt`() {
+        // foregroundActive=false would otherwise fail the prompt closed
+        // (-32000, as the first test in this file pins). With an installed
+        // policy covering the tool for this client, the gate is skipped and
+        // the handler runs (it may fail on its relaxed mocks — any error but
+        // the consent codes proves the prompt never happened).
+        val (server, _) = newServer(
+            standingPolicyRepository = policyRepo(testPolicy("disconnect_profile")),
+        )
+        server.pair()
+        val response = server.handleJsonRpc(
+            toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")),
+        )
+        val error = JSONObject(response).optJSONObject("error")
+        if (error != null) {
+            val code = error.getInt("code")
+            assertTrue(
+                "policy-covered call must not hit the consent gate, got $code: ${error.optString("message")}",
+                code != -32000 && code != -32012,
+            )
+        }
+    }
+
+    @Test
+    fun `beyond the rate ceiling calls fall back to the consent prompt`() {
+        val (server, _) = newServer(
+            standingPolicyRepository = policyRepo(testPolicy("disconnect_profile", rate = 1)),
+        )
+        server.pair()
+        // First call consumes the window…
+        server.handleJsonRpc(toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")))
+        // …second call exceeds it → prompt path → backgrounded → DENY.
+        val second = server.handleJsonRpc(
+            toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")),
+        )
+        assertEquals(-32000, JSONObject(second).getJSONObject("error").getInt("code"))
+    }
+
+    @Test
+    fun `a policy for another client does not skip the prompt`() {
+        val foreign = testPolicy("disconnect_profile").copy(clientHint = "someone-else")
+        val (server, _) = newServer(standingPolicyRepository = policyRepo(foreign))
+        server.pair()
+        val response = server.handleJsonRpc(
+            toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")),
         )
         assertEquals(-32000, JSONObject(response).getJSONObject("error").getInt("code"))
     }

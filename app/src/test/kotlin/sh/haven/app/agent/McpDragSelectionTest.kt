@@ -131,6 +131,7 @@ class McpDragSelectionTest {
             usbBroker = mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
             presentationManager = sh.haven.core.data.agent.AgentPresentationManager(),
             havenUiBridge = mockk(relaxed = true),
+            standingPolicyRepository = mockk(relaxed = true),
             mcpTunnelManager = mockk(relaxed = true),
             reticulumSessionManager = mockk(relaxed = true),
             reticulumForwardServer = mockk(relaxed = true),

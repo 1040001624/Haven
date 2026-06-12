@@ -100,6 +100,9 @@ internal class McpTools(
     private val presentationManager: sh.haven.core.data.agent.AgentPresentationManager,
     // Capture + drive Haven's OWN rendered UI for the self-hosting loop (§1a).
     private val havenUiBridge: HavenUiBridge,
+    // Tier-3 standing policies: the create/list/revoke tools persist here;
+    // enforcement happens in McpServer via StandingPolicyEnforcer.
+    private val standingPolicyRepository: sh.haven.core.data.repository.StandingPolicyRepository,
     private val mcpTunnelManager: McpTunnelManager,
     /**
      * The MCP HTTP server's live bound port. Evaluated lazily so the
@@ -1936,6 +1939,53 @@ internal class McpTools(
                 "Swipe Haven's own UI (${args.optInt("fromX")}, ${args.optInt("fromY")}) → (${args.optInt("toX")}, ${args.optInt("toY")})?"
             },
         ) { args -> swipeHavenUi(args) },
+
+        "create_standing_policy" to ToolHandler(
+            description = "Propose a Tier-3 STANDING POLICY: a scoped, rate-capped, expiring grant that lets THIS client call the listed tools without a per-call consent prompt. The user's tap on this tool's consent sheet IS the installation — the sheet spells out the full scope. Use it when a workflow needs many consented calls in a row (e.g. a tap_haven_ui/swipe_haven_ui drive-and-verify loop) so the user grants the loop once instead of per tap. toolNames must be existing tools; some can never be covered (the policy tools themselves, install_apk_*, unpair_mcp_client). argConstraints (optional) pins arguments: every key given must exactly equal the call's argument (e.g. {\"profileId\":\"<id>\"} scopes the grant to one connection). Covered calls are still written to the audit log; the rate ceiling makes extra calls fall back to normal prompts; the policy expires on its own and can be revoked any time from Haven's Agent activity screen or via revoke_standing_policy. Returns { id, expiresAt }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("description", JSONObject().apply { put("type", "string"); put("description", "Short human label for what this grant is for, shown on the consent sheet and the kill-switch list. E.g. \"Drive the UI to verify build 5.59.54\".") })
+                    put("toolNames", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().apply { put("type", "string") })
+                        put("description", "Exact tool names the policy covers.")
+                    })
+                    put("maxCallsPerMinute", JSONObject().apply { put("type", "integer"); put("description", "Rate ceiling per rolling minute (default 60, clamped 1–600). Beyond it, calls fall back to per-call prompts.") })
+                    put("expiresInMinutes", JSONObject().apply { put("type", "integer"); put("description", "Lifetime (default 60, clamped 5–1440). After expiry the policy never applies.") })
+                    put("argConstraints", JSONObject().apply { put("type", "object"); put("description", "Optional exact-match argument pins, e.g. {\"profileId\":\"abc\"}.") })
+                })
+                put("required", JSONArray().put("description").put("toolNames"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val names = args.optJSONArray("toolNames")?.let { arr ->
+                    (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+                } ?: "?"
+                val rate = args.optInt("maxCallsPerMinute", 60).coerceIn(1, 600)
+                val mins = args.optInt("expiresInMinutes", 60).coerceIn(5, 1440)
+                val pins = args.optJSONObject("argConstraints")?.toString()?.let { " pinned to $it" } ?: ""
+                "Install STANDING POLICY \"${args.optString("description")}\": allow [$names]$pins WITHOUT per-call prompts, up to $rate calls/min, for the next $mins min?"
+            },
+        ) { args -> createStandingPolicy(args) },
+
+        "list_standing_policies" to ToolHandler(
+            description = "List Tier-3 standing policies: id, client, description, covered tools, argConstraints, maxCallsPerMinute, expiresAt, remainingMinutes, enabled, active. Read-only.",
+            inputSchema = emptyObjectSchema(),
+            consentLevel = ConsentLevel.NEVER,
+        ) { _ -> listStandingPolicies() },
+
+        "revoke_standing_policy" to ToolHandler(
+            description = "Revoke (delete) a standing policy by id — see list_standing_policies. Pure privilege reduction, so no prompt; the user's kill-switch lives on the Agent activity screen.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("id", JSONObject().apply { put("type", "string"); put("description", "Policy id from list_standing_policies.") })
+                })
+                put("required", JSONArray().put("id"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> revokeStandingPolicy(args) },
 
         "launch_app_in_desktop" to ToolHandler(
             description = "Launch a GUI application into a RUNNING X11/VNC desktop (deId), with DISPLAY/XAUTHORITY/HOME and the software-GL fallback (LIBGL_ALWAYS_SOFTWARE=1, GALLIUM_DRIVER=llvmpipe) already exported so GPU-less GL apps like KiCad/eeschema don't crash their canvas. Optionally waits for the app's window to appear and returns its windowId — pass that to capture_desktop to screenshot just that window. The app keeps running after this returns. For looking at saved design FILES prefer view_file (headless, no desktop needed); use this when you need the live interactive app.",
@@ -8245,6 +8295,85 @@ internal class McpTools(
     private fun requireIntArg(args: JSONObject, name: String): Int {
         if (!args.has(name)) throw McpError(-32602, "$name is required")
         return args.optInt(name)
+    }
+
+    // --- Tier-3 standing policies (create/list/revoke; enforcement is in McpServer) ---
+
+    private suspend fun createStandingPolicy(args: JSONObject): JSONObject {
+        val client = currentClientHint?.takeIf { it.isNotBlank() }
+            ?: throw McpError(-32602, "No client identity on this call — initialize with clientInfo.name first.")
+        val description = args.optString("description").takeIf { it.isNotBlank() }
+            ?: throw McpError(-32602, "description is required")
+        val namesArr = args.optJSONArray("toolNames")
+            ?: throw McpError(-32602, "toolNames is required")
+        val toolNames = (0 until namesArr.length()).map { namesArr.optString(it) }.filter { it.isNotBlank() }
+        if (toolNames.isEmpty()) throw McpError(-32602, "toolNames must be a non-empty array of tool names")
+        toolNames.forEach { t ->
+            if (t in StandingPolicyEnforcer.NEVER_COVERABLE_TOOLS) {
+                throw McpError(-32602, "'$t' can never be covered by a standing policy (Tier-4 / policy-management tools stay per-action)")
+            }
+            if (t !in tools) {
+                throw McpError(-32602, "Unknown tool: '$t' (standing policies cover built-in tools only)")
+            }
+        }
+        val rate = args.optInt("maxCallsPerMinute", 60).coerceIn(1, 600)
+        val mins = args.optInt("expiresInMinutes", 60).coerceIn(5, 1440)
+        val constraints = args.optJSONObject("argConstraints")?.toString()
+        val policy = sh.haven.core.data.db.entities.StandingPolicy(
+            clientHint = client,
+            description = description,
+            toolNamesJson = JSONArray(toolNames).toString(),
+            argConstraintsJson = constraints,
+            maxCallsPerMinute = rate,
+            expiresAt = System.currentTimeMillis() + mins * 60_000L,
+        )
+        standingPolicyRepository.savePolicy(policy)
+        return JSONObject().apply {
+            put("id", policy.id)
+            put("clientHint", client)
+            put("toolNames", JSONArray(toolNames))
+            put("maxCallsPerMinute", rate)
+            put("expiresInMinutes", mins)
+            put("expiresAt", policy.expiresAt)
+        }
+    }
+
+    private suspend fun listStandingPolicies(): JSONObject {
+        standingPolicyRepository.purgeExpired() // lazy housekeeping
+        val now = System.currentTimeMillis()
+        val policies = standingPolicyRepository.allPolicies()
+        return JSONObject().apply {
+            put("count", policies.size)
+            put("policies", JSONArray().apply {
+                policies.forEach { p ->
+                    put(JSONObject().apply {
+                        put("id", p.id)
+                        put("clientHint", p.clientHint)
+                        put("description", p.description)
+                        runCatching { put("toolNames", JSONArray(p.toolNamesJson)) }
+                        p.argConstraintsJson?.let { c -> runCatching { put("argConstraints", JSONObject(c)) } }
+                        put("maxCallsPerMinute", p.maxCallsPerMinute)
+                        put("expiresAt", p.expiresAt)
+                        put("remainingMinutes", ((p.expiresAt - now) / 60_000L).coerceAtLeast(0))
+                        put("enabled", p.enabled)
+                        put("active", p.enabled && p.expiresAt > now)
+                    })
+                }
+            })
+        }
+    }
+
+    private suspend fun revokeStandingPolicy(args: JSONObject): JSONObject {
+        val id = args.optString("id").takeIf { it.isNotBlank() }
+            ?: throw McpError(-32602, "id is required")
+        val existing = standingPolicyRepository.getPolicy(id)
+            ?: throw McpError(-32602, "No standing policy with id '$id' (see list_standing_policies)")
+        standingPolicyRepository.deletePolicy(id)
+        return JSONObject().apply {
+            put("revoked", true)
+            put("id", id)
+            put("description", existing.description)
+        }
     }
 
     /**

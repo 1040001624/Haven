@@ -56,6 +56,7 @@ fun AgentActivityScreen(
     viewModel: AgentActivityViewModel = hiltViewModel(),
 ) {
     val events by viewModel.events.collectAsState()
+    val standingPolicies by viewModel.standingPolicies.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     var expandedId by remember { mutableStateOf<Long?>(null) }
 
@@ -82,6 +83,14 @@ fun AgentActivityScreen(
                 }
             },
         )
+
+        // Live Tier-3 standing policies — the kill-switch. Pinned above the
+        // audit list so a no-prompt grant is never out of sight while active.
+        val nowMs = System.currentTimeMillis()
+        val livePolicies = standingPolicies.filter { it.enabled && it.expiresAt > nowMs }
+        if (livePolicies.isNotEmpty()) {
+            StandingPoliciesSection(livePolicies, onRevoke = viewModel::revokePolicy)
+        }
 
         if (events.isEmpty()) {
             Box(
@@ -134,6 +143,70 @@ fun AgentActivityScreen(
                 TextButton(onClick = { showClearDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
+    }
+}
+
+/**
+ * The Tier-3 kill-switch: every live standing policy (a no-prompt grant)
+ * with its scope and a one-tap Revoke. Tinted with the error container so
+ * "an agent can act without asking right now" is visually unmissable.
+ */
+@Composable
+private fun StandingPoliciesSection(
+    policies: List<sh.haven.core.data.db.entities.StandingPolicy>,
+    onRevoke: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_standing_policies_header),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
+        )
+        policies.forEach { policy ->
+            val toolNames = remember(policy.toolNamesJson) {
+                runCatching {
+                    val arr = org.json.JSONArray(policy.toolNamesJson)
+                    (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+                }.getOrDefault(policy.toolNamesJson)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = policy.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = toolNames,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.settings_standing_policy_meta,
+                            policy.clientHint,
+                            policy.maxCallsPerMinute,
+                            DateUtils.getRelativeTimeSpanString(policy.expiresAt).toString(),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = { onRevoke(policy.id) }) {
+                    Text(stringResource(R.string.settings_standing_policy_revoke))
+                }
+            }
+        }
     }
 }
 

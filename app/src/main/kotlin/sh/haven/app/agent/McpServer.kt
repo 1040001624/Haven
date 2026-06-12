@@ -171,6 +171,10 @@ class McpServer @Inject constructor(
     // Capture + drive Haven's OWN rendered UI (self-hosting loop, §1a).
     // Registered with the foreground activity by MainActivity.onResume.
     private val havenUiBridge: HavenUiBridge,
+    // Tier-3 standing policies: scoped, rate-capped, expiring no-prompt
+    // grants consulted at the consent gate (VISION.md "Consent tiers").
+    private val standingPolicyEnforcer: StandingPolicyEnforcer,
+    private val standingPolicyRepository: sh.haven.core.data.repository.StandingPolicyRepository,
 ) : Closeable {
 
     /**
@@ -355,6 +359,7 @@ class McpServer @Inject constructor(
         usbBroker = usbBroker,
         presentationManager = presentationManager,
         havenUiBridge = havenUiBridge,
+        standingPolicyRepository = standingPolicyRepository,
         mcpTunnelManager = mcpTunnelManager,
         mcpPortProvider = { port },
     )
@@ -1224,7 +1229,12 @@ class McpServer @Inject constructor(
         // the capture_haven_ui tool (ONCE_PER_SESSION) — and shares its memo key
         // (toolName) so a prior allow covers both and the resource can't be used
         // to bypass the tool's consent. Loopback stays auto-trusted.
-        if (!trusted) {
+        // A standing policy covering capture_haven_ui covers the resource
+        // read too (same memo key, same gate, same audit).
+        val policyAllowed = !trusted && runBlocking {
+            standingPolicyEnforcer.permits(lastClientHint, "capture_haven_ui", JSONObject())
+        }
+        if (!trusted && !policyAllowed) {
             val decision = runBlocking {
                 withTimeoutOrNull(CONSENT_WAIT_MS) {
                     consentManager.requestConsent(
@@ -1304,7 +1314,17 @@ class McpServer @Inject constructor(
         // queue_terminal_input), which are explicit feature on/off
         // toggles, not consent, and stay regardless of origin.
         val consent = tools.consentFor(name)
-        if (!trusted && consent != null && consent.level != ConsentLevel.NEVER) {
+        // Tier-3 standing policy: a user-installed, scoped, rate-capped,
+        // expiring grant covers this exact (client, tool, args) — skip the
+        // prompt below. Still audited like every call; any non-match (incl.
+        // a rate ceiling hit) falls through to the normal prompt. Only
+        // evaluated where a prompt would otherwise be needed.
+        val policyAllowed = !trusted && consent != null && consent.level != ConsentLevel.NEVER &&
+            runBlocking { standingPolicyEnforcer.permits(lastClientHint, name, arguments) }
+        if (policyAllowed) {
+            Log.i(TAG, "tools/call '$name' allowed by standing policy for '$lastClientHint'")
+        }
+        if (!trusted && !policyAllowed && consent != null && consent.level != ConsentLevel.NEVER) {
             val summary = try {
                 consent.summary(arguments)
             } catch (e: Exception) {

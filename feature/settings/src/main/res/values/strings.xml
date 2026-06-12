@@ -382,6 +382,9 @@
     <string name="settings_agent_activity_clear_dialog_text">All recorded MCP calls will be deleted from this device. This cannot be undone.</string>
     <string name="settings_agent_activity_unknown_client">unknown client</string>
     <string name="settings_agent_activity_args_redacted">args (redacted)</string>
+    <string name="settings_standing_policies_header">Standing policies — these tools run without asking</string>
+    <string name="settings_standing_policy_meta">%1$s · up to %2$d calls/min · expires %3$s</string>
+    <string name="settings_standing_policy_revoke">Revoke</string>
 
     <string name="settings_proot_install_log_screen_title">PRoot install log</string>
     <string name="settings_proot_install_log_cd_clear">Clear log</string>
