@@ -10,8 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.LinkOff
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,14 +18,12 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,8 +40,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
  *   checkbox. OFF by default; turning it on means that client's tool
  *   calls (including destructive ones) run without a per-call prompt
  *   until toggled back off or the client is un-paired;
- * - **un-pair** the client, forcing it to be re-approved on next connect
- *   (which also revokes any standing auto-approval).
+ * - **un-pair** the client with the bin icon — one tap, the row removes
+ *   immediately, and the client must be re-approved on next connect (which
+ *   also revokes any standing auto-approval).
  *
  * Mounted as an overlay over the pager from [SettingsScreen], same as
  * [AgentActivityScreen]; hence the opaque background.
@@ -56,9 +54,15 @@ fun PairedClientsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
-    val clients by viewModel.mcpAllowedClients.collectAsState()
+    val allClients by viewModel.mcpAllowedClients.collectAsState()
     val bypassed by viewModel.mcpBypassConsentClients.collectAsState()
-    var unpairTarget by remember { mutableStateOf<String?>(null) }
+    // Optimistically hide a row the instant its bin is tapped, so the list
+    // reflects the un-pair immediately rather than waiting on the DataStore
+    // round-trip. The un-pair itself is persisted by unpairMcpClient (the
+    // allowlist is the source of truth); this only fixes the display lag.
+    // Resets on screen re-entry, where the persisted flow is authoritative.
+    val removed = remember { mutableStateListOf<String>() }
+    val clients = allClients.filterNot { it in removed }
     val unpairedToast = stringResource(R.string.settings_paired_clients_unpaired_toast)
 
     Column(
@@ -105,9 +109,20 @@ fun PairedClientsScreen(
                             )
                         },
                         trailingContent = {
-                            IconButton(onClick = { unpairTarget = client }) {
+                            IconButton(onClick = {
+                                // Immediate: hide the row now, persist the
+                                // un-pair, confirm with a toast. No dialog —
+                                // re-pairing is just re-approving on next connect.
+                                removed.add(client)
+                                viewModel.unpairMcpClient(client)
+                                Toast.makeText(
+                                    context,
+                                    unpairedToast.format(client),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }) {
                                 Icon(
-                                    Icons.Filled.LinkOff,
+                                    Icons.Filled.Delete,
                                     contentDescription = stringResource(
                                         R.string.settings_paired_clients_cd_unpair,
                                     ),
@@ -134,31 +149,5 @@ fun PairedClientsScreen(
                 }
             }
         }
-    }
-
-    unpairTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { unpairTarget = null },
-            title = { Text(stringResource(R.string.settings_paired_clients_unpair_title, target)) },
-            text = { Text(stringResource(R.string.settings_paired_clients_unpair_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.unpairMcpClient(target)
-                    Toast.makeText(
-                        context,
-                        unpairedToast.format(target),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    unpairTarget = null
-                }) {
-                    Text(stringResource(R.string.settings_paired_clients_unpair_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { unpairTarget = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
-        )
     }
 }
