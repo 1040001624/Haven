@@ -1,0 +1,1 @@
+Security keys: tapping the wrong one of several PIN-protected (verify-required) keys no longer loops you through "enter PIN, wrong key, enter PIN" again. It now stops with a single clear "that key isn't <name> — reconnect and present <name>" message. For non-PIN keys the "present <name>" prompt is also held long enough to read instead of flashing past.
