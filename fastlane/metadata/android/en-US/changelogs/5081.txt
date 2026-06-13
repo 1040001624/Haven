@@ -1,0 +1,3 @@
+Snippet library: snippets you add are now kept in a library you can reach from the scissors button, without each one needing its own toolbar key. Adding a snippet from the scissors sheet no longer forces a toolbar button, and setting a snippet to "Off" in toolbar settings keeps it in the library instead of deleting it. Reset keeps your snippets too. Smaller snippet labels in the sheet.
+
+Carries forward the v5.59.54 security-key work (on-device YubiKey/FIDO2 registration, per-key PIN/offer toggles, the pinned-key and composite-YubiKey fixes) plus a fix so cancelling the security-key PIN prompt dismisses it cleanly.
