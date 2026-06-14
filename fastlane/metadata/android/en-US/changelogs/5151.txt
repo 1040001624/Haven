@@ -1,0 +1,3 @@
+App windows (Cage):
+
+- App windows now install their runtime (Sway + wayvnc) automatically the first time you launch one in a distro that doesn't have it yet, with a progress message — no separate "install the Sway desktop" step.
