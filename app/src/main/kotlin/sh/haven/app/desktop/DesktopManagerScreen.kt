@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
@@ -150,6 +151,7 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
             onLaunch = { viewModel.launchAppWindow(it) },
             onEdit = { editingApp = it },
             onDelete = { viewModel.deleteAppWindow(it.id) },
+            onPinToHome = { viewModel.pinAppWindow(it) },
             onAdd = { showAddAppDialog = true },
             onBrowse = { showInstalledApps = true },
             onSetDefaultResolution = { viewModel.setAppWindowDefaultResolution(it) },
@@ -234,6 +236,7 @@ private fun AppWindowsSection(
     onLaunch: (AppWindowDef) -> Unit,
     onEdit: (AppWindowDef) -> Unit,
     onDelete: (AppWindowDef) -> Unit,
+    onPinToHome: (AppWindowDef) -> Unit,
     onAdd: () -> Unit,
     onBrowse: () -> Unit,
     onSetDefaultResolution: (String) -> Unit,
@@ -293,6 +296,9 @@ private fun AppWindowsSection(
                             IconButton(onClick = { onLaunch(def) }) {
                                 Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(AppR.string.app_desktop_app_window_launch_cd, def.label))
                             }
+                        }
+                        IconButton(onClick = { onPinToHome(def) }) {
+                            Icon(Icons.Filled.AddToHomeScreen, contentDescription = stringResource(AppR.string.app_desktop_app_window_pin_home_cd, def.label))
                         }
                         IconButton(onClick = { onEdit(def) }) {
                             Icon(Icons.Filled.Edit, contentDescription = stringResource(AppR.string.app_desktop_app_window_edit_cd, def.label))

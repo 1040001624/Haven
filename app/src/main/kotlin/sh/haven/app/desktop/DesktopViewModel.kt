@@ -86,6 +86,8 @@ class DesktopViewModel @Inject constructor(
     private val localSessionManager: LocalSessionManager,
     private val desktopSessionRegistry: sh.haven.core.data.desktop.DesktopSessionRegistry,
     private val presentationManager: sh.haven.core.data.agent.AgentPresentationManager,
+    private val appWindowLauncher: AppWindowLauncher,
+    private val appWindowShortcutManager: AppWindowShortcutManager,
 ) : ViewModel() {
 
     // --- Distro / DE management (issue #162 Phase 3c) ---
@@ -397,42 +399,27 @@ class DesktopViewModel @Inject constructor(
 
     /**
      * Launch a saved app window into the present_media overlay — the same
-     * surface the agent's `present_app` uses. Mirrors `McpTools.presentApp`:
-     * start the cage kiosk, and on RUNNING enqueue the overlay item + bump
-     * `lastUsed`; otherwise surface the error as a transient message.
+     * surface the agent's `present_app` uses. Delegates the cage start +
+     * present to [AppWindowLauncher] (shared with the home-screen shortcut
+     * path); this wrapper only adds the per-def launching spinner and
+     * surfaces any returned message on the screen's snackbar.
      */
     fun launchAppWindow(def: AppWindowDef) {
         viewModelScope.launch(Dispatchers.IO) {
             _launchingIds.update { it + def.id }
             try {
-                val resolution = def.resolution ?: appWindowDefaultResolution.value
-                val scale = def.scale ?: appWindowDefaultScale.value
-                val rooted = if (def.runAsRoot) desktopManager.ensureRunAsRoot() else false
-                if (def.runAsRoot && !rooted) {
-                    _userMessages.emit("Root mode needs the fakeroot package — ${def.label} will run read-only")
-                }
-                val session = desktopManager.startAppWindow(def.command, resolution, scale, runAsRoot = rooted)
-                if (session.state == DesktopManager.DesktopState.RUNNING) {
-                    presentationManager.presentAppWindow(
-                        host = "127.0.0.1",
-                        port = session.vncPort,
-                        sessionId = session.sessionId,
-                        caption = def.label,
-                        fullscreen = def.fullscreen,
-                        scale = scale,
-                        resolution = resolution,
-                    )
-                    // Preserve the def's own resolution/scale/runAsRoot choice (null = use global).
-                    preferencesRepository.upsertAppWindowDef(
-                        def.label, def.command, def.createdBy, def.fullscreen, def.resolution, def.scale, def.runAsRoot,
-                    )
-                } else {
-                    _userMessages.emit(
-                        "Couldn't launch ${def.label}: ${session.errorMessage ?: "failed to start"}",
-                    )
-                }
+                appWindowLauncher.launch(def)?.let { _userMessages.emit(it) }
             } finally {
                 _launchingIds.update { it - def.id }
+            }
+        }
+    }
+
+    /** Pin [def] to the home screen as a launcher icon (the app's Linux desktop icon). */
+    fun pinAppWindow(def: AppWindowDef) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!appWindowShortcutManager.pinToHomeScreen(def)) {
+                _userMessages.emit("This launcher doesn't support home-screen shortcuts")
             }
         }
     }

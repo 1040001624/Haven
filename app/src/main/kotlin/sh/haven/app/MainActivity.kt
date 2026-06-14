@@ -96,6 +96,9 @@ class MainActivity : AppCompatActivity() {
     // long-press shortcut routes the workspace id through onCreate /
     // onNewIntent.
     @Inject lateinit var workspaceLauncher: sh.haven.app.workspace.WorkspaceLauncher
+    // App-window launcher (singleton) — invoked when a home-screen pinned
+    // shortcut routes an app-window def id through onCreate / onNewIntent.
+    @Inject lateinit var appWindowLauncher: sh.haven.app.desktop.AppWindowLauncher
     // Picture-in-Picture for app windows: PipController bridges PiP state to
     // the composition; the store owns the live VNC connection so it survives
     // the overlay→PiP→overlay round-trip.
@@ -136,7 +139,27 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         exitIfDisconnected()
         handleWorkspaceShortcut(intent)
+        handleAppWindowShortcut(intent)
         handleRenewCertDeepLink(intent)
+    }
+
+    /**
+     * If [intent] carries an app-window launch action (home-screen pinned
+     * shortcut tap), start the cage and present it. Cold-start safe — the
+     * launcher queues straight onto the retained presentation queue, so a
+     * tap that cold-starts Haven still opens the app. The extra is cleared
+     * once consumed so a configuration change doesn't relaunch.
+     */
+    private fun handleAppWindowShortcut(intent: Intent?) {
+        if (intent?.action != sh.haven.app.desktop.AppWindowShortcutManager.ACTION_LAUNCH_APP_WINDOW) return
+        val defId = intent.getStringExtra(
+            sh.haven.app.desktop.AppWindowShortcutManager.EXTRA_APP_WINDOW_ID,
+        ) ?: return
+        intent.removeExtra(sh.haven.app.desktop.AppWindowShortcutManager.EXTRA_APP_WINDOW_ID)
+        Log.d("MainActivity", "launching app window $defId from shortcut")
+        MainScope().launch {
+            appWindowLauncher.launchById(defId)?.let { userMessageBus.error(it) }
+        }
     }
 
     // --- Picture-in-Picture (app windows) ---
@@ -278,6 +301,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleWorkspaceShortcut(intent)
+        handleAppWindowShortcut(intent)
         handleRenewCertDeepLink(intent)
         setContent {
             // Prevent screenshots/screen recording when enabled

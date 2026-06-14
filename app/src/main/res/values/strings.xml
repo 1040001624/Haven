@@ -91,6 +91,7 @@
     <string name="app_desktop_app_window_launch_cd">Launch %1$s</string>
     <string name="app_desktop_app_window_edit_cd">Edit %1$s</string>
     <string name="app_desktop_app_window_delete_cd">Delete %1$s</string>
+    <string name="app_desktop_app_window_pin_home_cd">Add %1$s to home screen</string>
     <string name="app_desktop_add_app_window">Add app window</string>
     <string name="app_desktop_edit_app_window_title">Edit app window</string>
     <string name="app_desktop_add_app_window_title">Add app window</string>
