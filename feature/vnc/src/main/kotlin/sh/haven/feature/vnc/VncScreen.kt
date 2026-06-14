@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardHide
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -571,6 +573,7 @@ private fun VncViewer(
 
     // Fullscreen overlay toolbar
     var overlayVisible by remember { mutableStateOf(false) }
+    var showGestureHelp by remember { mutableStateOf(false) }
 
     // Explicit mouse-button hold (#183): when non-null (1=L, 2=M, 3=R) that
     // button is held down on the remote, so finger movement drags with it
@@ -1262,6 +1265,15 @@ private fun VncViewer(
                             )
                         }
                     }
+                    // App-window gestures aren't obvious — surface them (#3-finger resize).
+                    if (onChangeScale != null) {
+                        IconButton(onClick = { showGestureHelp = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = stringResource(R.string.vnc_cd_gesture_help),
+                            )
+                        }
+                    }
                     IconButton(onClick = {
                         overlayVisible = false
                         onToggleFullscreen()
@@ -1270,6 +1282,25 @@ private fun VncViewer(
                     }
                 }
             }
+        }
+
+        if (showGestureHelp) {
+            AlertDialog(
+                onDismissRequest = { showGestureHelp = false },
+                confirmButton = {
+                    TextButton(onClick = { showGestureHelp = false }) {
+                        Text(stringResource(R.string.vnc_action_close))
+                    }
+                },
+                icon = { Icon(Icons.Default.TouchApp, contentDescription = null) },
+                title = { Text(stringResource(R.string.vnc_gesture_help_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.vnc_gesture_help_two_finger))
+                        Text(stringResource(R.string.vnc_gesture_help_three_finger))
+                    }
+                },
+            )
         }
     }
     } // end Box

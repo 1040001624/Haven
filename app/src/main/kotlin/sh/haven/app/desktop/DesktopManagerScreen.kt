@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -329,24 +330,40 @@ private fun AppWindowDefaultsRow(
     onSetResolution: (String) -> Unit,
     onSetScale: (Float) -> Unit,
 ) {
-    val isPreset = resolution in APP_WINDOW_RES_PRESETS
-    var customMode by remember(resolution) { mutableStateOf(!isPreset) }
-    var customText by remember(resolution) { mutableStateOf(if (!isPreset) resolution else "") }
-    Text(stringResource(AppR.string.app_desktop_app_window_defaults), style = MaterialTheme.typography.titleSmall)
-    Spacer(Modifier.height(4.dp))
-    Text(stringResource(AppR.string.app_desktop_app_window_resolution), style = MaterialTheme.typography.labelMedium)
-    ResolutionChips(
-        includeDefault = false,
-        token = if (customMode) null else resolution,
-        customMode = customMode,
-        customRes = customText,
-        onPickPreset = { customMode = false; onSetResolution(it ?: "auto") },
-        onPickCustom = { customMode = true },
-        onCustomResChange = { customText = it; if (WXH_REGEX.matches(it.trim())) onSetResolution(it.trim().lowercase()) },
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(stringResource(AppR.string.app_desktop_app_window_scale), style = MaterialTheme.typography.labelMedium)
-    ScaleChips(includeDefault = false, scale = scale, onPick = { onSetScale(it ?: 1f) })
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(AppR.string.app_desktop_app_window_defaults),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+        )
+    }
+    if (expanded) {
+        val isPreset = resolution in APP_WINDOW_RES_PRESETS
+        var customMode by remember(resolution) { mutableStateOf(!isPreset) }
+        var customText by remember(resolution) { mutableStateOf(if (!isPreset) resolution else "") }
+        Spacer(Modifier.height(4.dp))
+        Text(stringResource(AppR.string.app_desktop_app_window_resolution), style = MaterialTheme.typography.labelMedium)
+        ResolutionChips(
+            includeDefault = false,
+            token = if (customMode) null else resolution,
+            customMode = customMode,
+            customRes = customText,
+            onPickPreset = { customMode = false; onSetResolution(it ?: "auto") },
+            onPickCustom = { customMode = true },
+            onCustomResChange = { customText = it; if (WXH_REGEX.matches(it.trim())) onSetResolution(it.trim().lowercase()) },
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(stringResource(AppR.string.app_desktop_app_window_scale), style = MaterialTheme.typography.labelMedium)
+        ScaleChips(includeDefault = false, scale = scale, onPick = { onSetScale(it ?: 1f) })
+    }
 }
 
 /** Preset resolution tokens the chips offer (everything else is "Custom"). */
