@@ -1048,14 +1048,15 @@ class UserPreferencesRepository @Inject constructor(
         fullscreen: Boolean = false,
         resolution: String? = null,
         scale: Float? = null,
+        runAsRoot: Boolean? = null,
     ) {
         dataStore.edit { prefs ->
             val current = prefs[appWindowDefsKey]?.let { AppWindowDefList.fromJson(it) }
                 ?: AppWindowDefList.EMPTY
             val now = System.currentTimeMillis()
             val items = if (current.items.any { it.command == command }) {
-                // Preserve an existing entry's resolution/scale unless explicitly
-                // given (launching shouldn't bake the global default into the def).
+                // Preserve an existing entry's resolution/scale/runAsRoot unless
+                // explicitly given (launching shouldn't bake defaults into the def).
                 current.items.map {
                     if (it.command == command) {
                         it.copy(
@@ -1064,6 +1065,7 @@ class UserPreferencesRepository @Inject constructor(
                             fullscreen = fullscreen,
                             resolution = resolution ?: it.resolution,
                             scale = scale ?: it.scale,
+                            runAsRoot = runAsRoot ?: it.runAsRoot,
                         )
                     } else it
                 }
@@ -1076,6 +1078,7 @@ class UserPreferencesRepository @Inject constructor(
                     fullscreen = fullscreen,
                     resolution = resolution,
                     scale = scale,
+                    runAsRoot = runAsRoot ?: false,
                 )
             }
             prefs[appWindowDefsKey] = AppWindowDefList(items).toJson()
@@ -1105,6 +1108,7 @@ class UserPreferencesRepository @Inject constructor(
         fullscreen: Boolean = false,
         resolution: String? = null,
         scale: Float? = null,
+        runAsRoot: Boolean = false,
     ) {
         dataStore.edit { prefs ->
             val current = prefs[appWindowDefsKey]?.let { AppWindowDefList.fromJson(it) }
@@ -1121,6 +1125,7 @@ class UserPreferencesRepository @Inject constructor(
                         fullscreen = fullscreen,
                         resolution = resolution,
                         scale = scale,
+                        runAsRoot = runAsRoot,
                     )
                 } else it
             }

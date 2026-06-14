@@ -407,7 +407,11 @@ class DesktopViewModel @Inject constructor(
             try {
                 val resolution = def.resolution ?: appWindowDefaultResolution.value
                 val scale = def.scale ?: appWindowDefaultScale.value
-                val session = desktopManager.startAppWindow(def.command, resolution, scale)
+                val rooted = if (def.runAsRoot) desktopManager.ensureRunAsRoot() else false
+                if (def.runAsRoot && !rooted) {
+                    _userMessages.emit("Root mode needs the fakeroot package — ${def.label} will run read-only")
+                }
+                val session = desktopManager.startAppWindow(def.command, resolution, scale, runAsRoot = rooted)
                 if (session.state == DesktopManager.DesktopState.RUNNING) {
                     presentationManager.presentAppWindow(
                         host = "127.0.0.1",
@@ -418,9 +422,9 @@ class DesktopViewModel @Inject constructor(
                         scale = scale,
                         resolution = resolution,
                     )
-                    // Preserve the def's own resolution/scale choice (null = use global).
+                    // Preserve the def's own resolution/scale/runAsRoot choice (null = use global).
                     preferencesRepository.upsertAppWindowDef(
-                        def.label, def.command, def.createdBy, def.fullscreen, def.resolution, def.scale,
+                        def.label, def.command, def.createdBy, def.fullscreen, def.resolution, def.scale, def.runAsRoot,
                     )
                 } else {
                     _userMessages.emit(
@@ -433,10 +437,17 @@ class DesktopViewModel @Inject constructor(
         }
     }
 
-    fun addAppWindow(label: String, command: String, fullscreen: Boolean, resolution: String?, scale: Float?) {
+    fun addAppWindow(
+        label: String,
+        command: String,
+        fullscreen: Boolean,
+        resolution: String?,
+        scale: Float?,
+        runAsRoot: Boolean = false,
+    ) {
         viewModelScope.launch {
             preferencesRepository.upsertAppWindowDef(
-                label, command, AppWindowOrigin.USER, fullscreen, resolution, scale,
+                label, command, AppWindowOrigin.USER, fullscreen, resolution, scale, runAsRoot,
             )
         }
     }
@@ -452,9 +463,10 @@ class DesktopViewModel @Inject constructor(
         fullscreen: Boolean,
         resolution: String?,
         scale: Float?,
+        runAsRoot: Boolean = false,
     ) {
         viewModelScope.launch {
-            preferencesRepository.updateAppWindowDef(id, label, command, fullscreen, resolution, scale)
+            preferencesRepository.updateAppWindowDef(id, label, command, fullscreen, resolution, scale, runAsRoot)
         }
     }
 

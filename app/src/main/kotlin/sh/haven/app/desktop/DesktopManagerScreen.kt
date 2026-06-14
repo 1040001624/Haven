@@ -175,8 +175,8 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     if (showAddAppDialog) {
         AppWindowDialog(
             initial = null,
-            onSave = { label, command, fullscreen, resolution, scale ->
-                viewModel.addAppWindow(label, command, fullscreen, resolution, scale)
+            onSave = { label, command, fullscreen, resolution, scale, runAsRoot ->
+                viewModel.addAppWindow(label, command, fullscreen, resolution, scale, runAsRoot)
                 showAddAppDialog = false
             },
             onDismiss = { showAddAppDialog = false },
@@ -186,8 +186,8 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     editingApp?.let { def ->
         AppWindowDialog(
             initial = def,
-            onSave = { label, command, fullscreen, resolution, scale ->
-                viewModel.updateAppWindow(def.id, label, command, fullscreen, resolution, scale)
+            onSave = { label, command, fullscreen, resolution, scale, runAsRoot ->
+                viewModel.updateAppWindow(def.id, label, command, fullscreen, resolution, scale, runAsRoot)
                 editingApp = null
             },
             onDismiss = { editingApp = null },
@@ -378,12 +378,13 @@ private val WXH_REGEX = Regex("""\d{2,5}x\d{2,5}""", RegexOption.IGNORE_CASE)
 @Composable
 private fun AppWindowDialog(
     initial: AppWindowDef?,
-    onSave: (label: String, command: String, fullscreen: Boolean, resolution: String?, scale: Float?) -> Unit,
+    onSave: (label: String, command: String, fullscreen: Boolean, resolution: String?, scale: Float?, runAsRoot: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var label by remember { mutableStateOf(initial?.label ?: "") }
     var command by remember { mutableStateOf(initial?.command ?: "") }
     var fullscreen by remember { mutableStateOf(initial?.fullscreen ?: false) }
+    var runAsRoot by remember { mutableStateOf(initial?.runAsRoot ?: false) }
     val initRes = initial?.resolution
     val initCustom = initRes != null && initRes !in APP_WINDOW_RES_PRESETS
     var resToken by remember { mutableStateOf(if (initCustom) null else initRes) }
@@ -419,6 +420,17 @@ private fun AppWindowDialog(
                     Text(stringResource(AppR.string.app_desktop_app_window_fullscreen), modifier = Modifier.weight(1f))
                     Switch(checked = fullscreen, onCheckedChange = { fullscreen = it })
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(AppR.string.app_desktop_app_window_run_as_root))
+                        Text(
+                            stringResource(AppR.string.app_desktop_app_window_run_as_root_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = runAsRoot, onCheckedChange = { runAsRoot = it })
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(AppR.string.app_desktop_app_window_resolution), style = MaterialTheme.typography.labelMedium)
                 ResolutionChips(
@@ -439,7 +451,7 @@ private fun AppWindowDialog(
             TextButton(
                 onClick = {
                     val resolution = if (customMode) customRes.trim().lowercase().ifBlank { null } else resToken
-                    onSave(label.trim(), command.trim(), fullscreen, resolution, scale)
+                    onSave(label.trim(), command.trim(), fullscreen, resolution, scale, runAsRoot)
                 },
                 enabled = command.isNotBlank() && customValid,
             ) { Text(if (editing) stringResource(R.string.common_save) else stringResource(R.string.common_add)) }

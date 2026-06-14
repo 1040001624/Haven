@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import sh.haven.core.local.proot.LaunchSpec
+import sh.haven.core.local.proot.PackageFamily
 import sh.haven.core.wayland.WaylandBridge
 import java.io.File
 import javax.inject.Inject
@@ -786,6 +787,30 @@ class DesktopManager @Inject constructor(
     private val appWindowProcesses = java.util.concurrent.ConcurrentHashMap<String, Process>()
 
     /**
+     * Make the active guest able to run a cage app as root: install `fakeroot`
+     * (whose `fakeroot-tcp` works under proot — the default sysv variant needs
+     * SysV IPC, which Android lacks) and confirm `fakeroot-tcp` is on PATH.
+     * Returns true if it's available, so the caller passes the result as
+     * [startAppWindow]'s `runAsRoot` (only wrap when the wrapper really exists).
+     *
+     * APT-only today (synaptic's use case is verified there); other families
+     * package `fakeroot` differently and aren't validated under proot yet.
+     */
+    suspend fun ensureRunAsRoot(): Boolean {
+        val installCmd = when (prootManager.activeDistro.family) {
+            PackageFamily.APT -> "DEBIAN_FRONTEND=noninteractive apt-get install -y fakeroot"
+            else -> return false
+        }
+        // The install runs as root (runCommandInProot uses --root-id); the cage
+        // that later wraps the app in fakeroot-tcp stays the non-root user.
+        val (_, code) = prootManager.runCommandInProot(
+            "command -v fakeroot-tcp >/dev/null 2>&1 || { $installCmd >/dev/null 2>&1; }; " +
+                "command -v fakeroot-tcp >/dev/null 2>&1",
+        )
+        return code == 0
+    }
+
+    /**
      * Launch [command] as a single-app `cage` kiosk and expose it over
      * wayvnc. Blocks (on the caller's IO thread) until the VNC port accepts
      * connections — state RUNNING — or the launch fails / times out — state
@@ -800,10 +825,17 @@ class DesktopManager @Inject constructor(
         command: String,
         resolution: String = "auto",
         scale: Float = 1f,
+        runAsRoot: Boolean = false,
         timeoutMs: Long = 15_000,
     ): AppWindowSession {
 
         val sessionId = "appwin-${System.currentTimeMillis()}"
+        // The cage runs the compositor as a non-root user (sway refuses to start
+        // as root), so the app inherits uid 1000 and system tools (synaptic) go
+        // read-only. `fakeroot-tcp` (LD_PRELOAD) makes the app's getuid() report
+        // 0; proot doesn't enforce DAC so the writes still land. Caller passes
+        // runAsRoot=true only after ensureRunAsRoot() confirmed fakeroot-tcp.
+        val execCommand = if (runAsRoot) "fakeroot-tcp $command" else command
         val display = allocateDisplay()
         val port = 5900 + display
         // Headless output geometry: matching the framebuffer to the device aspect
@@ -835,7 +867,7 @@ class DesktopManager @Inject constructor(
             |gaps outer 0
             |for_window [app_id=".*"] fullscreen enable
             |for_window [class=".*"] fullscreen enable
-            |exec $command; swaymsg exit
+            |exec $execCommand; swaymsg exit
             |""".trimMargin(),
         )
         val compositorCmd = "sway -c /tmp/haven-kiosk-$display.config"

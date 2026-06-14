@@ -33,6 +33,13 @@ data class AppWindowDef(
     val resolution: String? = null,
     /** Cage output scale factor (wlroots HiDPI), or null = use the global default. */
     val scale: Float? = null,
+    /**
+     * Run the app as root inside the cage (wraps the command in `fakeroot-tcp`
+     * so its `getuid()` reports 0). Needed for system tools — package managers
+     * like synaptic refuse to apply changes otherwise — because the cage runs
+     * the compositor as a non-root user (sway won't start as root).
+     */
+    val runAsRoot: Boolean = false,
 )
 
 /** Persisted ordered list of [AppWindowDef], JSON-encoded into DataStore. */
@@ -51,6 +58,7 @@ data class AppWindowDefList(val items: List<AppWindowDef>) {
                     put("fullscreen", d.fullscreen)
                     if (d.resolution != null) put("resolution", d.resolution)
                     if (d.scale != null) put("scale", d.scale.toDouble())
+                    if (d.runAsRoot) put("runAsRoot", true)
                 },
             )
         }
@@ -75,6 +83,7 @@ data class AppWindowDefList(val items: List<AppWindowDef>) {
                     fullscreen = o.optBoolean("fullscreen", false),
                     resolution = o.optString("resolution", "").ifEmpty { null },
                     scale = if (o.has("scale")) o.optDouble("scale", 1.0).toFloat() else null,
+                    runAsRoot = o.optBoolean("runAsRoot", false),
                 )
             }
             AppWindowDefList(items)

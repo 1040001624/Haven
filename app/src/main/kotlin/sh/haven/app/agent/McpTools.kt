@@ -850,6 +850,10 @@ internal class McpTools(
                         put("type", "number")
                         put("description", "Output scale factor (wlroots HiDPI; foot/GTK honour it). 1.0 default; 1.5/2 enlarge fonts + UI.")
                     })
+                    put("runAsRoot", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "Run the app as root via fakeroot-tcp (the cage compositor itself runs non-root, so system tools like package managers go read-only otherwise). Installs fakeroot if missing. APT distros only today. Default false.")
+                    })
                 })
                 put("required", JSONArray().put("command"))
             },
@@ -4653,13 +4657,15 @@ internal class McpTools(
         // null = use the global default; the persisted def keeps that choice.
         val resolutionArg = args.optString("resolution", "").ifEmpty { null }
         val scaleArg = if (args.has("scale")) args.optDouble("scale").toFloat() else null
+        val runAsRoot = args.optBoolean("runAsRoot", false)
         if (!prootManager.isRootfsInstalled) {
             throw McpError(-32603, "Active distro '${prootManager.activeDistroId}' has no installed rootfs")
         }
         val dm = localSessionManager.desktopManager
         val resolution = resolutionArg ?: preferencesRepository.appWindowDefaultResolution.first()
         val scale = scaleArg ?: preferencesRepository.appWindowDefaultScale.first()
-        val session = withContext(Dispatchers.IO) { dm.startAppWindow(command, resolution, scale) }
+        val rooted = if (runAsRoot) dm.ensureRunAsRoot() else false
+        val session = withContext(Dispatchers.IO) { dm.startAppWindow(command, resolution, scale, runAsRoot = rooted) }
         if (session.state == sh.haven.core.local.DesktopManager.DesktopState.RUNNING) {
             presentationManager.presentAppWindow(
                 host = "127.0.0.1",
@@ -4681,6 +4687,7 @@ internal class McpTools(
                     fullscreen = fullscreen,
                     resolution = resolutionArg,
                     scale = scaleArg,
+                    runAsRoot = if (runAsRoot) true else null,
                 )
             }
             return JSONObject().apply {

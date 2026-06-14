@@ -112,6 +112,8 @@
 
     <!-- App-window resolution + scaling -->
     <string name="app_desktop_app_window_fullscreen">Open fullscreen</string>
+    <string name="app_desktop_app_window_run_as_root">Run as root</string>
+    <string name="app_desktop_app_window_run_as_root_hint">For package managers and system tools (installs fakeroot)</string>
     <string name="app_desktop_app_window_resolution">Resolution</string>
     <string name="app_desktop_app_window_scale">Scale</string>
     <string name="app_desktop_opt_default">Default</string>
