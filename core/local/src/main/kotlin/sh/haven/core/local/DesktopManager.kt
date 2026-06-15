@@ -588,12 +588,15 @@ class DesktopManager @Inject constructor(
      * → host Mali) + zink (modern GL, ~3.2 core), and force Mesa's wl_shm
      * CPU-copy WSI present path (`MESA_VK_WSI_DEBUG=sw`): no Android-EGL wlroots
      * compositor can import dma-bufs, so the GPU device must present over wl_shm.
-     * Native Vulkan apps present fine; GL-via-zink present is slow (see the
-     * project_virgl_cage_gpu_accel memory note). VN_PERF=no_fence_feedback is
-     * kept in both stacks — over vtest+AHB on Mali the guest never observes the
-     * fence-feedback write and spins "stuck in fence wait"; the flag is a no-op
-     * for virpipe. [sep] is the per-site statement separator (" ; " for the cage
-     * builder, "; " for the native buildString).
+     * Native Vulkan apps present fully (a visible cube); GL-via-zink renders at
+     * GL 3.2 core (glmark2 ~180 fps) once BOTH fence AND semaphore feedback are
+     * disabled — over vtest+AHB on Mali the guest never observes the feedback
+     * writes and spins "stuck in fence wait" / "stuck in semaphore wait" (the
+     * latter is the first-draw blocker fixed here; device-verified 2026-06-16).
+     * Note: zink's kopper present currently lands only the clear colour, not the
+     * geometry — a separate guest-Mesa gap under investigation (B4). The flags
+     * are a no-op for virpipe. [sep] is the per-site statement separator (" ; "
+     * for the cage builder, "; " for the native buildString).
      */
     private fun gpuPassthroughEnv(sep: String): String =
         if (runBlocking { userPreferencesRepository.gpuUseVenus.first() }) {
@@ -602,7 +605,7 @@ class DesktopManager @Inject constructor(
                 "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.json$sep" +
                 "export GALLIUM_DRIVER=zink$sep" +
                 "export MESA_LOADER_DRIVER_OVERRIDE=zink$sep" +
-                "export VN_PERF=no_fence_feedback$sep" +
+                "export VN_PERF=no_fence_feedback,no_semaphore_feedback$sep" +
                 "export MESA_VK_WSI_DEBUG=sw$sep"
         } else {
             "export GALLIUM_DRIVER=virpipe$sep" +
@@ -1125,6 +1128,23 @@ class DesktopManager @Inject constructor(
         val logFile = File(context.cacheDir, "xdg-runtime-$display/compositor.log")
         return if (logFile.exists()) logFile.readText() else null
     }
+
+    /**
+     * Newest app-window compositor.log across all displays. The cage redirects
+     * BOTH the compositor and the app it runs (stdout+stderr merged) here, so
+     * this is the app's own output — the fallback for read_app_window_log when
+     * the session has already ended: a crashed/exited cage app drops its session
+     * (so [appWindowCompositorLog] can't resolve its display), but the log file
+     * survives under cacheDir. Returns (display, file) or null if none exists.
+     */
+    fun latestAppWindowLog(): Pair<Int, File>? =
+        context.cacheDir.listFiles { f -> f.isDirectory && f.name.startsWith("xdg-runtime-") }
+            ?.mapNotNull { dir ->
+                val log = File(dir, "compositor.log")
+                val display = dir.name.removePrefix("xdg-runtime-").toIntOrNull()
+                if (log.exists() && display != null) display to log else null
+            }
+            ?.maxByOrNull { it.second.lastModified() }
 
     /** True when something accepts a TCP connection on 127.0.0.1:[port]. */
     private fun isPortListening(port: Int): Boolean = try {

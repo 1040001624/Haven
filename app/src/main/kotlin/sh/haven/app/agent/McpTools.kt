@@ -826,7 +826,7 @@ internal class McpTools(
         ) { args -> presentWeb(args) },
 
         "present_app" to ToolHandler(
-            description = "Show the user a LIVE, interactive single application window inline in Haven. Launches `command` as a Wayland app under a `cage` kiosk inside the active proot guest, exposes it over VNC, and embeds the live view in a bottom sheet over whatever screen the user is on (pinch-zoom, pan, drag and fullscreen all work; the user can interact). Use this to collaborate in a real GUI app — an image viewer, a media/audio player, a PDF/whiteboard tool — rather than pushing a static image with present_media. `command` is the guest shell command cage runs (e.g. 'imv /root/board.png', 'mpv /root/clip.mp4'); the app and any Wayland deps must already be installed in the guest. Returns { presented, sessionId, vncPort, state } once the window is up. Multiple app windows can run at once: each call launches another cage; the newest is shown full-overlay and any previous one is backgrounded to a draggable edge icon (tap to bring it back). The user backgrounds a window by tapping outside it (keeps it running) and tears it down with the Dismiss button or the edge-icon close.",
+            description = "Show the user a LIVE, interactive single application window inline in Haven. Launches `command` as a Wayland app under a `cage` kiosk inside the active proot guest, exposes it over VNC, and embeds the live view in a bottom sheet over whatever screen the user is on (pinch-zoom, pan, drag and fullscreen all work; the user can interact). Use this to collaborate in a real GUI app — an image viewer, a media/audio player, a PDF/whiteboard tool — rather than pushing a static image with present_media. `command` is the guest shell command cage runs (e.g. 'imv /root/board.png', 'mpv /root/clip.mp4'); the app and any Wayland deps must already be installed in the guest. Returns { presented, sessionId, vncPort, state } once the window is up. Multiple app windows can run at once: each call launches another cage; the newest is shown full-overlay and any previous one is backgrounded to a draggable edge icon (tap to bring it back). The user backgrounds a window by tapping outside it (keeps it running) and tears it down with the Dismiss button or the edge-icon close. If the window comes up grey/blank or vanishes, read the app's own stdout/stderr with read_app_window_log (works even after it crashed) instead of wrapping the command in a logging script.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -862,6 +862,25 @@ internal class McpTools(
                 "Launch a GUI app window for the agent: ${args.optString("command")}"
             },
         ) { args -> presentApp(args) },
+
+        "read_app_window_log" to ToolHandler(
+            description = "Read the captured output log of a present_app cage window. The cage redirects BOTH the sway compositor AND the GUI app it runs (stdout+stderr merged) into one log, so this is how the agent SEES a present_app app's own output — startup errors, GL/Mesa diagnostics, a crash trace — without wrapping the command in a logging script. Pass the sessionId returned by present_app for a live window; OMIT it to read the most-recent app-window log, which still works after the app crashed or exited (the session is gone but the log survives on disk). Returns { sessionId?, display, bytes, truncated, log }. For a GUI app that came up then died (a grey/blank or vanished window), this is the first thing to read.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("sessionId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "present_app sessionId for a live window. Omit to read the newest app-window log (survives a crashed/exited app).")
+                    })
+                    put("maxBytes", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Return at most the last N bytes of the log. Default 16384, clamped 256..262144.")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.NEVER,
+            summarise = { _ -> "Read a present_app window's output log" },
+        ) { args -> readAppWindowLog(args) },
 
         "list_guest_apps" to ToolHandler(
             description = "List the GUI applications installed in the active proot guest, discovered from its `.desktop` files (the same source an xfce4 application menu reads). Use this to find an app to launch with `present_app` without knowing its exact command. Returns { count, iconsResolved, apps:[{ name, exec, hasIcon, categories }] } sorted by name; `exec` is the runnable guest command (field codes stripped) you pass straight to present_app's `command`. `hasIcon` indicates whether a decodable icon was resolved (icons themselves stay on-device for the launcher UI). Skips NoDisplay/Terminal/non-application entries.",
@@ -4716,6 +4735,38 @@ internal class McpTools(
                 if (!logTail.isNullOrBlank()) append(" Compositor log: ").append(logTail)
             },
         )
+    }
+
+    /**
+     * Read a present_app window's captured output (compositor + app stdout/stderr,
+     * merged by the cage). By sessionId for a live window, else the newest log —
+     * which survives a crashed/exited app, the case where it's most needed.
+     */
+    private fun readAppWindowLog(args: JSONObject): JSONObject {
+        val dm = localSessionManager.desktopManager
+        val sessionId = args.optString("sessionId").ifEmpty { null }
+        val maxBytes = args.optInt("maxBytes", 16384).coerceIn(256, 262144)
+        val (display, text) = if (sessionId != null) {
+            val log = dm.appWindowCompositorLog(sessionId)
+                ?: throw McpError(
+                    -32602,
+                    "no live app window '$sessionId' (it may have exited — omit sessionId to read the newest log)",
+                )
+            (dm.appWindows.value[sessionId]?.displayNumber ?: -1) to log
+        } else {
+            val latest = dm.latestAppWindowLog()
+                ?: throw McpError(-32603, "no app-window logs yet — launch one with present_app first")
+            latest.first to latest.second.readText()
+        }
+        val truncated = text.length > maxBytes
+        val tail = if (truncated) text.takeLast(maxBytes) else text
+        return JSONObject().apply {
+            if (sessionId != null) put("sessionId", sessionId)
+            put("display", display)
+            put("bytes", tail.toByteArray().size)
+            put("truncated", truncated)
+            put("log", tail)
+        }
     }
 
     /**
