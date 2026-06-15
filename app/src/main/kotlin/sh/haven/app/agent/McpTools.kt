@@ -1280,7 +1280,7 @@ internal class McpTools(
         ) { args -> writeClipboard(args) },
 
         "set_preference" to ToolHandler(
-            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest). Returns { key, value }.",
+            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe). Returns { key, value }.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -5200,6 +5200,11 @@ internal class McpTools(
         // Master switch for inbound-email automation (Mail Rules). MCP-drivable so
         // the engine can be armed without the Settings UI.
         "mail_automation_enabled",
+        // Experimental GPU stack for accelerated desktops: off = virgl/virpipe
+        // (GL 2.1), on = venus + zink (modern GL, ~3.2 core) with wl_shm CPU-copy
+        // present. MCP-drivable so the GPU-present path is testable without the
+        // Settings UI. See DesktopManager.gpuPassthroughEnv.
+        "gpu_use_venus",
         // Keyboard toolbar layout (JSON: array of rows; strings = built-in key
         // ids, {label,send} objects = custom snippet keys). MCP-drivable so the
         // toolbar can be reconfigured without the Settings GUI — get returns the
@@ -5231,6 +5236,7 @@ internal class McpTools(
             "mcp_wireguard_tunnel_config_id" -> preferencesRepository.mcpWireguardTunnelConfigId.first() ?: ""
             "usb_guest_exposure_enabled" -> preferencesRepository.usbGuestExposureEnabled.first()
             "mail_automation_enabled" -> preferencesRepository.mailAutomationEnabled.first()
+            "gpu_use_venus" -> preferencesRepository.gpuUseVenus.first()
             "toolbar_layout" -> preferencesRepository.toolbarLayoutJson.first()
             else -> throw McpError(-32602, "Preference $key is not in the whitelist")
         }
@@ -5299,6 +5305,7 @@ internal class McpTools(
                 preferencesRepository.setMcpWireguardTunnelConfigId((rawValue as? String)?.ifBlank { null })
             "usb_guest_exposure_enabled" -> preferencesRepository.setUsbGuestExposureEnabled(coerceBool())
             "mail_automation_enabled" -> preferencesRepository.setMailAutomationEnabled(coerceBool())
+            "gpu_use_venus" -> preferencesRepository.setGpuUseVenus(coerceBool())
             "toolbar_layout" -> {
                 val json = (rawValue as? String)
                     ?: throw McpError(-32602, "value must be a toolbar-layout JSON string for $key")

@@ -308,6 +308,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.setDesktopInputMode(mode) }
     }
 
+    val gpuUseVenus: StateFlow<Boolean> = preferencesRepository.gpuUseVenus
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setGpuUseVenus(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setGpuUseVenus(enabled) }
+    }
+
     val bandwidthAutoSuggest: StateFlow<Boolean> = preferencesRepository.bandwidthAutoSuggest
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 

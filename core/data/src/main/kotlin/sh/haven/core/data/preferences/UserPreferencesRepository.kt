@@ -84,6 +84,12 @@ class UserPreferencesRepository @Inject constructor(
     private val showDesktopsCardKey = booleanPreferencesKey("show_desktops_card")
     private val mediaExtensionsKey = stringPreferencesKey("media_extensions")
     private val desktopInputModeKey = stringPreferencesKey("desktop_input_mode")
+    // Experimental GPU stack for accelerated Wayland/cage desktops. Off (default)
+    // = virgl/virpipe (GL 2.1, present works on every path). On = venus
+    // (Vulkan→Mali) + zink (modern GL, ~3.2 core) with the wl_shm CPU-copy WSI
+    // present path. Native Vulkan apps present; GL-via-zink present is slow. See
+    // DesktopManager.gpuPassthroughEnv + project_virgl_cage_gpu_accel memory note.
+    private val gpuUseVenusKey = booleanPreferencesKey("gpu_use_venus")
     private val bandwidthAutoSuggestKey = booleanPreferencesKey("bandwidth_auto_suggest")
     private val lastMediaServerPortKey = intPreferencesKey("last_media_server_port")
     private val mcpAgentEndpointEnabledKey = booleanPreferencesKey("mcp_agent_endpoint_enabled")
@@ -453,6 +459,16 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setReflowTerminalOnKeyboard(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[reflowTerminalOnKeyboardKey] = enabled
+        }
+    }
+
+    val gpuUseVenus: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[gpuUseVenusKey] ?: false
+    }
+
+    suspend fun setGpuUseVenus(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[gpuUseVenusKey] = enabled
         }
     }
 

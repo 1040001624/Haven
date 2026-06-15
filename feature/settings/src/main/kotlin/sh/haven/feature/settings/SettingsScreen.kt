@@ -181,6 +181,7 @@ fun SettingsScreen(
     val requireAgentConsentForWrites by viewModel.requireAgentConsentForWrites.collectAsState()
     val mouseInputEnabled by viewModel.mouseInputEnabled.collectAsState()
     val desktopInputMode by viewModel.desktopInputMode.collectAsState()
+    val gpuUseVenus by viewModel.gpuUseVenus.collectAsState()
     val bandwidthAutoSuggest by viewModel.bandwidthAutoSuggest.collectAsState()
     val terminalRightClick by viewModel.terminalRightClick.collectAsState()
     val tapToPositionCursorOnPrompt by viewModel.terminalTapToPositionCursor.collectAsState()
@@ -654,6 +655,13 @@ fun SettingsScreen(
             onCheckedChange = { enabled ->
                 viewModel.setDesktopInputMode(if (enabled) "TOUCHPAD" else "DIRECT")
             },
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.DesktopWindows,
+            title = stringResource(R.string.settings_gpu_venus_title),
+            subtitle = stringResource(R.string.settings_gpu_venus_subtitle),
+            checked = gpuUseVenus,
+            onCheckedChange = viewModel::setGpuUseVenus,
         )
         SettingsToggleItem(
             icon = Icons.Filled.CloudDownload,

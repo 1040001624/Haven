@@ -6,7 +6,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
+import sh.haven.core.data.preferences.UserPreferencesRepository
 import sh.haven.core.local.proot.LaunchSpec
 import sh.haven.core.local.proot.PackageFamily
 import sh.haven.core.wayland.WaylandBridge
@@ -28,6 +31,7 @@ private const val TAG = "DesktopManager"
 class DesktopManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val prootManager: ProotManager,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     enum class DesktopState { STOPPED, STARTING, RUNNING, ERROR }
 
@@ -577,6 +581,36 @@ class DesktopManager @Inject constructor(
     // ---- Nested Wayland (wlroots headless backend + wayvnc) ----
 
     /**
+     * GPU passthrough env vars for accelerated Wayland/cage GL, shared by the
+     * cage and native-compositor launch paths. Default (off) is virgl/virpipe —
+     * GL 2.1, but present works on every path. When the experimental
+     * `gpu_use_venus` pref is on, route Mesa through venus (guest Vulkan → vtest
+     * → host Mali) + zink (modern GL, ~3.2 core), and force Mesa's wl_shm
+     * CPU-copy WSI present path (`MESA_VK_WSI_DEBUG=sw`): no Android-EGL wlroots
+     * compositor can import dma-bufs, so the GPU device must present over wl_shm.
+     * Native Vulkan apps present fine; GL-via-zink present is slow (see the
+     * project_virgl_cage_gpu_accel memory note). VN_PERF=no_fence_feedback is
+     * kept in both stacks — over vtest+AHB on Mali the guest never observes the
+     * fence-feedback write and spins "stuck in fence wait"; the flag is a no-op
+     * for virpipe. [sep] is the per-site statement separator (" ; " for the cage
+     * builder, "; " for the native buildString).
+     */
+    private fun gpuPassthroughEnv(sep: String): String =
+        if (runBlocking { userPreferencesRepository.gpuUseVenus.first() }) {
+            "export VTEST_SOCKET=/tmp/.virgl_test$sep" +
+                "export VN_DEBUG=vtest$sep" +
+                "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.json$sep" +
+                "export GALLIUM_DRIVER=zink$sep" +
+                "export MESA_LOADER_DRIVER_OVERRIDE=zink$sep" +
+                "export VN_PERF=no_fence_feedback$sep" +
+                "export MESA_VK_WSI_DEBUG=sw$sep"
+        } else {
+            "export GALLIUM_DRIVER=virpipe$sep" +
+                "export VTEST_SOCKET=/tmp/.virgl_test$sep" +
+                "export VN_PERF=no_fence_feedback$sep"
+        }
+
+    /**
      * Launch a wlroots-based compositor (Sway / Hyprland / niri) on
      * the headless backend inside the proot rootfs, exposed to the
      * outside world via `wayvnc` listening on [port]. The in-app VNC
@@ -662,15 +696,7 @@ class DesktopManager @Inject constructor(
             WaylandBridge.nativeStartVirglServer(
                 virglBin.absolutePath, File(context.cacheDir, ".virgl_test").absolutePath,
             )
-            // VN_PERF=no_fence_feedback forces venus to wait on the real host
-            // VkFence instead of polling a shared "signaled" feedback buffer.
-            // Over the vtest transport with AHB/dma-buf-backed host-visible
-            // memory on Mali the guest never observes the feedback write, so
-            // it spins `MESA-VIRTIO: stuck in fence wait`. The flag is a no-op
-            // when feedback already works. (See scratch/mesa-venus-fence-
-            // feedback-issue.md.)
-            "export GALLIUM_DRIVER=virpipe ; export VTEST_SOCKET=/tmp/.virgl_test ; " +
-                "export VN_PERF=no_fence_feedback ; "
+            gpuPassthroughEnv(" ; ")
         } else {
             ""
         }
@@ -1232,12 +1258,9 @@ class DesktopManager @Inject constructor(
                     "unset XKB_CONFIG_ROOT; " +
                     "export TERM=xterm-256color; " +
                     "export SHELL=${shellCommand.split(" ").first()}; " +
-                    // virgl GPU passthrough env vars
-                    "export GALLIUM_DRIVER=virpipe; " +
-                    "export VTEST_SOCKET=/tmp/.virgl_test; " +
-                    // Force the real host VkFence wait — feedback polling is
-                    // unreliable over vtest+AHB on Mali (see launchNestedWayland).
-                    "export VN_PERF=no_fence_feedback; " +
+                    // GPU passthrough env (virpipe default, or venus+zink when the
+                    // gpu_use_venus pref is on) — see gpuPassthroughEnv.
+                    gpuPassthroughEnv("; ") +
                     // App launcher wrapper — invoked via fuzzel's
                     // `launch-prefix=/usr/local/bin/launch` and by labwc's
                     // menu Execute actions. Records each invocation +
