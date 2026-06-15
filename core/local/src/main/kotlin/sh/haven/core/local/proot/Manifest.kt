@@ -586,10 +586,15 @@ object DesktopCatalog {
         id = "sway",
         label = "Sway (nested Wayland)",
         packagesPerFamily = mapOf(
-            PackageFamily.APK to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "xkeyboard-config", "font-noto"),
-            PackageFamily.APT to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "fonts-noto-core"),
-            PackageFamily.PACMAN to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "noto-fonts"),
-            PackageFamily.XBPS to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "noto-fonts-ttf"),
+            // xwayland: so X11/GLX apps (e.g. glxgears, older GL tools) run in
+            // the cage. Sway only starts Xwayland if the binary is present; it
+            // was implicitly pulled in on Arch via other DEs but missing on a
+            // Sway-only Ubuntu, so list it explicitly per family. PACMAN names
+            // it xorg-xwayland; everyone else uses xwayland.
+            PackageFamily.APK to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "xwayland", "xkeyboard-config", "font-noto"),
+            PackageFamily.APT to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "xwayland", "fonts-noto-core"),
+            PackageFamily.PACMAN to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "xorg-xwayland", "noto-fonts"),
+            PackageFamily.XBPS to listOf("sway", "swaybg", "wayvnc", "foot", "fuzzel", "xwayland", "noto-fonts-ttf"),
         ),
         verifyBinary = "usr/bin/sway",
         launch = LaunchSpec.NestedWayland(compositorCmd = "sway"),
