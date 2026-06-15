@@ -662,7 +662,15 @@ class DesktopManager @Inject constructor(
             WaylandBridge.nativeStartVirglServer(
                 virglBin.absolutePath, File(context.cacheDir, ".virgl_test").absolutePath,
             )
-            "export GALLIUM_DRIVER=virpipe ; export VTEST_SOCKET=/tmp/.virgl_test ; "
+            // VN_PERF=no_fence_feedback forces venus to wait on the real host
+            // VkFence instead of polling a shared "signaled" feedback buffer.
+            // Over the vtest transport with AHB/dma-buf-backed host-visible
+            // memory on Mali the guest never observes the feedback write, so
+            // it spins `MESA-VIRTIO: stuck in fence wait`. The flag is a no-op
+            // when feedback already works. (See scratch/mesa-venus-fence-
+            // feedback-issue.md.)
+            "export GALLIUM_DRIVER=virpipe ; export VTEST_SOCKET=/tmp/.virgl_test ; " +
+                "export VN_PERF=no_fence_feedback ; "
         } else {
             ""
         }
@@ -1227,6 +1235,9 @@ class DesktopManager @Inject constructor(
                     // virgl GPU passthrough env vars
                     "export GALLIUM_DRIVER=virpipe; " +
                     "export VTEST_SOCKET=/tmp/.virgl_test; " +
+                    // Force the real host VkFence wait — feedback polling is
+                    // unreliable over vtest+AHB on Mali (see launchNestedWayland).
+                    "export VN_PERF=no_fence_feedback; " +
                     // App launcher wrapper — invoked via fuzzel's
                     // `launch-prefix=/usr/local/bin/launch` and by labwc's
                     // menu Execute actions. Records each invocation +
