@@ -48,17 +48,18 @@ Both builds are identical. Minimum Android 8.0 (API 26).
 
 ## At a glance
 
-- **Terminal** — Mosh, Eternal Terminal, and SSH sessions with tmux/zellij/screen session restore, configurable keyboard toolbar, and OSC 52 / 8 / 9 / 777 / 7 / 133 integration.
-- **Desktop** — VNC (RFB 3.8 with VeNCrypt), RDP (via IronRDP, with EGFX graphics pipeline), a GPU-accelerated native Wayland compositor (labwc on GLES2), and a multi-distro local-desktop manager (Alpine/Debian/Arch/Void, with Xfce4/Openbox X11 and Sway nested-Wayland desktops).
-- **Files** — Unified browser for SFTP/SCP, SMB, 60+ cloud providers (rclone), and Reticulum mesh. Multi-select, built-in text editor, image tools, chmod, cross-filesystem copy/move, USB SD card roots.
-- **Media** — Transcode and stream on-device with FFmpeg 8.0. HLS streaming to the LAN; DLNA server for cloud media.
-- **Keys** — On-device Ed25519 / RSA / ECDSA generation, FIDO2/SK hardware keys (NFC + USB), deploy-key helper.
-- **Connections** — Host-key TOFU, port forwarding (-L / -R / -D / -J), SOCKS / HTTP proxies, Tor, ProxyJump, **per-app WireGuard and Tailscale tunnels** (userspace, no system VPN slot).
-- **Local shell** — Alpine, Debian, Arch, or Void via PRoot, side-by-side, no root required.
-- **Reticulum** — `rnsh` shell, file transfer (browse/download/upload), and `-L`/`-D` port forwarding over Reticulum mesh networks, pure Kotlin. The one transport that keeps working with no internet at all.
-- **Security** — Biometric lock, no telemetry, encrypted backup/restore (AES-256-GCM).
+- **[Terminal](features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
+- **[Desktops](features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
+- **[Files & cloud](features/files-and-cloud.md)** — SFTP/SCP, SMB, 60+ cloud providers (rclone), cross-filesystem copy/move; plus FFmpeg transcode, HLS, and DLNA.
+- **[Connections](features/connections.md)** — port forwarding (-L/-R/-D/-J), SOCKS/HTTP/Tor proxies, per-app WireGuard & Tailscale tunnels, port knocking + fwknop SPA, SSH keys & FIDO2.
+- **[Email](features/email.md)** — ProtonMail + IMAP/SMTP, compose/reply/forward, multi-account, Mail Rules automation.
+- **[Local Linux](features/local-linux.md)** — Alpine / Debian / Arch / Void via PRoot, side-by-side, no root required.
+- **[USB forwarding](features/usb.md)** — broker a USB device to the agent, the Linux guest, or a remote host over USB/IP.
+- **[Reticulum](features/reticulum.md)** — rnsh shell, file transfer, and `-L`/`-D` forwarding over mesh. The one transport that keeps working with no internet at all.
+- **[Agent transport (MCP)](features/agent-mcp.md)** — ~130 consent-gated tools; the agent can even drive Haven's own UI.
+- **[Security](features/security.md)** — biometric lock, no telemetry, encrypted backup/restore (AES-256-GCM).
 
-Full detail on the [Features page](FEATURES.md).
+Browse the [full feature index](FEATURES.md).
 
 ## Why Haven?
 

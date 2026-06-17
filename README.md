@@ -47,20 +47,18 @@
 
 ## At a glance
 
-- **Terminal** — Mosh / Eternal Terminal / SSH with tmux-aware session restore, configurable keyboard toolbar, OSC 7/8/9/52/777 integration. Bundled Hack Nerd Font Mono renders Powerline / Devicons / Font Awesome / Material Design glyphs in shell prompts out of the box.
-- **Desktop** — VNC (RFB 3.8 with VeNCrypt), RDP (via IronRDP, with EGFX graphics-pipeline support), a GPU-accelerated native Wayland compositor (labwc on GLES2), and a multi-distro local-desktop manager: install Alpine, Debian, Arch, or Void side-by-side and run Xfce4 / Openbox (X11) or Sway (nested Wayland, via wayvnc) desktops.
-- **Files** — Unified browser for SFTP/SCP, SMB, 60+ cloud providers, and Reticulum mesh. Multi-select, built-in editor, image tools, chmod, cross-filesystem copy/move.
-- **Email** — An in-app mail client: read ProtonMail (via the Proton bridge protocol) and any IMAP/SMTP mailbox (Gmail, Outlook, Fastmail, iCloud, self-hosted — username/password, app-password where 2FA requires it; no OAuth yet); compose / reply / forward, multi-account, and attachments (save-to / attach-from any browsable filesystem) over IMAP/SMTP; plus **Mail Rules** — inbound automation (match → mark / flag / move / delete / notify, agent- or human-authored) with a master switch, firing history, and an approval queue for destructive actions while backgrounded, managed from the Mail screen.
-- **Media** — Transcode and stream on-device with FFmpeg 8.0; HLS streaming to the LAN; DLNA server for cloud media.
-- **Keys** — On-device Ed25519/RSA/ECDSA generation, FIDO2/SK hardware keys (NFC + USB), deploy-key helper.
-- **Connections** — Host-key TOFU, port forwarding (-L/-R/-D/-J), SOCKS/HTTP proxies, Tor, ProxyJump, **per-app WireGuard and Tailscale tunnels** (userspace, no system VPN slot — each profile can route through its own tunnel without affecting other apps), and **port knocking / Single Packet Authorization** — fire a TCP/UDP knock sequence, or send a native fwknop SPA packet (AES-256-CBC + HMAC-SHA256, interoperable with `fwknopd`), at the remote firewall before the real connect, with per-profile fields and in-dialog "Test knock" / "Test SPA" buttons.
-- **Local shell** — a Linux userland via PRoot (no root, any Android 8+ device): Alpine, Debian, Arch, or Void, each with its native package manager, side-by-side.
-- **USB to the guest** — broker an attached USB/OTG device through Android and re-expose it, no root: as MCP tools for the agent (enumerate + raw control/bulk transfers), or — with a Settings opt-in — into the Linux guest as a `/dev/hidraw*` node that unmodified native (`LD_PRELOAD`) and Mono/.NET HidSharp (DllMap) apps can use. HID-focused today.
-- **Reticulum** — rnsh shell, file transfer (browse/download/upload), and `-L`/`-D` port forwarding over Reticulum mesh networks, pure Kotlin. The one transport that keeps working with no internet at all.
-- **Security** — Biometric lock, no telemetry, encrypted backup/restore (AES-256-GCM).
-- **Agent transport (MCP)** — Optional MCP server exposes Haven's read and write surfaces as ~130 tools, so an AI agent drives the same primitives you tap — and you watch every action in the same UI. The agent can even **see and operate Haven itself** — `capture_haven_ui` screenshots the app's own screen (also the `ui://haven/screen` resource) and `tap_haven_ui` / `swipe_haven_ui` drive it — closing a self-hosted build → install → verify loop with no human hand on the device. Reads are free; writes prompt for consent and are audited, with optional scoped, rate-capped, expiring **standing policies** for hands-off workflows (revocable from the Agent activity screen). Reached over the device's WireGuard/LAN address or a one-tap SSH reverse-forward; disabled by default, under Settings → Agent endpoint.
+- **[Terminal](docs/features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux-aware session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
+- **[Desktops](docs/features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
+- **[Files & cloud](docs/features/files-and-cloud.md)** — unified browser for SFTP/SCP, SMB, and 60+ cloud providers; cross-filesystem copy/move, editor and image tools; plus on-device FFmpeg transcode, HLS streaming, and DLNA.
+- **[Connections](docs/features/connections.md)** — port forwarding (-L/-R/-D/-J), SOCKS/HTTP/Tor proxies, per-app WireGuard & Tailscale tunnels, port knocking and fwknop SPA, and SSH keys (incl. FIDO2/SK).
+- **[Email](docs/features/email.md)** — ProtonMail (bridge protocol) and any IMAP/SMTP mailbox; compose / reply / forward, multi-account, attachments; plus **Mail Rules** inbound automation.
+- **[Local Linux](docs/features/local-linux.md)** — a Linux userland via PRoot (no root, any Android 8+ device): Alpine, Debian, Arch, or Void, side-by-side.
+- **[USB forwarding](docs/features/usb.md)** — broker an attached USB device through Android and re-expose it to the agent, into the Linux guest, or over USB/IP to a **remote host** (e.g. a phone-hosted YubiKey, touch on the phone).
+- **[Reticulum](docs/features/reticulum.md)** — rnsh shell, file transfer, and `-L`/`-D` port forwarding over Reticulum mesh, pure Kotlin. The one transport that keeps working with no internet at all.
+- **[Agent transport (MCP)](docs/features/agent-mcp.md)** — an optional MCP server exposing ~130 consent-gated, audited tools; the agent can even **see and operate Haven itself** for a self-hosting build → install → verify loop.
+- **[Security](docs/features/security.md)** — biometric lock, no telemetry, encrypted backup/restore (AES-256-GCM).
 
-See [docs/FEATURES.md](docs/FEATURES.md) for the full, detailed feature list.
+See [docs/FEATURES.md](docs/FEATURES.md) for the full feature index.
 
 ## Languages
 
