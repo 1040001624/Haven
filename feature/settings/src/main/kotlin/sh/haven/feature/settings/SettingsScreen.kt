@@ -126,6 +126,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -2606,47 +2607,58 @@ private fun CustomKeyRow(
     onDelete: () -> Unit,
     chipMinWidth: Dp = 0.dp,
 ) {
-    Row(
+    // Stack the label/preview ABOVE the R1/R2/Off chips + edit/delete icons rather than
+    // sharing one row: three chips at chipMinWidth plus two icon buttons leave almost no
+    // width for the label column on a portrait phone, squeezing it to "…" (and, before the
+    // maxLines cap, wrapping a long snippet send one glyph per line and exploding the row).
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = state.item.label,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = displaySendSequence(state.item.send, stringResource(R.string.settings_toolbar_paste_clipboard)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        KeyAssignment.entries.forEach { option ->
-            FilterChip(
-                selected = state.row == option,
-                onClick = { onAssign(option) },
-                label = {
-                    Box(modifier = Modifier.widthIn(min = chipMinWidth), contentAlignment = Alignment.Center) {
-                        Text(
-                            when (option) {
-                                KeyAssignment.ROW1 -> stringResource(R.string.settings_toolbar_row1)
-                                KeyAssignment.ROW2 -> stringResource(R.string.settings_toolbar_row2)
-                                KeyAssignment.OFF -> stringResource(R.string.settings_toolbar_off)
-                            },
-                            fontSize = 11.sp,
-                        )
-                    }
-                },
-                modifier = Modifier.padding(horizontal = 1.dp),
-            )
-        }
-        IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.common_edit), modifier = Modifier.size(16.dp))
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete), modifier = Modifier.size(16.dp))
+        Text(
+            text = state.item.label,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = displaySendSequence(state.item.send, stringResource(R.string.settings_toolbar_paste_clipboard)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            KeyAssignment.entries.forEach { option ->
+                FilterChip(
+                    selected = state.row == option,
+                    onClick = { onAssign(option) },
+                    label = {
+                        Box(modifier = Modifier.widthIn(min = chipMinWidth), contentAlignment = Alignment.Center) {
+                            Text(
+                                when (option) {
+                                    KeyAssignment.ROW1 -> stringResource(R.string.settings_toolbar_row1)
+                                    KeyAssignment.ROW2 -> stringResource(R.string.settings_toolbar_row2)
+                                    KeyAssignment.OFF -> stringResource(R.string.settings_toolbar_off)
+                                },
+                                fontSize = 11.sp,
+                            )
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 1.dp),
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.common_edit), modifier = Modifier.size(16.dp))
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete), modifier = Modifier.size(16.dp))
+            }
         }
     }
 }
