@@ -1,8 +1,13 @@
 #!/bin/sh
-# Build a patched Mesa zink (libgallium) in-guest and cache it for the venus
-# GPU path. The patch (zink-cbuf-coherency.patch) re-issues the per-frame UBO
-# through the command stream so the model stops flickering off-screen over
-# venus' unreliable host-visible memory (see project_virgl_cage_gpu_accel R5).
+# Build a patched Mesa in-guest and cache it for the venus GPU path. Two fixes,
+# both for venus' unreliable host-visible memory over vtest on Mali:
+#   - mesa-venus-gl.patch: zink (libgallium) re-issues the per-frame UBO through
+#     the command stream + EGL (libEGL) routes zink onto the kopper sw-WSI path
+#     over wl_shm (project_virgl_cage_gpu_accel R5).
+#   - venus-vtest-coherency.patch: the venus ICD (libvulkan_virtio) writes back
+#     the guest CPU cache for mapped host-visible memory before each submit, so
+#     streamed vertex/uniform data is GPU-visible — fixes geometry-animating GL
+#     (e.g. glmark2 jellyfish) that the zink UBO fix alone can't reach (R6).
 #
 # Built from the distro's OWN mesa source (apt-get source) so the result is
 # ABI-identical to the system libgallium except for our hunk; LD_PRELOADing it
@@ -16,6 +21,10 @@ set -e
 
 PREFIX=/usr/local/lib/haven/mesa-venus-fix
 PATCH=/usr/local/share/haven/mesa-venus-fix/mesa-venus-gl.patch
+# Second patch: the venus ICD (libvulkan_virtio) host-visible cache-clean that
+# fixes geometry-animating GL (streamed vertex/uniform data) over vtest — the
+# layer below zink's per-frame-UBO fix (project_virgl_cage_gpu_accel R6).
+PATCH2=/usr/local/share/haven/mesa-venus-fix/venus-vtest-coherency.patch
 mkdir -p "$PREFIX"
 # Output goes to stdout/stderr; the caller (run_in_proot, or the Settings
 # trigger redirecting to build.log) decides how to capture/persist it.
@@ -26,6 +35,7 @@ if [ -s "$PREFIX/preload" ]; then
   exit 0
 fi
 [ -f "$PATCH" ] || { echo "FAIL: patch not staged at $PATCH"; exit 2; }
+[ -f "$PATCH2" ] || { echo "FAIL: patch not staged at $PATCH2"; exit 2; }
 
 if command -v apt-get >/dev/null 2>&1; then
   FAMILY=apt
@@ -77,11 +87,15 @@ SRC=$(find . -maxdepth 1 -type d -name 'mesa-*' | head -1)
 cd "$SRC"
 echo "--- applying $PATCH"
 patch -p1 < "$PATCH" || { echo "FAIL: patch did not apply (mesa version drift?)"; exit 4; }
+echo "--- applying $PATCH2"
+patch -p1 < "$PATCH2" || { echo "FAIL: venus ICD patch did not apply (mesa version drift?)"; exit 4; }
 
-echo "--- meson setup (zink only)"
+# Build zink (libgallium/libEGL, the GL stack) AND the venus ICD
+# (libvulkan_virtio) from one source tree so the three are version-matched.
+echo "--- meson setup (zink GL + venus ICD)"
 meson setup _b \
   -Dgallium-drivers=zink \
-  -Dvulkan-drivers= \
+  -Dvulkan-drivers=virtio \
   -Dllvm=disabled \
   -Dglx=disabled \
   -Dplatforms=wayland \
@@ -104,6 +118,22 @@ for p in 'libgbm.so*' 'libGLESv2*.so*'; do
   [ -n "$f" ] && cp -f "$f" "$PREFIX/" || true
 done
 
+# venus ICD: carries the vtest host-visible cache-clean fix so geometry-
+# animating GL (streamed vertex/uniform data, e.g. glmark2 jellyfish) stops
+# flickering — the layer below the zink UBO fix (project_virgl_cage_gpu_accel
+# R6). It is loaded via VK_DRIVER_FILES (an ICD, not LD_PRELOAD); write a
+# manifest pointing at our cached copy. gpuPassthroughEnv prefers it when
+# present, else falls back to the system /usr/share/vulkan icd.
+ICD=$(find _b -name 'libvulkan_virtio.so' -type f | head -1)
+if [ -n "$ICD" ]; then
+  cp -f "$ICD" "$PREFIX/"
+  printf '{"file_format_version":"1.0.1","ICD":{"library_path":"%s/libvulkan_virtio.so","api_version":"1.4.318"}}\n' \
+    "$PREFIX" > "$PREFIX/virtio_icd.json"
+  echo "cached venus ICD: $PREFIX/libvulkan_virtio.so"
+else
+  echo "WARN: venus ICD (libvulkan_virtio.so) not built; geometry-animating GL stays flickery"
+fi
+
 # preload = patched libgallium + libEGL (device-verified minimal set, R5).
 #  - libgallium carries the zink per-frame-UBO coherency fix.
 #  - libEGL carries the platform_wayland.c routing fix that lands zink+venus on
@@ -111,5 +141,6 @@ done
 #    nothing is presented at all).
 # Both share the system soname, so the Mesa loader's dlopen/link resolves to
 # these preloaded copies. Space-separated (LD_PRELOAD accepts space or colon).
+# Written last so a populated `preload` is a reliable "fully built" sentinel.
 printf '%s %s' "$PREFIX/$(basename "$GAL")" "$PREFIX/$(basename "$EGL")" > "$PREFIX/preload"
 echo "=== done. preload=$(cat "$PREFIX/preload") ==="

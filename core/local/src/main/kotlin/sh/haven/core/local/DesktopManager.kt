@@ -610,7 +610,14 @@ class DesktopManager @Inject constructor(
         if (runBlocking { userPreferencesRepository.gpuUseVenus.first() }) {
             "export VTEST_SOCKET=/tmp/.virgl_test$sep" +
                 "export VN_DEBUG=vtest$sep" +
-                "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.json$sep" +
+                // Prefer the mesa-venus-fix venus ICD (libvulkan_virtio) if the
+                // guest built+cached it: it writes back the guest CPU cache for
+                // mapped host-visible memory before each submit so geometry-
+                // animating GL (streamed vertex/uniform data) stops flickering
+                // over vtest (project_virgl_cage_gpu_accel R6). Else the stock ICD.
+                "if [ -f /usr/local/lib/haven/mesa-venus-fix/virtio_icd.json ]; then " +
+                "export VK_DRIVER_FILES=/usr/local/lib/haven/mesa-venus-fix/virtio_icd.json; " +
+                "else export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/virtio_icd.json; fi$sep" +
                 "export GALLIUM_DRIVER=zink$sep" +
                 "export MESA_LOADER_DRIVER_OVERRIDE=zink$sep" +
                 "export VN_PERF=no_fence_feedback,no_semaphore_feedback$sep" +

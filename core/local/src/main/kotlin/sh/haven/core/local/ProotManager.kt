@@ -1727,14 +1727,18 @@ chmod +x /root/.vnc/xstartup""")
     /**
      * Stage the venus windowed-GL fix assets into the active rootfs:
      *  - /usr/local/share/haven/mesa-venus-fix/mesa-venus-gl.patch
+     *  - /usr/local/share/haven/mesa-venus-fix/venus-vtest-coherency.patch
      *  - /usr/local/share/haven/mesa-venus-fix/build.sh
      *
-     * These let the guest build a patched Mesa (libgallium + libEGL) once per
-     * distro so windowed zink+venus GL both PRESENTS over the wl_shm cage
-     * (platform_wayland.c routing → kopper sw-WSI) and stops flickering (the
-     * per-frame UBO re-issued through the command stream because venus
-     * host-visible memory isn't reliably GPU-visible over vtest). Device-
-     * verified 0% flat vs ~42% (see project_virgl_cage_gpu_accel R5).
+     * These let the guest build a patched Mesa (libgallium + libEGL + the venus
+     * ICD libvulkan_virtio) once per distro so windowed zink+venus GL both
+     * PRESENTS over the wl_shm cage (platform_wayland.c routing → kopper sw-WSI)
+     * and stops flickering: the per-frame UBO re-issued through the command
+     * stream (zink), and — for geometry-animating scenes the UBO fix can't reach
+     * — a guest CPU cache writeback of mapped host-visible memory before each
+     * venus submit (the ICD patch), because venus host-visible memory isn't
+     * reliably GPU-visible over vtest. Device-verified (project_virgl_cage_gpu_accel
+     * R5/R6: static scenes 0% flat vs ~42%; jellyfish 24/24 vs 5/24 frames).
      * ABI-independent text; re-copied on every desktop start so an app update
      * refreshes the patch/script. The built+cached `.so` and `preload` under
      * /usr/local/lib/haven/mesa-venus-fix/ are NOT assets and are preserved.
@@ -1755,6 +1759,7 @@ chmod +x /root/.vnc/xstartup""")
             Log.w(TAG, "[mesa-venus-fix] failed to stage $name: ${e.message}")
         }
         copy("mesa-venus-gl.patch")
+        copy("venus-vtest-coherency.patch")
         copy("build.sh")
     }
 
