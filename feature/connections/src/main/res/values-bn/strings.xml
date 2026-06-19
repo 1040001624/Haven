@@ -471,4 +471,22 @@
     <string name="connections_field_imap_port">IMAP পোর্ট</string>
     <string name="connections_field_smtp_port">SMTP পোর্ট</string>
     <string name="connections_toggle_imap_tls">TLS ব্যবহার করুন (implicit SSL)</string>
+
+    <!-- USB forwarding, deploy password, FIDO auth, MCP toggle (#250) -->
+    <string name="connections_section_usb_forward">USB ডিভাইস ফরোয়ার্ডিং</string>
+    <string name="connections_helper_usb_forward">সংযোগের সময় ফোনের সাথে যুক্ত একটি USB ডিভাইস USB/IP-এর মাধ্যমে এই হোস্টে এক্সপোর্ট করে। YubiKey ssh-keygen -t ed25519-sk-এর জন্য হোস্টে দেখা যায়, আর টাচ ফোনে হয়। স্বয়ংক্রিয় সংযুক্তির জন্য হোস্টে usbip ও পাসওয়ার্ড-বিহীন sudo দরকার; নইলে এক্সপোর্ট ও টানেল তৈরি হয় এবং আপনি প্রদর্শিত সংযুক্তি কমান্ড চালান।</string>
+    <string name="connections_field_usb_forward">USB ডিভাইস ফরোয়ার্ড করুন</string>
+    <string name="connections_usb_forward_none">কোনোটি নয়</string>
+    <string name="connections_usb_forward_unattached">%1$s (সংযুক্ত নয়)</string>
+    <string name="connections_deploy_field_password_optional">পাসওয়ার্ড (ঐচ্ছিক)</string>
+    <string name="connections_deploy_password_hint">এই প্রোফাইলের সংরক্ষিত কী দিয়ে ডিপ্লয় করতে ফাঁকা রাখুন। পাসওয়ার্ড কেবল তখনই দরকার যখন সার্ভার পাসওয়ার্ড দিয়ে যাচাই করে (অথবা কোনো কী পাসফ্রেজ / জাম্প হোস্ট আনলক করতে)।</string>
+    <string name="connections_fido_key_label">কী: %1$s</string>
+    <string name="connections_fido_wrong_title">ভুল সিকিউরিটি কী</string>
+    <string name="connections_fido_wrong_body">এই কী-তে সার্ভারের চাওয়া শংসাপত্র নেই। অনুরোধ করা কী উপস্থাপন করে এটি টাচ করুন।</string>
+    <string name="connections_auth_key_picker">কী: %1$s ▾</string>
+    <string name="connections_auth_key_only">✓ শুধু এই কী ব্যবহার করুন</string>
+    <string name="connections_mcp_active">এজেন্ট এই সংযোগে কাজ করছে — এর জন্য MCP নিষ্ক্রিয় করতে ট্যাপ করুন</string>
+    <string name="connections_mcp_disabled">এই সংযোগের জন্য MCP নিষ্ক্রিয় — সক্রিয় করতে ট্যাপ করুন</string>
+    <string name="connections_toggle_mcp_enabled">এই সংযোগে MCP এজেন্ট অনুমতি দিন</string>
+    <string name="connections_helper_mcp_enabled">বন্ধ থাকলে, এই সংযোগকে লক্ষ্য করা AI এজেন্ট (MCP) টুল প্রত্যাখ্যান করা হয়। সংযোগটি আপনার জন্য স্বাভাবিকভাবে কাজ করতে থাকে।</string>
 </resources>

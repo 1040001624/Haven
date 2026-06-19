@@ -146,4 +146,29 @@
     <!-- Local Linux desktop manager -->
     <string name="app_desktop_manager_title">স্থানীয় Linux ডেস্কটপ</string>
     <string name="app_desktop_manager_description">Haven-এর ভিতরে একটি সম্পূর্ণ Linux ডেস্কটপ চালান। একটি ডিস্ট্রো বেছে নিন, একটি ডেস্কটপ পরিবেশ (Xfce4, Openbox, বা Sway) ইনস্টল করুন, তারপর চালু করুন — কোনো আলাদা সার্ভার বা সংযোগের প্রয়োজন নেই।</string>
+
+    <!-- App windows / installed-app launcher (#250) -->
+    <string name="app_desktop_app_window_pin_home_cd">%1$s হোম স্ক্রিনে যোগ করুন</string>
+    <string name="app_desktop_browse_installed_apps">ইনস্টল করা অ্যাপ ব্রাউজ করুন</string>
+    <string name="app_desktop_installed_apps_title">ইনস্টল করা অ্যাপ</string>
+    <string name="app_desktop_installed_apps_search">অ্যাপ খুঁজুন</string>
+    <string name="app_desktop_installed_apps_count">%1$d অ্যাপ · %2$d আইকনসহ</string>
+    <string name="app_desktop_installed_apps_empty">সক্রিয় ডিস্ট্রোতে কোনো গ্রাফিকাল অ্যাপ্লিকেশন পাওয়া যায়নি।</string>
+    <string name="app_desktop_installed_apps_close_cd">বন্ধ</string>
+    <string name="app_desktop_installed_app_icon_cd">%1$s আইকন</string>
+    <string name="app_desktop_installed_app_launch_cd">%1$s চালু করুন</string>
+    <string name="app_desktop_installed_app_fullscreen_on_cd">%1$s ফুলস্ক্রিনে খোলে — উইন্ডো মোডের জন্য ট্যাপ করুন</string>
+    <string name="app_desktop_installed_app_fullscreen_off_cd">%1$s উইন্ডো মোডে খোলে — ফুলস্ক্রিনের জন্য ট্যাপ করুন</string>
+    <string name="app_desktop_app_window_fullscreen">ফুলস্ক্রিনে খুলুন</string>
+    <string name="app_desktop_app_window_run_as_root">root হিসেবে চালান</string>
+    <string name="app_desktop_app_window_run_as_root_hint">প্যাকেজ ম্যানেজার ও সিস্টেম টুলের জন্য (fakeroot ইনস্টল করে)</string>
+    <string name="app_desktop_app_window_resolution">রেজোলিউশন</string>
+    <string name="app_desktop_app_window_scale">স্কেল</string>
+    <string name="app_desktop_opt_default">ডিফল্ট</string>
+    <string name="app_desktop_res_auto">স্বয়ংক্রিয়</string>
+    <string name="app_desktop_res_landscape">ল্যান্ডস্কেপ</string>
+    <string name="app_desktop_res_custom">কাস্টম</string>
+    <string name="app_desktop_res_custom_hint">প্রস্থ×উচ্চতা, যেমন 1024x600</string>
+    <string name="app_desktop_app_window_defaults">ডিফল্ট ডিসপ্লে (সব অ্যাপ উইন্ডো)</string>
+    <string name="app_window_scale_saved">এই অ্যাপের ডিফল্ট আকার হিসেবে সংরক্ষিত</string>
 </resources>

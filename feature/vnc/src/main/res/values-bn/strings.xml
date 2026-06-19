@@ -21,4 +21,10 @@
     <string name="vnc_orientation_landscape_desc">Landscape লক (portrait-এ যেতে ট্যাপ করুন)</string>
     <string name="vnc_orientation_portrait_desc">Portrait লক (auto-তে যেতে ট্যাপ করুন)</string>
     <string name="vnc_orientation_auto_desc">স্বয়ংক্রিয় ঘোরানো (landscape-এ যেতে ট্যাপ করুন)</string>
+    <!-- Touch gesture help (#250) -->
+    <string name="vnc_cd_gesture_help">টাচ জেসচার</string>
+    <string name="vnc_cd_save_default">বর্তমান আকার এই অ্যাপের ডিফল্ট হিসেবে সংরক্ষণ করুন</string>
+    <string name="vnc_gesture_help_title">টাচ জেসচার</string>
+    <string name="vnc_gesture_help_two_finger">স্ক্রোল করতে দুই আঙুল দিয়ে টানুন; জুম করতে চিমটি দিন। এক আঙুল হলো মাউস।</string>
+    <string name="vnc_gesture_help_three_finger">ফুলস্ক্রিনে থেকেই অ্যাপের আকার পরিবর্তন করতে তিন আঙুল দিয়ে চিমটি দিন।</string>
 </resources>

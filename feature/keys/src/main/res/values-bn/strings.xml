@@ -166,4 +166,27 @@
     <!-- RenameKeyDialog (#231) -->
     <string name="keys_rename">পুনঃনামকরণ</string>
     <string name="keys_rename_title">কী পুনঃনামকরণ করুন</string>
+
+    <!-- FIDO2 / security-key registration (#250) -->
+    <string name="keys_offer_for_connections">সংযোগের জন্য উপলব্ধ করুন</string>
+    <string name="keys_sk_require_pin">সাইন ইনের সময় PIN আবশ্যক করুন</string>
+    <string name="keys_security_key">সিকিউরিটি কী (YubiKey)</string>
+    <string name="keys_security_key_hint">একটি FIDO2 কী-তে নতুন SSH কী সেট করুন, বা এতে ইতিমধ্যে থাকা কী আমদানি করুন।</string>
+    <string name="keys_security_key_setup">এতে নতুন কী সেট করুন</string>
+    <string name="keys_security_key_setup_hint">সিকিউরিটি কী-তে একটি SSH কী তৈরি করুন (নতুন হলে একটি PIN সেট করে)। কোনো ল্যাপটপ বা ssh-keygen লাগে না।</string>
+    <string name="keys_security_key_import">এতে ইতিমধ্যে থাকা কী আমদানি করুন</string>
+    <string name="keys_security_key_import_hint">কী-তে ইতিমধ্যে সংরক্ষিত রেসিডেন্ট SSH-SK শংসাপত্র যোগ করুন (অন্য কোথাও ssh-keygen -O resident দিয়ে তৈরি)।</string>
+    <string name="keys_register_on_security_key">সিকিউরিটি কী-তে SSH কী সেট করুন</string>
+    <string name="keys_register_on_security_key_body">সিকিউরিটি কী-তে একটি রেসিডেন্ট sk-ssh-ed25519 শংসাপত্র তৈরি করে। তারপর: USB দিয়ে সংযুক্ত করে এটি চাপুন, অথবা NFC-এর জন্য ফোনের পেছনে ধরুন।</string>
+    <string name="keys_register_verify_required">প্রতিবার সাইন ইনে PIN আবশ্যক করুন</string>
+    <string name="keys_register_verify_required_hint">চালু: প্রতিবার SSH লগইনে স্বাক্ষর করার সময় কী তার PIN চায় (verify-required — বেশি নিরাপদ)। বন্ধ: শুধু টাচ।</string>
+    <string name="keys_register_pin">সিকিউরিটি কী PIN</string>
+    <string name="keys_register_pin_confirm">PIN নিশ্চিত করুন</string>
+    <string name="keys_register_pin_hint">কী নতুন হলে একটি PIN বেছে নিন, নয়তো এর বর্তমান PIN লিখুন। ন্যূনতম 4 অক্ষর।</string>
+    <string name="keys_register_pin_mismatch">PIN মিলছে না</string>
+    <string name="keys_register_action">নিবন্ধন করুন</string>
+    <string name="keys_fido_pin_set_title">সিকিউরিটি কী PIN তৈরি করুন</string>
+    <string name="keys_fido_pin_set_help">এই সিকিউরিটি কী-তে এখনো কোনো PIN নেই। একটি বেছে নিন (4–63 অক্ষর) — কী স্বাক্ষর করার সময় আপনি এটি লিখবেন।</string>
+    <string name="keys_fido_pin_confirm_label">PIN নিশ্চিত করুন</string>
+    <string name="keys_fido_pin_mismatch">PIN মিলছে না</string>
 </resources>
