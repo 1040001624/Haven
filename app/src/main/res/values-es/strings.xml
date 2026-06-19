@@ -152,4 +152,29 @@
     <!-- Local Linux desktop manager -->
     <string name="app_desktop_manager_title">Escritorio Linux local</string>
     <string name="app_desktop_manager_description">Ejecuta un escritorio Linux completo dentro de Haven. Elige una distro, instala un entorno de escritorio (Xfce4, Openbox o Sway) y luego pulsa Iniciar — no hace falta un servidor ni una conexión aparte.</string>
+
+    <!-- App windows / installed-app launcher (#250) -->
+    <string name="app_desktop_app_window_pin_home_cd">Añadir %1$s a la pantalla de inicio</string>
+    <string name="app_desktop_browse_installed_apps">Explorar apps instaladas</string>
+    <string name="app_desktop_installed_apps_title">Apps instaladas</string>
+    <string name="app_desktop_installed_apps_search">Buscar apps</string>
+    <string name="app_desktop_installed_apps_count">%1$d apps · %2$d con iconos</string>
+    <string name="app_desktop_installed_apps_empty">No se encontraron aplicaciones gráficas en la distro activa.</string>
+    <string name="app_desktop_installed_apps_close_cd">Cerrar</string>
+    <string name="app_desktop_installed_app_icon_cd">Icono de %1$s</string>
+    <string name="app_desktop_installed_app_launch_cd">Iniciar %1$s</string>
+    <string name="app_desktop_installed_app_fullscreen_on_cd">%1$s se abre en pantalla completa — toca para modo ventana</string>
+    <string name="app_desktop_installed_app_fullscreen_off_cd">%1$s se abre en modo ventana — toca para pantalla completa</string>
+    <string name="app_desktop_app_window_fullscreen">Abrir en pantalla completa</string>
+    <string name="app_desktop_app_window_run_as_root">Ejecutar como root</string>
+    <string name="app_desktop_app_window_run_as_root_hint">Para gestores de paquetes y herramientas del sistema (instala fakeroot)</string>
+    <string name="app_desktop_app_window_resolution">Resolución</string>
+    <string name="app_desktop_app_window_scale">Escala</string>
+    <string name="app_desktop_opt_default">Predeterminado</string>
+    <string name="app_desktop_res_auto">Automática</string>
+    <string name="app_desktop_res_landscape">Horizontal</string>
+    <string name="app_desktop_res_custom">Personalizada</string>
+    <string name="app_desktop_res_custom_hint">Ancho×Alto, p. ej. 1024x600</string>
+    <string name="app_desktop_app_window_defaults">Pantalla predeterminada (todas las ventanas de apps)</string>
+    <string name="app_window_scale_saved">Guardado como el tamaño predeterminado de esta app</string>
 </resources>

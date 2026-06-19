@@ -381,4 +381,13 @@
     <string name="settings_mcp_trust_loopback_title">Confiar en clientes locales</string>
     <string name="settings_mcp_trust_loopback_subtitle_on">Activado — los clientes locales (127.0.0.1) se conectan sin emparejamiento ni avisos de aprobación. Los clientes de Wi-Fi/LAN y WireGuard siguen pidiendo aprobación.</string>
     <string name="settings_mcp_trust_loopback_subtitle_off">Desactivado — incluso los clientes locales deben emparejarse y aprobar cada solicitud</string>
+
+    <!-- Terminal reflow, GPU stack, standing policies (#250) -->
+    <string name="settings_reflow_on_keyboard_title">Ajustar el terminal al teclado</string>
+    <string name="settings_reflow_on_keyboard_subtitle">Cuando se abre el teclado, ajusta el tamaño del terminal para que quepa encima en lugar de desplazar la vista hacia arriba. Ayuda a las apps de pantalla completa que muestran una línea de estado arriba; déjalo desactivado para shells normales.</string>
+    <string name="settings_gpu_venus_title">Pila de GPU experimental (venus + zink)</string>
+    <string name="settings_gpu_venus_subtitle">Usa venus (Vulkan hacia la GPU) + zink para OpenGL moderno (~3.2 core) en escritorios acelerados, en lugar de virgl (GL 2.1). Las apps Vulkan nativas se muestran; la presentación de OpenGL es lenta por ahora. Requiere mesa-vulkan-drivers instalado en el guest. Desactivado = virgl predeterminado.</string>
+    <string name="settings_standing_policies_header">Políticas permanentes — estas herramientas se ejecutan sin preguntar</string>
+    <string name="settings_standing_policy_meta">%1$s · hasta %2$d llamadas/min · caduca %3$s</string>
+    <string name="settings_standing_policy_revoke">Revocar</string>
 </resources>
