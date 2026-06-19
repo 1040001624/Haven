@@ -166,4 +166,27 @@
     <!-- RenameKeyDialog (#231) -->
     <string name="keys_rename">Renommer</string>
     <string name="keys_rename_title">Renommer la clé</string>
+
+    <!-- FIDO2 / security-key registration (#250) -->
+    <string name="keys_offer_for_connections">Proposer pour les connexions</string>
+    <string name="keys_sk_require_pin">Exiger le PIN à la connexion</string>
+    <string name="keys_security_key">Clé de sécurité (YubiKey)</string>
+    <string name="keys_security_key_hint">Configurez une nouvelle clé SSH sur une clé FIDO2, ou importez les clés qui s\'y trouvent déjà.</string>
+    <string name="keys_security_key_setup">En configurer une nouvelle dessus</string>
+    <string name="keys_security_key_setup_hint">Créez une clé SSH sur la clé de sécurité (définit un PIN si elle est neuve). Sans ordinateur portable ni ssh-keygen.</string>
+    <string name="keys_security_key_import">Importer les clés déjà présentes</string>
+    <string name="keys_security_key_import_hint">Ajoutez des identifiants SSH-SK résidents déjà stockés sur la clé (créés ailleurs avec ssh-keygen -O resident).</string>
+    <string name="keys_register_on_security_key">Configurer une clé SSH sur la clé de sécurité</string>
+    <string name="keys_register_on_security_key_body">Crée un identifiant sk-ssh-ed25519 résident sur la clé de sécurité. Ensuite : branchez-la en USB et appuyez dessus, ou maintenez-la contre l\'arrière du téléphone pour le NFC.</string>
+    <string name="keys_register_verify_required">Exiger le PIN à chaque connexion</string>
+    <string name="keys_register_verify_required_hint">Activé : la clé demande son PIN à chaque signature d\'une connexion SSH (verify-required — plus sûr). Désactivé : appui simple.</string>
+    <string name="keys_register_pin">PIN de la clé de sécurité</string>
+    <string name="keys_register_pin_confirm">Confirmer le PIN</string>
+    <string name="keys_register_pin_hint">Choisissez un PIN si la clé est neuve, ou saisissez son PIN actuel. 4 caractères ou plus.</string>
+    <string name="keys_register_pin_mismatch">Les PIN ne correspondent pas</string>
+    <string name="keys_register_action">Enregistrer</string>
+    <string name="keys_fido_pin_set_title">Créer un PIN de clé de sécurité</string>
+    <string name="keys_fido_pin_set_help">Cette clé de sécurité n\'a pas encore de PIN. Choisissez-en un (4–63 caractères) — vous le saisirez quand la clé signera.</string>
+    <string name="keys_fido_pin_confirm_label">Confirmer le PIN</string>
+    <string name="keys_fido_pin_mismatch">Les PIN ne correspondent pas</string>
 </resources>
