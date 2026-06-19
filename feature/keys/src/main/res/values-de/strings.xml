@@ -166,4 +166,27 @@
     <!-- RenameKeyDialog (#231) -->
     <string name="keys_rename">Umbenennen</string>
     <string name="keys_rename_title">Schlüssel umbenennen</string>
+
+    <!-- FIDO2 / security-key registration (#250) -->
+    <string name="keys_offer_for_connections">Für Verbindungen anbieten</string>
+    <string name="keys_sk_require_pin">PIN bei der Anmeldung verlangen</string>
+    <string name="keys_security_key">Sicherheitsschlüssel (YubiKey)</string>
+    <string name="keys_security_key_hint">Richte einen neuen SSH-Schlüssel auf einem FIDO2-Schlüssel ein oder importiere bereits vorhandene Schlüssel.</string>
+    <string name="keys_security_key_setup">Neuen Schlüssel darauf einrichten</string>
+    <string name="keys_security_key_setup_hint">Erstelle einen SSH-Schlüssel auf dem Sicherheitsschlüssel (setzt eine PIN, wenn er neu ist). Kein Laptop oder ssh-keygen nötig.</string>
+    <string name="keys_security_key_import">Bereits vorhandene Schlüssel importieren</string>
+    <string name="keys_security_key_import_hint">Füge residente SSH-SK-Anmeldedaten hinzu, die bereits auf dem Schlüssel gespeichert sind (anderswo mit ssh-keygen -O resident erstellt).</string>
+    <string name="keys_register_on_security_key">SSH-Schlüssel auf Sicherheitsschlüssel einrichten</string>
+    <string name="keys_register_on_security_key_body">Erstellt residente sk-ssh-ed25519-Anmeldedaten auf dem Sicherheitsschlüssel. Dann: per USB anschließen und drücken, oder zum NFC-Lesen hinten ans Telefon halten.</string>
+    <string name="keys_register_verify_required">PIN bei jeder Anmeldung verlangen</string>
+    <string name="keys_register_verify_required_hint">An: Der Schlüssel verlangt seine PIN bei jeder Signatur einer SSH-Anmeldung (verify-required — sicherer). Aus: nur Berührung.</string>
+    <string name="keys_register_pin">PIN des Sicherheitsschlüssels</string>
+    <string name="keys_register_pin_confirm">PIN bestätigen</string>
+    <string name="keys_register_pin_hint">Wähle eine PIN, wenn der Schlüssel neu ist, oder gib seine vorhandene PIN ein. 4+ Zeichen.</string>
+    <string name="keys_register_pin_mismatch">Die PINs stimmen nicht überein</string>
+    <string name="keys_register_action">Registrieren</string>
+    <string name="keys_fido_pin_set_title">PIN für Sicherheitsschlüssel erstellen</string>
+    <string name="keys_fido_pin_set_help">Dieser Sicherheitsschlüssel hat noch keine PIN. Wähle eine (4–63 Zeichen) — du gibst sie ein, wenn der Schlüssel signiert.</string>
+    <string name="keys_fido_pin_confirm_label">PIN bestätigen</string>
+    <string name="keys_fido_pin_mismatch">Die PINs stimmen nicht überein</string>
 </resources>
