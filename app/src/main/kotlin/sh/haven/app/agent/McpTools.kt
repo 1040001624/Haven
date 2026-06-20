@@ -1481,7 +1481,7 @@ internal class McpTools(
         ) { args -> installApkFromUrl(args) },
 
         "install_apk_from_backend" to ToolHandler(
-            description = "Install an APK from a path on any connected backend (local, SSH/SFTP, SMB, rclone, Reticulum). Streams APK bytes via the existing FileBackend abstraction. Same Shizuku/system-installer fallback as install_apk_from_url. Gated by Settings → Agent endpoint → \"Allow agents to read file contents\" and confirmed per-call.",
+            description = "Install an APK from a path on any connected backend (local, SSH/SFTP, SMB, rclone, Reticulum). Streams APK bytes via the existing FileBackend abstraction. Same Shizuku/system-installer fallback as install_apk_from_url. Because backend transfers can be slow (a big APK over SFTP/rclone/Reticulum), this validates synchronously (missing file, directory, size cap → immediate error) then streams + installs in the background, returning {pending:true, staging:true} right away rather than blocking past the request timeout. Confirm the result with get_app_info (and /mcp reconnect if Haven is updating itself). Gated by Settings → Agent endpoint → \"Allow agents to read file contents\" and confirmed per-call.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1650,6 +1650,20 @@ internal class McpTools(
             },
         ) { args -> usbAttachToGuest(args) },
 
+        "detach_from_guest" to ToolHandler(
+            description = "Stop the haven-usb guest proxy started by usb_attach_to_guest and release the brokered USB device handle (the guest's /dev/pts serial bridge or LD_PRELOAD HID routing stops working immediately). Pass keepOpen:true to leave the device handle open. The teardown counterpart to usb_attach_to_guest.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("keepOpen", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "Leave the brokered device handle open (default false = fully release it).")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> detachFromGuest(args) },
+
         "start_usbip_export" to ToolHandler(
             description = "Start a userspace USB/IP server exporting a phone-attached USB device over TCP (default port 3240) so a remote Linux host can `usbip attach` it as a real local device node — every app there (ssh, libfido2, browsers) sees it, with the touch happening on the phone. Opens the device (requesting permission if needed) and returns the busid, bound port, and the client-side attach command. deviceName is optional when exactly one device is attached. Pass loopbackOnly:true to bind 127.0.0.1 only (for use behind an SSH/WireGuard tunnel); the default binds all interfaces for direct LAN attach. This is the remote-host counterpart to usb_attach_to_guest (which targets the local proot guest, where usbip can't run — the Android kernel has no vhci-hcd).",
             inputSchema = JSONObject().apply {
@@ -1673,13 +1687,27 @@ internal class McpTools(
         ) { args -> startUsbipExport(args) },
 
         "stop_usbip_export" to ToolHandler(
-            description = "Stop the USB/IP server started by start_usbip_export (closes the listening socket and any active client connection). The brokered USB device handle stays open for a fast re-export.",
+            description = "Stop the USB/IP server started by start_usbip_export (closes the listening socket and any active client connection) and release the brokered USB device handle. Pass keepOpen:true to leave the handle open for a fast re-export.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("keepOpen", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "Leave the brokered device handle open for a fast re-export (default false = fully release it).")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> stopUsbipExport(args) },
+
+        "list_usb_exports" to ToolHandler(
+            description = "List active USB exports of phone-attached devices: the USB/IP server (start_usbip_export — to remote hosts) and the guest proxy (usb_attach_to_guest — to the local proot guest). Reports the exported device, busid/bound port, and whether a remote usbip client is currently attached. Read-only.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
             },
             consentLevel = ConsentLevel.NEVER,
-        ) { args -> stopUsbipExport(args) },
+        ) { _ -> listUsbExports() },
 
         "open_local_shell" to ToolHandler(
             description = "Open a fresh local Alpine PRoot shell session and return its sessionId. Equivalent to tapping the Terminal icon in the Connections top bar — creates the local shell profile if missing, registers a session, and connects it. The returned sessionId is immediately usable with send_terminal_input and read_terminal_scrollback. Use this when you need a clean bash REPL (e.g. when an existing session has Claude Code, vim, or another stdin-capturing process in front of it). Pass `plain: true` to bypass the user's session-manager preference (tmux / zellij / screen / byobu) and exec a bare login shell — required when the agent needs Haven's own scrollback ring to capture output, which doesn't happen when a multiplexer's status bar uses DECSTBM to reserve the bottom row. NOTE: if a live local shell already exists, this returns that sessionId regardless of `plain` (response `reused: true`); call disconnect_profile on the existing profile first if you need a fresh plain-shell respawn.",
@@ -6101,11 +6129,45 @@ internal class McpTools(
             )
         }
 
-        val (target, written) = streamToStagedApk({ backend.openInputStream(path, 0) }) {
-            "Read from ${backend.label} failed: ${it.message}"
+        // Streaming a large APK from a backend (SFTP over a flaky tunnel,
+        // rclone over the network, Reticulum over the mesh) routinely outlasts
+        // the MCP client's request budget — the call reads as a timeout even
+        // though the install completes (observed installing Haven over itself
+        // via the WG-tunnelled "near" SFTP). The existing self-install deferral
+        // only covers the `pm install` commit, not this upstream download, so
+        // the early-ack never reached the client. Fix: after the fast
+        // validation above (gate / stat / dir / size cap — all return errors
+        // synchronously), run the stream + install in the background and return
+        // a pending ack the caller confirms with get_app_info.
+        val sizeBytes = entry.size
+        val backendLabel = backend.label
+        backgroundScope.launch {
+            runCatching {
+                val (target, written) = streamToStagedApk({ backend.openInputStream(path, 0) }) {
+                    "Read from $backendLabel failed: ${it.message}"
+                }
+                assertApkMagic(target, written)
+                installStagedApk(target, written)
+            }.onFailure {
+                android.util.Log.w("McpTools", "backend APK install failed ($path): ${it.message}")
+            }.onSuccess {
+                android.util.Log.i("McpTools", "backend APK install completed ($path): $it")
+            }
         }
-        assertApkMagic(target, written)
-        installStagedApk(target, written)
+        JSONObject().apply {
+            put("installed", false)
+            put("pending", true)
+            put("staging", true)
+            put("bytes", sizeBytes)
+            put(
+                "message",
+                "Streaming $sizeBytes bytes from $backendLabel and installing in the " +
+                    "background — backend transfers can outlast the request timeout, so this " +
+                    "returns immediately rather than blocking. Confirm the running build with " +
+                    "get_app_info; if Haven is updating itself the MCP link drops on restart, " +
+                    "so reconnect (/mcp reconnect) first.",
+            )
+        }
     }
 
     /**
@@ -6605,6 +6667,18 @@ internal class McpTools(
         }
     }
 
+    private suspend fun detachFromGuest(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        // Capture before stop() clears it, so we can release the right handle.
+        val deviceName = usbProxyServer.proxyDeviceName
+        usbProxyServer.stop()
+        val keepOpen = args.optBoolean("keepOpen", false)
+        if (!keepOpen && deviceName != null) usbBroker.closeDevice(deviceName)
+        JSONObject().apply {
+            put("stopped", true)
+            put("deviceReleased", !keepOpen && deviceName != null)
+        }
+    }
+
     private suspend fun startUsbipExport(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val requested = args.optString("deviceName").takeIf { it.isNotBlank() }
         val deviceName = requested ?: run {
@@ -6642,9 +6716,46 @@ internal class McpTools(
         }
     }
 
-    private suspend fun stopUsbipExport(@Suppress("UNUSED_PARAMETER") args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun stopUsbipExport(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        // Capture before stop() clears exportedDeviceName, so we release the right handle.
+        val deviceName = usbIpServer.exportedDeviceName
         usbIpServer.stop()
-        JSONObject().apply { put("stopped", true) }
+        val keepOpen = args.optBoolean("keepOpen", false)
+        if (!keepOpen && deviceName != null) usbBroker.closeDevice(deviceName)
+        JSONObject().apply {
+            put("stopped", true)
+            put("deviceReleased", !keepOpen && deviceName != null)
+        }
+    }
+
+    private suspend fun listUsbExports(): JSONObject = withContext(Dispatchers.IO) {
+        val devices = usbBroker.listDevices()
+        fun deviceFor(name: String?): Any =
+            name?.let { n -> devices.firstOrNull { it.deviceName == n }?.let { usbDeviceJson(it) } } ?: JSONObject.NULL
+        val usbipName = usbIpServer.exportedDeviceName
+        val usbip = JSONObject().apply {
+            put("running", usbIpServer.isRunning)
+            put("deviceName", usbipName ?: JSONObject.NULL)
+            put("boundPort", usbIpServer.boundPort ?: JSONObject.NULL)
+            if (usbipName != null) {
+                val parts = usbipName.trimEnd('/').split('/')
+                put("busid", "${parts.getOrNull(parts.size - 2)?.toIntOrNull() ?: 1}-${parts.lastOrNull()?.toIntOrNull() ?: 1}")
+            }
+            put("clientCount", usbIpServer.clientCount)
+            put("clientAttached", usbIpServer.clientCount > 0)
+            put("device", deviceFor(usbipName))
+        }
+        val proxyName = usbProxyServer.proxyDeviceName
+        val proxy = JSONObject().apply {
+            put("running", usbProxyServer.isRunning)
+            put("deviceName", proxyName ?: JSONObject.NULL)
+            put("socketName", usbProxyServer.socketName)
+            put("device", deviceFor(proxyName))
+        }
+        JSONObject().apply {
+            put("usbip", usbip)
+            put("proxy", proxy)
+        }
     }
 
     private suspend fun openLocalShell(args: JSONObject = JSONObject()): JSONObject = withContext(Dispatchers.IO) {
