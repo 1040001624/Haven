@@ -1115,9 +1115,9 @@ fun SftpScreen(
                                         viewModel.navigateTo(entry.path)
                                     } else if (sh.haven.feature.editor.TextMateSupport.scopeForFileName(entry.name) != null) {
                                         viewModel.openInEditor(entry)
-                                    } else if (isRclone && entry.isMediaFile(mediaExtensions)) {
-                                        // Rclone media file: play via the rclone HTTP
-                                        // media server (no full download needed).
+                                    } else if ((isRclone || viewModel.isSmbProfile()) && entry.isMediaFile(mediaExtensions)) {
+                                        // Rclone / SMB media file: play via the loopback
+                                        // media bridge (Range-capable, no full download).
                                         viewModel.playMediaFile(entry)
                                     } else if (viewModel.isLocalProfile()) {
                                         // Open local file with system app
@@ -1160,21 +1160,19 @@ fun SftpScreen(
                                 onMediaSheet = if (!entry.isDirectory && entry.isMediaFile(mediaExtensions)) {
                                     { viewModel.openMediaSheet(entry) }
                                 } else null,
-                                onPlayInBrowser = if (!entry.isDirectory && entry.isMediaFile(mediaExtensions) &&
-                                    !viewModel.isSmbProfile()) {
+                                onPlayInBrowser = if (!entry.isDirectory && entry.isMediaFile(mediaExtensions)) {
                                     { viewModel.playInBrowser(entry) }
                                 } else null,
-                                onStream = if (!entry.isDirectory && entry.isMediaFile(mediaExtensions) &&
-                                    !viewModel.isSmbProfile()) {
+                                onStream = if (!entry.isDirectory && entry.isMediaFile(mediaExtensions)) {
                                     { viewModel.streamFile(entry) }
                                 } else null,
-                                onStreamFolder = if (entry.isDirectory && !viewModel.isSmbProfile()) {
+                                onStreamFolder = if (entry.isDirectory) {
                                     { viewModel.streamFolder(entry.path) }
                                 } else null,
-                                onOpenWith = if (!entry.isDirectory && !viewModel.isSmbProfile()) {
+                                onOpenWith = if (!entry.isDirectory) {
                                     { viewModel.openWithExternalApp(entry) }
                                 } else null,
-                                onPlay = if (isRclone && entry.isMediaFile(mediaExtensions)) {
+                                onPlay = if ((isRclone || viewModel.isSmbProfile()) && entry.isMediaFile(mediaExtensions)) {
                                     { viewModel.playMediaFile(entry) }
                                 } else null,
                                 onSync = if (isRclone && entry.isDirectory) {

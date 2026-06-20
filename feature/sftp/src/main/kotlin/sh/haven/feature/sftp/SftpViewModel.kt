@@ -1741,7 +1741,7 @@ class SftpViewModel @Inject constructor(
      *  - local → absolute path
      *  - rclone → loopback HTTP URL via ensureMediaServer
      *  - SFTP → loopback HTTP URL via sftpStreamServer
-     *  - SMB → throws (no HTTP bridge yet)
+     *  - SMB → loopback HTTP URL via sftpStreamServer (smbOpener) — VISION §2
      */
     private suspend fun resolveStreamInput(entry: SftpEntry): String {
         return when {
@@ -1754,7 +1754,16 @@ class SftpViewModel @Inject constructor(
                     .joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
                 "http://127.0.0.1:$port/$encodedPath"
             }
-            _isSmbProfile.value -> throw IllegalStateException("SMB not supported for this action")
+            _isSmbProfile.value -> {
+                val port = withContext(Dispatchers.IO) { sftpStreamServer.start() }
+                val urlPath = sftpStreamServer.publish(
+                    path = entry.path,
+                    size = entry.size,
+                    contentType = guessContentType(entry.name),
+                    opener = smbOpener(entry.path),
+                )
+                "http://127.0.0.1:$port$urlPath"
+            }
             else -> {
                 val profileId = _activeProfileId.value
                     ?: throw IllegalStateException("No active profile")
@@ -2131,10 +2140,6 @@ class SftpViewModel @Inject constructor(
      */
     fun streamFolder(folderPath: String) {
         Log.w(TAG, "streamFolder: $folderPath")
-        if (_isSmbProfile.value) {
-            _error.value = "Streaming is not supported for SMB yet"
-            return
-        }
         viewModelScope.launch {
             val logBuffer = StringBuilder()
             val startTime = System.currentTimeMillis()
@@ -2234,10 +2239,6 @@ class SftpViewModel @Inject constructor(
 
     fun streamFile(entry: SftpEntry, localOnly: Boolean = false) {
         Log.w(TAG, "streamFile: ${entry.path} localOnly=$localOnly isLocal=${_isLocalProfile.value} isRclone=${_isRcloneProfile.value} isSmb=${_isSmbProfile.value} ffmpegAvail=${ffmpegExecutor.isAvailable()}")
-        if (_isSmbProfile.value) {
-            _error.value = "Streaming is not supported for SMB yet"
-            return
-        }
         viewModelScope.launch {
             val logBuffer = StringBuilder()
             val startTime = System.currentTimeMillis()
@@ -2246,31 +2247,9 @@ class SftpViewModel @Inject constructor(
                 logBuffer.append("+${elapsed}ms ").append(line).append('\n')
             }
             try {
-                // Resolve the ffmpeg input path or URL
-                val streamInput: String = when {
-                    _isLocalProfile.value -> entry.path
-                    _isRcloneProfile.value -> {
-                        val port = ensureMediaServer()
-                        val encodedPath = entry.path
-                            .trimStart('/')
-                            .split('/')
-                            .joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-                        "http://127.0.0.1:$port/$encodedPath"
-                    }
-                    else -> {
-                        // SFTP via loopback HTTP bridge
-                        val profileId = _activeProfileId.value
-                            ?: throw IllegalStateException("No active profile")
-                        val port = withContext(Dispatchers.IO) { sftpStreamServer.start() }
-                        val urlPath = sftpStreamServer.publish(
-                            path = entry.path,
-                            size = entry.size,
-                            contentType = guessContentType(entry.name),
-                            opener = sftpOpener(profileId, entry.path),
-                        )
-                        "http://127.0.0.1:$port$urlPath"
-                    }
-                }
+                // Resolve the ffmpeg input path or URL — one path for every
+                // backend, including SMB via the loopback bridge (VISION §2).
+                val streamInput: String = resolveStreamInput(entry)
                 Log.w(TAG, "Starting HLS stream for $streamInput (localOnly=$localOnly)")
                 appendLog("streamFile: input=$streamInput localOnly=$localOnly")
                 hlsStreamServer.onStderr = { line -> appendLog("ffmpeg: $line") }
@@ -4720,15 +4699,10 @@ class SftpViewModel @Inject constructor(
         Log.d(TAG, "playMediaFile: ${entry.path}")
         viewModelScope.launch {
             try {
-                val port = ensureMediaServer()
-                // URL-encode each path segment so spaces / parentheses / unicode
-                // don't break the intent URI. Without this, VLC (and Android's
-                // intent parser) silently fail on file names with special chars.
-                val encodedPath = entry.path
-                    .trimStart('/')
-                    .split('/')
-                    .joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-                val url = "http://127.0.0.1:$port/$encodedPath"
+                // One loopback URL per backend — rclone's media server, or the
+                // SftpStreamServer bridge for SFTP/SMB (VISION §2). The external
+                // player reads it over the device's own 127.0.0.1, Range-capable.
+                val url = resolveStreamInput(entry)
                 val mimeType = entry.mimeType.ifEmpty {
                     android.webkit.MimeTypeMap.getSingleton()
                         .getMimeTypeFromExtension(entry.name.substringAfterLast('.', "").lowercase())
@@ -4765,10 +4739,6 @@ class SftpViewModel @Inject constructor(
      */
     fun openWithExternalApp(entry: SftpEntry) {
         if (entry.isDirectory) return
-        if (_isSmbProfile.value) {
-            _error.value = "Open with… is not supported for SMB yet"
-            return
-        }
         viewModelScope.launch {
             try {
                 val mime = mimeTypeForName(entry.name)
@@ -4790,6 +4760,17 @@ class SftpViewModel @Inject constructor(
                             .split('/')
                             .joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
                         data = android.net.Uri.parse("http://127.0.0.1:$port/$encodedPath")
+                    }
+                    _isSmbProfile.value -> {
+                        // SMB via the loopback HTTP bridge (raw bytes, Range-capable) — VISION §2.
+                        val port = withContext(Dispatchers.IO) { sftpStreamServer.start() }
+                        val urlPath = sftpStreamServer.publish(
+                            path = entry.path,
+                            size = entry.size,
+                            contentType = mime,
+                            opener = smbOpener(entry.path),
+                        )
+                        data = android.net.Uri.parse("http://127.0.0.1:$port$urlPath")
                     }
                     else -> {
                         // SFTP via the loopback HTTP bridge (raw bytes, Range-capable).
