@@ -59,6 +59,21 @@ internal fun forceDeleteRecursively(root: File): Boolean {
 }
 
 /**
+ * Return the subset of [binaries] (rootfs-relative paths like
+ * `usr/bin/xfwm4`) that are missing under [rootfs].
+ *
+ * A desktop whose primary `verifyBinary` is present can still be
+ * unstartable: when a package install half-completes it can leave the
+ * components the desktop's start command actually launches (the window
+ * manager, panel, …) uninstalled. Checking only one binary then reports
+ * "installed" for a desktop that renders nothing (#254). Pure +
+ * filesystem-only so the post-install gate is unit-testable over a temp
+ * rootfs.
+ */
+internal fun missingDesktopBinaries(rootfs: File, binaries: List<String>): List<String> =
+    binaries.filterNot { File(rootfs, it).exists() }
+
+/**
  * Manages the PRoot binary and Alpine Linux rootfs.
  *
  * PRoot is bundled as libproot.so in jniLibs (extracted to nativeLibraryDir
@@ -270,6 +285,17 @@ class ProotManager @Inject constructor(
         val verifyBinary: String,
         val startCommands: String,
         val sizeEstimate: String,
+        /**
+         * Binaries beyond [verifyBinary] that this DE's [startCommands]
+         * launch and so must exist for it to actually render (#254).
+         * Rootfs-relative paths. Checked by the post-install gate so a
+         * half-installed desktop fails loudly instead of "installing"
+         * and then showing a blank screen. Left empty for DEs whose
+         * single [verifyBinary] is a sufficient liveness proxy (e.g. the
+         * nested-Wayland compositors, whose render path is shim/wayvnc-
+         * dependent rather than a fixed binary set).
+         */
+        val extraBinaries: List<String> = emptyList(),
         val isWayland: Boolean = false,
         val isNative: Boolean = false,
         /** Hidden DEs are not shown in the Desktop Manager UI. */
@@ -282,6 +308,7 @@ class ProotManager @Inject constructor(
             verifyBinary = "usr/bin/openbox",
             startCommands = "xsetroot -solid '#2e3440'; openbox & xterm &",
             sizeEstimate = "~10MB",
+            extraBinaries = listOf("usr/bin/xterm", "usr/bin/xsetroot"),
         ),
         XFCE4(
             id = "xfce4",
@@ -290,6 +317,7 @@ class ProotManager @Inject constructor(
             verifyBinary = "usr/bin/startxfce4",
             startCommands = "xfwm4 & xfce4-panel & xfdesktop &",
             sizeEstimate = "~100MB",
+            extraBinaries = listOf("usr/bin/xfwm4", "usr/bin/xfce4-panel", "usr/bin/xfdesktop"),
         ),
         WAYLAND_NATIVE(
             id = "labwc-native",
@@ -1464,6 +1492,35 @@ class ProotManager @Inject constructor(
                 } else {
                     "Package install failed for ${de.label} on ${distro.label}."
                 }
+                installLogRepository.logEvent(
+                    distroId = distro.id,
+                    phase = "DePackage:${de.spec.id}",
+                    deId = de.spec.id,
+                    exit = installExit,
+                    ok = false,
+                    message = message,
+                    logTail = installOutput.takeLast(1500),
+                )
+                _desktopState.value = DesktopSetupState.Error(
+                    phase = DePhase.Packages,
+                    message = message,
+                    logTail = installOutput.takeLast(1500),
+                )
+                return
+            }
+
+            // A present verifyBinary is necessary but not sufficient: a
+            // half-completed package install can leave the components the
+            // start command launches (window manager, panel, …) missing,
+            // so the desktop "installs" then renders a blank screen (#254).
+            // Reject that loudly, naming what's missing, instead of writing
+            // the installed marker for a broken desktop.
+            val missingComponents = missingDesktopBinaries(activeRootfsDir, de.extraBinaries)
+            if (missingComponents.isNotEmpty()) {
+                val names = missingComponents.joinToString(", ") { it.substringAfterLast('/') }
+                val message = "${de.label} installed but these components are missing: " +
+                    "$names. The package install may have been interrupted — uninstall " +
+                    "the desktop and install it again."
                 installLogRepository.logEvent(
                     distroId = distro.id,
                     phase = "DePackage:${de.spec.id}",
