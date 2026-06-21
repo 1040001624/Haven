@@ -265,7 +265,15 @@ class ProotManager @Inject constructor(
         get() = installedDesktops.isNotEmpty()
 
     fun isDesktopInstalled(de: DesktopEnvironment): Boolean =
-        de in installedDesktops && File(activeRootfsDir, de.verifyBinary).exists()
+        de in installedDesktops &&
+            File(activeRootfsDir, de.verifyBinary).exists() &&
+            // Self-heal a marked-but-broken desktop (#254): if the marker
+            // says installed and verifyBinary exists but a start-command
+            // component is missing (a half-completed install), report NOT
+            // installed so setupDesktop re-runs the package step and the
+            // post-install gate then either repairs it or fails clearly,
+            // rather than launching a desktop that renders a blank screen.
+            missingDesktopBinaries(activeRootfsDir, de.extraBinaries).isEmpty()
 
     /** Compat alias — true if any DE is installed. */
     val isDesktopInstalled: Boolean
