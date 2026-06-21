@@ -9,8 +9,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import sh.haven.core.data.db.entities.ConnectionProfile
+import sh.haven.core.data.repository.ConnectionRepository
+import sh.haven.core.rclone.ParsedRemote
 import sh.haven.core.rclone.ProviderOption
 import sh.haven.core.rclone.RcloneClient
+import sh.haven.core.rclone.RcloneConfigParseResult
+import sh.haven.core.rclone.RcloneConfigParser
 import javax.inject.Inject
 
 /**
@@ -27,6 +32,7 @@ import javax.inject.Inject
 @HiltViewModel
 class RcloneConfigViewModel @Inject constructor(
     private val rcloneClient: RcloneClient,
+    private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
     /** Status of the most recent [configure] attempt, for inline UI feedback. */
@@ -113,5 +119,104 @@ class RcloneConfigViewModel @Inject constructor(
     /** Reset status (e.g. when the user edits a field after an error). */
     fun clearStatus() {
         if (_status.value != Status.Working) _status.value = Status.Idle
+    }
+
+    // ── Import from a Linux rclone.conf (#251) ──────────────────────────────
+
+    /** State of the "import remotes from an rclone.conf" flow (#251). */
+    sealed interface ImportState {
+        data object Idle : ImportState
+
+        /** Parsed remotes ready to choose from; [existing] names are already configured. */
+        data class Loaded(
+            val remotes: List<ParsedRemote>,
+            val existing: Set<String>,
+        ) : ImportState
+
+        /** The pasted/picked file is a password-encrypted rclone config. */
+        data object Encrypted : ImportState
+
+        data class Failed(val message: String) : ImportState
+        data object Importing : ImportState
+
+        /** Per-remote outcome: created remote names, skipped (existing/typeless), failed→reason. */
+        data class Done(
+            val created: List<String>,
+            val skipped: List<String>,
+            val failed: Map<String, String>,
+        ) : ImportState
+    }
+
+    private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
+    val importState: StateFlow<ImportState> = _importState.asStateFlow()
+
+    /** Parse [text] (an rclone.conf) and move to [ImportState.Loaded] for selection. */
+    fun loadConfig(text: String) {
+        _importState.value = ImportState.Importing
+        viewModelScope.launch {
+            when (val parsed = RcloneConfigParser.parse(text)) {
+                is RcloneConfigParseResult.Encrypted -> _importState.value = ImportState.Encrypted
+                is RcloneConfigParseResult.Success -> {
+                    if (parsed.remotes.isEmpty()) {
+                        _importState.value = ImportState.Failed("No remotes found in that file.")
+                        return@launch
+                    }
+                    val existing = withContext(Dispatchers.IO) {
+                        runCatching {
+                            rcloneClient.initialize()
+                            rcloneClient.listRemotes().toSet()
+                        }.getOrDefault(emptySet())
+                    }
+                    _importState.value = ImportState.Loaded(parsed.remotes, existing)
+                }
+            }
+        }
+    }
+
+    /**
+     * Create each selected remote in rclone (values copied verbatim via
+     * `noObscure` — they're already obscured) and a matching RCLONE
+     * [ConnectionProfile]. Skips typeless sections and names that already exist.
+     */
+    fun importRemotes(selected: List<ParsedRemote>) {
+        _importState.value = ImportState.Importing
+        viewModelScope.launch {
+            val created = mutableListOf<String>()
+            val skipped = mutableListOf<String>()
+            val failed = linkedMapOf<String, String>()
+            withContext(Dispatchers.IO) {
+                runCatching { rcloneClient.initialize() }
+                val existingRemotes = runCatching { rcloneClient.listRemotes().toSet() }.getOrDefault(emptySet())
+                for (remote in selected) {
+                    if (remote.type.isBlank()) { skipped += remote.name; continue }
+                    if (remote.name in existingRemotes) { skipped += remote.name; continue }
+                    val result = runCatching {
+                        val state = rcloneClient.createRemote(
+                            remote.name, remote.type, remote.params, noObscure = true,
+                        )
+                        if (state.error.isNotEmpty()) error(state.error)
+                        connectionRepository.save(
+                            ConnectionProfile(
+                                label = remote.name,
+                                host = "",
+                                username = "",
+                                connectionType = "RCLONE",
+                                rcloneRemoteName = remote.name,
+                                rcloneProvider = remote.type,
+                            ),
+                        )
+                    }
+                    result.fold(
+                        onSuccess = { created += remote.name },
+                        onFailure = { failed[remote.name] = it.message ?: "failed" },
+                    )
+                }
+            }
+            _importState.value = ImportState.Done(created, skipped, failed)
+        }
+    }
+
+    fun resetImport() {
+        _importState.value = ImportState.Idle
     }
 }

@@ -381,6 +381,18 @@
     <string name="connections_section_general">General</string>
     <string name="connections_section_local_shell">Local shell</string>
     <string name="connections_section_cloud_storage">Cloud storage</string>
+    <!-- Import rclone.conf (#251) -->
+    <string name="rclone_import_title">Import rclone remotes</string>
+    <string name="rclone_import_intro">Paste your Linux rclone.conf, or pick the file. Remotes (including OAuth tokens) are imported as-is, so you don\'t reconfigure them.</string>
+    <string name="rclone_import_pick_file">Pick rclone.conf…</string>
+    <string name="rclone_import_paste_label">rclone.conf contents</string>
+    <string name="rclone_import_parse">Find remotes</string>
+    <string name="rclone_import_encrypted">That file is a password-encrypted rclone config. Run \"rclone config show\" on the desktop and paste the decrypted output instead.</string>
+    <string name="rclone_import_already_added">already added</string>
+    <string name="rclone_import_no_type">no type</string>
+    <string name="rclone_import_select_count">Import %1$d remote(s)</string>
+    <string name="rclone_import_done">Imported %1$d, skipped %2$d, failed %3$d.</string>
+    <string name="rclone_import_menu">Import rclone config…</string>
     <string name="connections_section_vnc">VNC settings</string>
     <string name="connections_section_rdp">RDP settings</string>
     <string name="connections_section_smb">SMB settings</string>

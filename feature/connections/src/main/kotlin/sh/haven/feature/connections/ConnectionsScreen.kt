@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Check
@@ -290,6 +291,8 @@ fun ConnectionsScreen(
     }
 
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showImportRclone by rememberSaveable { mutableStateOf(false) }
     var showVmSetup by rememberSaveable { mutableStateOf(false) }
     var editingProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     val editingProfile = editingProfileId?.let { id -> connections.firstOrNull { it.id == id } }
@@ -474,6 +477,10 @@ fun ConnectionsScreen(
                 showAddDialog = false
             },
         )
+    }
+
+    if (showImportRclone) {
+        ImportRcloneConfigDialog(onDismiss = { showImportRclone = false })
     }
 
     if (showVmSetup) {
@@ -923,6 +930,21 @@ fun ConnectionsScreen(
                     }
                     IconButton(onClick = { showNewGroupDialog = true }) {
                         Icon(Icons.Filled.CreateNewFolder, contentDescription = stringResource(R.string.connections_new_group_action))
+                    }
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = null)
+                    }
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.rclone_import_menu)) },
+                            onClick = {
+                                showOverflowMenu = false
+                                showImportRclone = true
+                            },
+                        )
                     }
                 },
             )

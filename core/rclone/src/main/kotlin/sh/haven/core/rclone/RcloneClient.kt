@@ -93,11 +93,22 @@ class RcloneClient @Inject constructor(
      * [ConfigState] may contain an [ConfigState.authUrl] that needs to be
      * opened in a browser.
      */
-    fun createRemote(name: String, type: String, parameters: Map<String, String> = emptyMap()): ConfigState {
+    fun createRemote(
+        name: String,
+        type: String,
+        parameters: Map<String, String> = emptyMap(),
+        /**
+         * Skip rclone's password-field obscuring. Set when [parameters] already
+         * hold final (obscured) values — e.g. importing an existing rclone.conf
+         * section (#251) — so passwords aren't double-obscured.
+         */
+        noObscure: Boolean = false,
+    ): ConfigState {
         val params = JSONObject()
         params.put("name", name)
         params.put("type", type)
         params.put("parameters", JSONObject(parameters))
+        if (noObscure) params.put("opt", JSONObject().put("noObscure", true))
         val result = rpc("config/create", params)
         return parseConfigState(result)
     }
