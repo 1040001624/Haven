@@ -1758,6 +1758,21 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> listDesktopEnvironments() },
 
+        "set_active_distro" to ToolHandler(
+            description = "Switch the active proot distro WITHOUT installing anything — the lightweight counterpart to install_distro (which downloads). The active distro is the rootfs that run_in_proot, install_desktop, start_desktop and the desktop/USB tools all operate on, so this is how you drive cross-distro work over MCP (e.g. run_in_proot inside Void instead of the current active distro). The distro must already be installed — call list_distros for installed ids, or install_distro to add one. Returns the new active distro id, its family, and the desktops installed on it.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("distroId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Installed distro id to make active (e.g. \"void\", \"archlinux\", \"alpine-3.21\"). See list_distros.")
+                    })
+                })
+                put("required", JSONArray().put("distroId"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> setActiveDistroTool(args) },
+
         "install_distro" to ToolHandler(
             description = "Set the given distro as active and trigger installRootfs(). Returns immediately; poll `inspect_proot.osSetupState` for progress (Downloading → Extracting → BootstrapHook → Baseline → Ready, or Error with attribution). Idempotent: if the distro is already installed, just switches active.",
             inputSchema = JSONObject().apply {
@@ -8457,6 +8472,24 @@ internal class McpTools(
             put("osSetupState", osSetupStateToJson(pm.state.value))
             put("desktopSetupState", desktopSetupStateToJson(pm.desktopState.value))
             put("recentInstallLog", eventsJson)
+        }
+    }
+
+    private fun setActiveDistroTool(args: JSONObject): JSONObject {
+        val pm = prootManager
+        val id = args.optString("distroId").trim()
+        if (id.isEmpty()) throw McpError(-32602, "distroId is required")
+        val distro = sh.haven.core.local.proot.DistroCatalog.lookup(id)
+            ?: throw McpError(-32602, "Unknown distro id '$id'. See list_distros for valid ids.")
+        if (distro !in pm.installedDistros) {
+            throw McpError(-32603, "Distro '$id' (${distro.label}) is not installed — use install_distro first.")
+        }
+        pm.setActiveDistroId(id)
+        return JSONObject().apply {
+            put("activeDistroId", pm.activeDistroId)
+            put("label", distro.label)
+            put("family", distro.family.name)
+            put("installedDesktops", JSONArray(pm.installedDesktopsFor(id).map { it.id }))
         }
     }
 
