@@ -25,49 +25,38 @@ class AgentConsentManagerTest {
     }
 
     @Test
-    fun `backgrounded request with no response times out to DENY`() = runTest {
+    fun `non-NEVER without foreground returns DENY immediately`() = runTest {
         val mgr = AgentConsentManager()
-        // foregroundActive defaults to false — queued, notified, and (since
-        // nobody responds) times out to DENY: fail-closed in the limit.
+        // foregroundActive defaults to false — fail-closed, instant DENY.
         val decision = mgr.requestConsent(
             toolName = "delete_sftp_file",
             clientHint = "test",
             summary = "delete /tmp/x",
             level = ConsentLevel.EVERY_CALL,
-            timeoutMs = 5_000,
         )
         assertEquals(ConsentDecision.DENY, decision)
     }
 
     @Test
-    fun `backgrounded request notifies AND is resolvable via respond (not instant-deny)`() =
+    fun `backgrounded fail-closed still instant-DENYs but emits a blocked-notification event`() =
         runTest(UnconfinedTestDispatcher()) {
             val mgr = AgentConsentManager()
             val seen = mutableListOf<ConsentRequest>()
             val collector = launch { mgr.blockedWhileBackground.collect { seen.add(it) } }
 
-            // foregroundActive=false. The request must NOT instant-deny — it
-            // queues + raises the notification event, and the user (returning
-            // via the notification) can approve it.
-            val call = async {
-                mgr.requestConsent(
-                    toolName = "read_logcat",
-                    clientHint = "agent-A",
-                    summary = "read 400 logcat lines",
-                    level = ConsentLevel.EVERY_CALL,
-                    timeoutMs = Long.MAX_VALUE,
-                )
-            }
+            // foregroundActive=false → instant fail-closed DENY, AND a
+            // notification event so the user knows what was blocked.
+            val decision = mgr.requestConsent(
+                toolName = "read_logcat",
+                clientHint = "agent-A",
+                summary = "read 400 logcat lines",
+                level = ConsentLevel.EVERY_CALL,
+            )
 
-            // The blocked-notification event fired with the queued request...
+            assertEquals("fail-closed must instant-DENY", ConsentDecision.DENY, decision)
             assertEquals(1, seen.size)
             assertEquals("read_logcat", seen.single().toolName)
             assertEquals("agent-A", seen.single().clientHint)
-            // ...and the same request is pending, resolvable by a respond().
-            val pending = mgr.pending.value.single()
-            assertEquals(seen.single().id, pending.id)
-            mgr.respond(pending.id, ConsentDecision.ALLOW)
-            assertEquals(ConsentDecision.ALLOW, call.await())
             collector.cancel()
         }
 

@@ -271,10 +271,10 @@ class HavenApp : Application(), Configuration.Provider {
         val isPairing = req.toolName == AgentConsentManager.PAIRING_TOOL_NAME
         val title = if (isPairing) "Haven: a client wants to pair" else "Haven: agent needs approval"
         val line = if (isPairing) {
-            "Open Haven to allow or deny — it's waiting on you."
+            "A client tried to connect while Haven was in the background. Open Haven so it can retry."
         } else {
-            "‘${req.toolName}’ is waiting for your approval. " +
-                "Open Haven to allow or deny."
+            "‘${req.toolName}’ was blocked while Haven was in the background. " +
+                "Open Haven and the agent can retry — it'll ask you to allow or deny then."
         }
 
         val notification = NotificationCompat.Builder(this, CONSENT_CHANNEL_ID)
