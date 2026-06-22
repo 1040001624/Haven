@@ -480,6 +480,22 @@ internal class McpTools(
             },
         ) { args -> configureRcloneRemote(args) },
 
+        "delete_rclone_remote" to ToolHandler(
+            description = "Delete an rclone remote from rclone.conf by name, and any RCLONE connection profile that references it. The inverse of configure_rclone_remote / the rclone-config import — use it to clean up a remote (e.g. a test or a failed/ghost import that left a remote with no usable profile). Returns { deleted, remoteName, removedProfiles }. deleted is false if no such remote existed (matching profiles are still removed).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("remoteName", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Remote name in rclone.conf (see list_rclone_remotes).")
+                    })
+                })
+                put("required", JSONArray().put("remoteName"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Delete rclone remote \"${args.optString("remoteName")}\" and any profile using it?" },
+        ) { args -> deleteRcloneRemote(args) },
+
         "list_directory" to ToolHandler(
             description = "List entries at a path on any connected backend (local, SSH/SFTP, SMB, rclone). Resolves the right driver from profileId — pass the literal string 'local' for the device filesystem, otherwise a profile ID from list_connections. Returns name, path, isDir, size, modTime, permissions, and mimeType for each entry. Replaces list_sftp_directory and list_rclone_directory; those still work as deprecated aliases.",
             inputSchema = JSONObject().apply {
@@ -7226,6 +7242,36 @@ internal class McpTools(
             throw e
         } catch (e: Exception) {
             throw McpError(-32603, "configure_rclone_remote failed: ${e.message}")
+        }
+    }
+
+    private suspend fun deleteRcloneRemote(args: JSONObject): JSONObject {
+        val name = args.optString("remoteName").ifBlank {
+            throw McpError(-32602, "Missing required argument: remoteName")
+        }
+        return try {
+            ensureRcloneReady()
+            val existed = name in rcloneClient.listRemotes()
+            if (existed) rcloneClient.deleteRemote(name)
+            // Symmetric cleanup: drop any RCLONE profile pointing at this remote so
+            // deletion can't leave the inverse ghost (a profile with no remote) (#269).
+            val removedProfiles = mutableListOf<String>()
+            for (p in connectionRepository.getAll()) {
+                if (p.connectionType == "RCLONE" && p.rcloneRemoteName == name) {
+                    sessionManagerRegistry.disconnectProfile(p.id)
+                    connectionRepository.delete(p.id)
+                    removedProfiles += p.id
+                }
+            }
+            JSONObject().apply {
+                put("deleted", existed)
+                put("remoteName", name)
+                put("removedProfiles", JSONArray().apply { removedProfiles.forEach { put(it) } })
+            }
+        } catch (e: McpError) {
+            throw e
+        } catch (e: Exception) {
+            throw McpError(-32603, "delete_rclone_remote failed: ${e.message}")
         }
     }
 

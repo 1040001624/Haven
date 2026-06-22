@@ -191,8 +191,12 @@ class RcloneConfigViewModel @Inject constructor(
                     if (remote.type.isBlank()) { skipped += remote.name; continue }
                     if (remote.name in existingRemotes) { skipped += remote.name; continue }
                     val result = runCatching {
+                        // nonInteractive so an OAuth remote (token already in
+                        // params) doesn't block config/create on the browser
+                        // flow and hang the import dialog (#269).
                         val state = rcloneClient.createRemote(
-                            remote.name, remote.type, remote.params, noObscure = true,
+                            remote.name, remote.type, remote.params,
+                            noObscure = true, nonInteractive = true,
                         )
                         if (state.error.isNotEmpty()) error(state.error)
                         connectionRepository.save(
@@ -208,7 +212,14 @@ class RcloneConfigViewModel @Inject constructor(
                     }
                     result.fold(
                         onSuccess = { created += remote.name },
-                        onFailure = { failed[remote.name] = it.message ?: "failed" },
+                        onFailure = {
+                            // Roll back any half-created rclone remote so a failed
+                            // import doesn't leave a "ghost": present in rclone.conf
+                            // (offered for sync, re-import says "already imported")
+                            // with no matching connection profile (#269).
+                            runCatching { rcloneClient.deleteRemote(remote.name) }
+                            failed[remote.name] = it.message ?: "failed"
+                        },
                     )
                 }
             }

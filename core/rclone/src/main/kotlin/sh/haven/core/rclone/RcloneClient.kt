@@ -103,12 +103,27 @@ class RcloneClient @Inject constructor(
          * section (#251) — so passwords aren't double-obscured.
          */
         noObscure: Boolean = false,
+        /**
+         * Run rclone's config in non-interactive mode. Required when creating a
+         * remote with no user present to answer prompts — notably importing an
+         * existing OAuth remote (drive/dropbox/onedrive/box/pcloud) whose token
+         * is already in [parameters]: without this, `config/create` enters the
+         * OAuth state machine and blocks the (JNI, non-cancellable) rpc call, so
+         * the import dialog hangs forever (#269). Non-interactive makes it return
+         * the state immediately instead of waiting on the browser flow.
+         */
+        nonInteractive: Boolean = false,
     ): ConfigState {
         val params = JSONObject()
         params.put("name", name)
         params.put("type", type)
         params.put("parameters", JSONObject(parameters))
-        if (noObscure) params.put("opt", JSONObject().put("noObscure", true))
+        if (noObscure || nonInteractive) {
+            params.put("opt", JSONObject().apply {
+                if (noObscure) put("noObscure", true)
+                if (nonInteractive) put("nonInteractive", true)
+            })
+        }
         val result = rpc("config/create", params)
         return parseConfigState(result)
     }
