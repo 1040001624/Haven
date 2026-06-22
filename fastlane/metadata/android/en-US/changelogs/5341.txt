@@ -1,0 +1,7 @@
+Fixes for the local Linux (proot) terminal and rclone imports:
+
+• Apps that need shared memory (browsers, .NET/Mono, and more) now work in the proot terminal, and desktop/X11 apps launched from the shell find their settings and runtime directories — fewer "won't start" errors.
+
+• "Use native Android shell" connections are now labelled correctly (not as PRoot) and open in a folder you can actually list with `ls`, instead of a directory with no permission.
+
+• Importing remotes from a Linux rclone.conf no longer hangs on Dropbox / pCloud / Drive (OAuth) and no longer leaves a half-imported remote with no matching connection.
