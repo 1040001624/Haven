@@ -40,6 +40,8 @@ import sh.haven.core.ffmpeg.HlsStreamServer
 import sh.haven.core.ffmpeg.TranscodeCommand
 import sh.haven.core.local.WaylandSocketHelper
 import sh.haven.core.rclone.RcloneClient
+import sh.haven.core.rclone.RcloneConfigParseResult
+import sh.haven.core.rclone.RcloneConfigParser
 import sh.haven.core.ssh.SessionManagerRegistry
 import sh.haven.core.ssh.SshSessionManager
 import sh.haven.feature.sftp.SftpStreamServer
@@ -495,6 +497,46 @@ internal class McpTools(
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete rclone remote \"${args.optString("remoteName")}\" and any profile using it?" },
         ) { args -> deleteRcloneRemote(args) },
+
+        "import_rclone_config" to ToolHandler(
+            description = "Import remotes from a Linux rclone.conf (the headless equivalent of the in-app Import rclone config dialog, #269). Pass configText (the file contents). Each chosen remote becomes an rclone remote (token/creds copied verbatim, non-interactively — OAuth remotes don't block on the browser flow) plus a matching RCLONE connection profile; a half-created remote is rolled back on failure so a failed import leaves no ghost. Skips typeless sections and names already configured. Optional `names` limits the import to those remote names. Returns { created, skipped, failed }. Returns an error if the config is password-encrypted.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("configText", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Contents of an rclone.conf to import.")
+                    })
+                    put("names", JSONObject().apply {
+                        put("type", "array")
+                        put("description", "Optional: only import remotes with these names. Omit to import all importable remotes.")
+                    })
+                })
+                put("required", JSONArray().put("configText"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { _ -> "Import rclone remotes from a pasted rclone.conf?" },
+        ) { args -> importRcloneConfig(args) },
+
+        "update_rclone_remote" to ToolHandler(
+            description = "Update an existing rclone remote's config in place (rclone config/update) — unlike configure_rclone_remote, which replaces the whole remote. Pass remoteName and a parameters option→value map of just the fields to change (rclone obscures password fields). Returns { updated, remoteName }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("remoteName", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Existing remote name (see list_rclone_remotes).")
+                    })
+                    put("parameters", JSONObject().apply {
+                        put("type", "object")
+                        put("description", "Option→value map of fields to change, e.g. {\"host\":\"…\"}.")
+                    })
+                })
+                put("required", JSONArray().put("remoteName").put("parameters"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Update rclone remote \"${args.optString("remoteName")}\"?" },
+        ) { args -> updateRcloneRemote(args) },
 
         "list_directory" to ToolHandler(
             description = "List entries at a path on any connected backend (local, SSH/SFTP, SMB, rclone). Resolves the right driver from profileId — pass the literal string 'local' for the device filesystem, otherwise a profile ID from list_connections. Returns name, path, isDir, size, modTime, permissions, and mimeType for each entry. Replaces list_sftp_directory and list_rclone_directory; those still work as deprecated aliases.",
@@ -7272,6 +7314,90 @@ internal class McpTools(
             throw e
         } catch (e: Exception) {
             throw McpError(-32603, "delete_rclone_remote failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Headless rclone.conf import. Mirrors
+     * [sh.haven.feature.connections.RcloneConfigViewModel.importRemotes]
+     * (non-interactive create + orphan rollback, #269) for the MCP path.
+     */
+    private suspend fun importRcloneConfig(args: JSONObject): JSONObject {
+        val configText = args.optString("configText").ifBlank {
+            throw McpError(-32602, "Missing required argument: configText")
+        }
+        val onlyNames = args.optJSONArray("names")
+            ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }.toSet() }
+        val parsed = when (val r = RcloneConfigParser.parse(configText)) {
+            is RcloneConfigParseResult.Encrypted ->
+                throw McpError(-32602, "That rclone.conf is password-encrypted; decrypt it first.")
+            is RcloneConfigParseResult.Success -> r.remotes
+        }
+        return try {
+            ensureRcloneReady()
+            val created = JSONArray()
+            val skipped = JSONArray()
+            val failed = JSONObject()
+            val existing = runCatching { rcloneClient.listRemotes().toSet() }.getOrDefault(emptySet())
+            for (remote in parsed) {
+                if (onlyNames != null && remote.name !in onlyNames) continue
+                if (remote.type.isBlank() || remote.name in existing) { skipped.put(remote.name); continue }
+                try {
+                    val state = rcloneClient.createRemote(
+                        remote.name, remote.type, remote.params,
+                        noObscure = true, nonInteractive = true,
+                    )
+                    if (state.error.isNotEmpty()) error(state.error)
+                    connectionRepository.save(
+                        ConnectionProfile(
+                            label = remote.name,
+                            host = "",
+                            username = "",
+                            connectionType = "RCLONE",
+                            rcloneRemoteName = remote.name,
+                            rcloneProvider = remote.type,
+                        ),
+                    )
+                    created.put(remote.name)
+                } catch (e: Exception) {
+                    runCatching { rcloneClient.deleteRemote(remote.name) } // roll back any ghost
+                    failed.put(remote.name, e.message ?: "failed")
+                }
+            }
+            JSONObject().apply {
+                put("created", created)
+                put("skipped", skipped)
+                put("failed", failed)
+            }
+        } catch (e: McpError) {
+            throw e
+        } catch (e: Exception) {
+            throw McpError(-32603, "import_rclone_config failed: ${e.message}")
+        }
+    }
+
+    private fun updateRcloneRemote(args: JSONObject): JSONObject {
+        val name = args.optString("remoteName").ifBlank {
+            throw McpError(-32602, "Missing required argument: remoteName")
+        }
+        val paramsJson = args.optJSONObject("parameters")
+            ?: throw McpError(-32602, "Missing required argument: parameters")
+        val params = mutableMapOf<String, String>()
+        paramsJson.keys().forEach { k -> params[k] = paramsJson.get(k).toString() }
+        return try {
+            ensureRcloneReady()
+            if (name !in rcloneClient.listRemotes()) {
+                throw McpError(-32602, "No rclone remote named '$name' (see list_rclone_remotes).")
+            }
+            rcloneClient.updateRemote(name, params)
+            JSONObject().apply {
+                put("updated", true)
+                put("remoteName", name)
+            }
+        } catch (e: McpError) {
+            throw e
+        } catch (e: Exception) {
+            throw McpError(-32603, "update_rclone_remote failed: ${e.message}")
         }
     }
 
