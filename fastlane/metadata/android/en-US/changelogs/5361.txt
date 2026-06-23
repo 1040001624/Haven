@@ -1,0 +1,5 @@
+Encrypt files with age — readable anywhere with the standard age tool.
+
+The file browser gains a universal Encrypt / Decrypt action that works on every backend (local, SFTP, SMB, rclone): tap a file → Encrypt (age) to produce a .age you can decrypt on your desktop with the age CLI, or Decrypt a .age in place. Encryption keys are X25519 identities you generate in the Keys tab — the private key is stored encrypted in Haven's keystore, the public recipient is shown for sharing. You can also encrypt to a pasted age1… recipient.
+
+Built on age v1 (validated against the official age test vectors and round-tripped with the age CLI). Scope: X25519 recipients for now.
