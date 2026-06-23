@@ -1,0 +1,5 @@
+Agent (MCP) verbs for the new age file encryption — drive it without tapping.
+
+This release adds tool-use verbs so a connected agent can run the age flow end to end: list/create age identities, and encrypt_file / decrypt_file on any backend (local, SFTP, SMB, rclone). It also adds dump_haven_ui, an in-app equivalent of `uiautomator dump` that returns Haven's own on-screen controls with exact coordinates, so an agent can drive the UI precisely.
+
+These are for the optional agent endpoint (Settings → Agent endpoint); every write is consent-gated as usual. No change to normal app use.
