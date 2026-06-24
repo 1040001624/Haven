@@ -182,6 +182,7 @@ fun SftpScreen(
     val pastePendingBytes by viewModel.pastePendingBytes.collectAsState()
     val fileClipboard by viewModel.clipboard.collectAsState()
     val isRclone by viewModel.isRcloneProfile.collectAsState()
+    val hasRcloneRemotes by viewModel.hasRcloneRemotes.collectAsState()
     val syncProgress by viewModel.syncProgress.collectAsState()
     val showSyncDialog by viewModel.showSyncDialog.collectAsState()
     val syncDialogSource by viewModel.syncDialogSource.collectAsState()
@@ -429,6 +430,10 @@ fun SftpScreen(
         }
     }
 
+    // #277: learn whether rclone has configured remotes so the connection-independent
+    // "New sync" top-bar action can show even with nothing connected.
+    LaunchedEffect(Unit) { viewModel.refreshRcloneRemotesAvailable() }
+
     Scaffold(
         modifier = sftpModifier,
         // The outer pager already has .imePadding() on its modifier; letting
@@ -521,6 +526,18 @@ fun SftpScreen(
                     }
                 },
                 actions = {
+                    // #277: start an rclone sync without first opening a connection.
+                    // Shown whenever rclone has configured remotes and we're NOT already
+                    // browsing a connected rclone profile (whose Sync FAB already covers
+                    // this). Opens the same dialog with no source pre-filled.
+                    if (hasRcloneRemotes && !isRclone) {
+                        IconButton(onClick = { viewModel.showSyncDialog() }) {
+                            Icon(
+                                Icons.Filled.Sync,
+                                contentDescription = stringResource(R.string.sftp_new_sync),
+                            )
+                        }
+                    }
                     if (activeProfileId != null) {
                         IconButton(onClick = {
                             showFilterBar = !showFilterBar

@@ -579,6 +579,24 @@ class SftpViewModel @Inject constructor(
     private val _availableRemotes = MutableStateFlow<List<String>>(emptyList())
     val availableRemotes: StateFlow<List<String>> = _availableRemotes.asStateFlow()
 
+    /** Whether any rclone remote is configured. Gates the connection-independent
+     *  "New sync" entry point (#277) — a sync doesn't need an open connection, so the
+     *  entry shows whenever rclone has remotes, even with nothing connected. */
+    private val _hasRcloneRemotes = MutableStateFlow(false)
+    val hasRcloneRemotes: StateFlow<Boolean> = _hasRcloneRemotes.asStateFlow()
+
+    fun refreshRcloneRemotesAvailable() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _hasRcloneRemotes.value = try {
+                rcloneClient.initialize()
+                rcloneClient.listRemotes().isNotEmpty()
+            } catch (e: Exception) {
+                Log.w(TAG, "rclone remotes availability check failed: ${e.message}")
+                false
+            }
+        }
+    }
+
     /** Dry run summary text. */
     private val _dryRunResult = MutableStateFlow<String?>(null)
     val dryRunResult: StateFlow<String?> = _dryRunResult.asStateFlow()
@@ -5094,11 +5112,15 @@ class SftpViewModel @Inject constructor(
     // ── Folder sync ───────────────────────────────────────────────────
 
     fun showSyncDialog(sourcePath: String? = null) {
-        val remote = activeRcloneRemote ?: return
-        val path = sourcePath ?: _currentPath.value
-        _syncDialogSource.value = "$remote:$path"
+        // #277: a sync is config-driven and needs no open connection. When an rclone
+        // profile is being browsed, pre-fill its remote+path as the source; otherwise
+        // open with an empty source so the user picks both ends from the remotes
+        // dropdown (which lists all configured remotes regardless of what's open).
+        val remote = activeRcloneRemote
+        _syncDialogSource.value = if (remote != null) "$remote:${sourcePath ?: _currentPath.value}" else ""
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                rcloneClient.initialize() // idempotent; loads rclone.conf so listRemotes works with nothing open
                 _availableRemotes.value = rcloneClient.listRemotes()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to list remotes", e)

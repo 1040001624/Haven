@@ -67,6 +67,7 @@
 
     <!-- Folder sync -->
     <string name="sftp_sync">Sync</string>
+    <string name="sftp_new_sync">New rclone sync</string>
     <string name="sftp_folder_sync">Folder Sync</string>
     <string name="sftp_source">Source</string>
     <string name="sftp_destination">Destination</string>
