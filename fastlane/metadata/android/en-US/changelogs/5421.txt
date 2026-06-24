@@ -1,0 +1,3 @@
+Terminal: fix a screen-blanking glitch.
+
+When the terminal changed height (opening/closing the keyboard, split-screen) it could briefly blank the screen before repainting, sometimes leaving it blank until you ran clear/Ctrl-L. It now keeps the content while resizing. If you still see the terminal go blank after a command on your device, please add a note (and ideally a screen recording) to issue #272.
