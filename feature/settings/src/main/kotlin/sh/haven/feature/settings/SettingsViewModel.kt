@@ -228,6 +228,9 @@ class SettingsViewModel @Inject constructor(
     val usbGuestExposureEnabled: StateFlow<Boolean> = preferencesRepository.usbGuestExposureEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val audioBridgeEnabled: StateFlow<Boolean> = preferencesRepository.audioBridgeEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val verboseLoggingEnabled: StateFlow<Boolean> = preferencesRepository.verboseLoggingEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -546,6 +549,12 @@ class SettingsViewModel @Inject constructor(
     fun setUsbGuestExposureEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setUsbGuestExposureEnabled(enabled)
+        }
+    }
+
+    fun setAudioBridgeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAudioBridgeEnabled(enabled)
         }
     }
 

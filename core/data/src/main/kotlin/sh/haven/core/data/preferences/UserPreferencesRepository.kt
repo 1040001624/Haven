@@ -92,6 +92,11 @@ class UserPreferencesRepository @Inject constructor(
     // present path. Native Vulkan apps present; GL-via-zink present is slow. See
     // DesktopManager.gpuPassthroughEnv + project_virgl_cage_gpu_accel memory note.
     private val gpuUseVenusKey = booleanPreferencesKey("gpu_use_venus")
+    // Output-only audio bridge for proot apps (#257). On = a PulseAudio daemon
+    // runs in the active distro and its monitor PCM is played through AudioTrack;
+    // desktop launch scripts source /etc/profile.d/pulse.sh so apps get
+    // PULSE_SERVER. Off (default) = no audio, no behaviour change.
+    private val audioBridgeEnabledKey = booleanPreferencesKey("audio_bridge_enabled")
     private val bandwidthAutoSuggestKey = booleanPreferencesKey("bandwidth_auto_suggest")
     private val lastMediaServerPortKey = intPreferencesKey("last_media_server_port")
     private val mcpAgentEndpointEnabledKey = booleanPreferencesKey("mcp_agent_endpoint_enabled")
@@ -471,6 +476,16 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setGpuUseVenus(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[gpuUseVenusKey] = enabled
+        }
+    }
+
+    val audioBridgeEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[audioBridgeEnabledKey] ?: false
+    }
+
+    suspend fun setAudioBridgeEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[audioBridgeEnabledKey] = enabled
         }
     }
 

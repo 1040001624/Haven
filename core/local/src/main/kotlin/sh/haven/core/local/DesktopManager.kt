@@ -722,6 +722,7 @@ class DesktopManager @Inject constructor(
                 "sleep 3; " +
                 "export DISPLAY=:${display}; " +
                 "export HOME=/root; " +
+                "[ -f /etc/profile.d/pulse.sh ] && . /etc/profile.d/pulse.sh; " +
                 // NO virgl — software rendering for VNC desktops. Force the
                 // Mesa software rasteriser so GPU-less GL apps (KiCad/eeschema)
                 // don't crash their OpenGL canvas, and paint a solid root so a
@@ -924,6 +925,7 @@ class DesktopManager @Inject constructor(
             append("mkdir -p $xdgInProot ; chmod 700 $xdgInProot ; ")
             append("export XDG_RUNTIME_DIR=$xdgInProot ; ")
             append("export HOME=/root ; ")
+            append("[ -f /etc/profile.d/pulse.sh ] && . /etc/profile.d/pulse.sh ; ")
             append("export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ; ")
             append("export WLR_BACKENDS=headless ; ")
             append("export WLR_HEADLESS_OUTPUTS=1 ; ")
@@ -1490,6 +1492,9 @@ class DesktopManager @Inject constructor(
                 "-w", "/root",
                 "/bin/sh", "-c",
                 "export HOME=/root; " +
+                    // Audio bridge (#257): pick up PULSE_SERVER if the bridge
+                    // is running (it writes this file); harmless no-op otherwise.
+                    "[ -f /etc/profile.d/pulse.sh ] && . /etc/profile.d/pulse.sh; " +
                     "export XDG_RUNTIME_DIR=/tmp/xdg-runtime; " +
                     "export XDG_DATA_HOME=/root/.local/share; " +
                     "export XDG_DATA_DIRS=/usr/local/share:/usr/share; " +

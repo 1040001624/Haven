@@ -32,6 +32,7 @@ class LocalSessionManager @Inject constructor(
     val prootManager: ProotManager,
     val desktopManager: DesktopManager,
     val guestServiceManager: GuestServiceManager,
+    val audioBridge: AudioBridge,
     private val preferences: UserPreferencesRepository,
 ) {
 

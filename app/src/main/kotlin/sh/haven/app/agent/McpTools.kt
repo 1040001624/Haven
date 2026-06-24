@@ -2455,6 +2455,24 @@ internal class McpTools(
             },
         ) { args -> unregisterGuestService(args) },
 
+        "start_audio_bridge" to ToolHandler(
+            description = "Start the proot audio bridge (#257): launches a PulseAudio daemon in the active distro and plays its output through the Android speaker — output only, no mic. Guest apps reach it via PULSE_SERVER (written to /etc/profile.d/pulse.sh and exported into desktop sessions), so apps launched from a login shell / desktop get sound. Installs pulseaudio on first use. Idempotent. Returns { state, port }.",
+            inputSchema = emptyObjectSchema(),
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { _ -> "Start proot audio bridge" },
+        ) { _ -> startAudioBridge() },
+
+        "stop_audio_bridge" to ToolHandler(
+            description = "Stop the proot audio bridge: kills the in-guest PulseAudio daemon and releases the Android AudioTrack.",
+            inputSchema = emptyObjectSchema(),
+            summarise = { _ -> "Stop proot audio bridge" },
+        ) { _ -> stopAudioBridge() },
+
+        "get_audio_bridge_status" to ToolHandler(
+            description = "Proot audio bridge status: state (STOPPED/STARTING/RUNNING/ERROR), loopback PCM port, bytesStreamed so far, and any error. Read-only — a quick way to confirm guest audio is actually flowing.",
+            inputSchema = emptyObjectSchema(),
+        ) { _ -> audioBridgeStatusJson() },
+
         "set_terminal_font_from_url" to ToolHandler(
             description = "Download a font from a URL, validate it, install it as Haven's terminal font (replacing any prior custom font), and return the saved path. The URL may point at a .ttf/.otf, or a .zip containing them (a Regular face is auto-extracted) — useful for repos like Maple/Nerd Fonts that ship only zips (#123, #177). WOFF/WOFF2 web fonts are rejected (Android can't render them). Requires the URL to be reachable from the device — use a tunneled URL (via add_port_forward LOCAL) to expose a workstation HTTP server back through the existing SSH session.",
             inputSchema = JSONObject().apply {
@@ -10068,6 +10086,26 @@ internal class McpTools(
         localSessionManager.guestServiceManager.unregister(id)
         invalidateGuestTools()
         return JSONObject().apply { put("id", id); put("status", "unregistered") }
+    }
+
+    private suspend fun startAudioBridge(): JSONObject {
+        localSessionManager.audioBridge.start()
+        return audioBridgeStatusJson()
+    }
+
+    private fun stopAudioBridge(): JSONObject {
+        localSessionManager.audioBridge.stop()
+        return audioBridgeStatusJson()
+    }
+
+    private fun audioBridgeStatusJson(): JSONObject {
+        val s = localSessionManager.audioBridge.statusNow()
+        return JSONObject().apply {
+            put("state", s.state.name)
+            put("port", s.port)
+            put("bytesStreamed", s.bytesStreamed)
+            s.error?.let { put("error", it) }
+        }
     }
 
     private suspend fun getProotInstallLog(args: JSONObject): JSONObject {

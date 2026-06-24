@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.LockReset
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.LightMode
@@ -714,6 +715,18 @@ fun SettingsScreen(
             subtitle = stringResource(R.string.settings_usb_guest_subtitle),
             checked = usbGuestExposure,
             onCheckedChange = viewModel::setUsbGuestExposureEnabled,
+        )
+
+        // Audio bridge (#257): play Linux app sound through the speaker via an
+        // in-guest PulseAudio daemon. Experimental — streams continuously while
+        // on, so it's off by default.
+        val audioBridge by viewModel.audioBridgeEnabled.collectAsState()
+        SettingsToggleItem(
+            icon = Icons.Filled.VolumeUp,
+            title = stringResource(R.string.settings_audio_bridge_title),
+            subtitle = stringResource(R.string.settings_audio_bridge_subtitle),
+            checked = audioBridge,
+            onCheckedChange = viewModel::setAudioBridgeEnabled,
         )
 
         }
