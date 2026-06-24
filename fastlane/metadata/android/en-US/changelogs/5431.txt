@@ -1,0 +1,3 @@
+Start a cloud sync without opening a connection.
+
+You can now begin an rclone sync straight from the Files tab without first opening a storage connection — a "New rclone sync" action appears whenever you have rclone remotes configured. Pick the source and destination remotes in the dialog and go. (Previously you had to open a remote first.)
