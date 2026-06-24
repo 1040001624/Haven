@@ -378,6 +378,22 @@ class ProotManager @Inject constructor(
             isWayland = true,
             isNative = true,
         ),
+        // Native X11 (#268): same JNI labwc bridge + GPU + Xwayland as
+        // WAYLAND_NATIVE, but DesktopManager.startNativeCompositor autostarts
+        // an X terminal so the user lands in an X11 session — X apps reach the
+        // native surface with no VNC. isNative/isWayland match labwc-native so
+        // it routes through startNativeCompositor + the DesktopTab.Wayland viewer.
+        X11_NATIVE(
+            id = "x11-native",
+            label = "Native X11 (GPU)",
+            packages = "xterm xwayland mesa-dri-gallium mesa-gl mesa-demos " +
+                "xkeyboard-config font-noto",
+            verifyBinary = "usr/bin/xterm",
+            startCommands = "",
+            sizeEstimate = "~45MB",
+            isWayland = true,
+            isNative = true,
+        ),
 
         // Phase 4 nested wlroots compositors — run inside the rootfs on
         // wlroots' headless backend and surface via wayvnc on the same

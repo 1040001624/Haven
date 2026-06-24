@@ -1465,6 +1465,22 @@ class DesktopManager @Inject constructor(
             ).absolutePath
             val rootHome = File(rootfsDir, "root").apply { mkdirs() }
 
+            // Autostart differs by native DE: the X11 desktop (#268) lands the
+            // user in an X terminal via Xwayland (DISPLAY is exported below);
+            // labwc manages the rootless-Xwayland windows, so no in-guest X WM
+            // is needed. The Wayland native desktop autostarts its
+            // waybar/thunar/foot set instead.
+            val nativeAutostart = if (de.id == "x11-native") {
+                "if command -v xterm >/dev/null 2>&1; then xterm -e $shellCommand 2>&1; " +
+                    "else $shellCommand 2>&1; fi; "
+            } else {
+                "if [ -x /usr/bin/waybar ]; then " +
+                    "dbus-run-session waybar >/tmp/waybar.log 2>&1 & sleep 2; " +
+                    "fi; " +
+                    "[ -x /usr/bin/thunar ] && thunar --daemon & " +
+                    "foot -e $shellCommand 2>&1; "
+            }
+
             val process = ProcessBuilder(
                 prootBin, "-0", "--link2symlink",
                 "-r", rootfsDir.absolutePath,
@@ -1504,12 +1520,8 @@ class DesktopManager @Inject constructor(
                         "export DISPLAY=:\$XDISP; " +
                         "mkdir -p /etc/profile.d; echo \"export DISPLAY=:\$XDISP\" > /etc/profile.d/display.sh; " +
                     "fi; " +
-                    // Auto-start desktop components if installed
-                    "if [ -x /usr/bin/waybar ]; then " +
-                        "dbus-run-session waybar >/tmp/waybar.log 2>&1 & sleep 2; " +
-                    "fi; " +
-                    "[ -x /usr/bin/thunar ] && thunar --daemon & " +
-                    "foot -e $shellCommand 2>&1; " +
+                    // Auto-start desktop components (DE-specific — see nativeAutostart)
+                    nativeAutostart +
                     "wait",
             ).apply {
                 environment().apply {

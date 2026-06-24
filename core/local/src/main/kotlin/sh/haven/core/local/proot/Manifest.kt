@@ -570,6 +570,45 @@ object DesktopCatalog {
     )
 
     /**
+     * Native X11 (#268) — runs X11 apps on the same GPU-accelerated native
+     * Android surface as [LABWC_NATIVE], via labwc's always-on Xwayland,
+     * with NO VNC round-trip (contrast the Openbox/Xfce4 X11Vnc desktops,
+     * which go through Xvnc + the VNC client + software GL). It reuses
+     * [LaunchSpec.NativeCompositor]; the only difference from LABWC_NATIVE
+     * is that the in-guest autostart launches an X terminal (DesktopManager
+     * branches on this DE's id) so the user lands in an X session. labwc
+     * manages the rootless-Xwayland windows — no in-guest X WM needed.
+     *
+     * Unlike LABWC_NATIVE (APK-only list), every family is populated so the
+     * X stack actually installs on Debian/Ubuntu/Arch/Void. EGL-based X
+     * apps get GPU acceleration through Xwayland; GLX-only apps that need
+     * DRI3 may fall back to software — a known Xwayland-in-proot limit.
+     */
+    val X11_NATIVE = DesktopEnvironmentSpec(
+        id = "x11-native",
+        label = "Native X11 (GPU)",
+        packagesPerFamily = mapOf(
+            PackageFamily.APK to listOf(
+                "xterm", "xwayland", "mesa-dri-gallium", "mesa-gl", "mesa-demos",
+                "xkeyboard-config", "font-noto",
+            ),
+            PackageFamily.APT to listOf(
+                "xterm", "x11-apps", "mesa-utils", "xwayland", "libgl1-mesa-dri",
+                "fonts-noto-core",
+            ),
+            PackageFamily.PACMAN to listOf(
+                "xterm", "xorg-xwayland", "mesa", "mesa-utils", "noto-fonts",
+            ),
+            PackageFamily.XBPS to listOf(
+                "xterm", "xwayland", "mesa-dri", "mesa-demos", "noto-fonts-ttf",
+            ),
+        ),
+        verifyBinary = "usr/bin/xterm",
+        launch = LaunchSpec.NativeCompositor,
+        sizeEstimateMb = 45,
+    )
+
+    /**
      * Note shared by all Phase-4 NestedWayland DEs. wayvnc carries only
      * single-point pointer events — two-finger scroll, pinch, multi-touch
      * gestures don't reach the compositor. CLI / keyboard / single-finger
@@ -820,7 +859,7 @@ object DesktopCatalog {
     )
 
     val all: List<DesktopEnvironmentSpec> = listOf(
-        OPENBOX, XFCE4, LABWC_NATIVE,
+        OPENBOX, XFCE4, LABWC_NATIVE, X11_NATIVE,
         SWAY, HYPRLAND, NIRI, CAGE,
     )
 
