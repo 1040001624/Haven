@@ -407,6 +407,7 @@ class McpServer @Inject constructor(
         serverSocket = ss
         port = ss.localPort
         isRunning = true
+        mcpStatusHolder.setRunning(true)
         _endpointUrl.value = "http://127.0.0.1:$port/mcp"
         // Seed the in-memory allowlist mirror from DataStore. Subsequent
         // pairing approvals append to this on the dispatch thread.
@@ -707,6 +708,7 @@ class McpServer @Inject constructor(
     /** Must be called while holding [lifecycleLock]. */
     private fun stopLocked() {
         isRunning = false
+        mcpStatusHolder.setRunning(false)
         stopWireguardBinderLocked()
         stopLanBinderLocked()
         try { serverSocket?.close() } catch (_: Exception) {}
@@ -1369,14 +1371,18 @@ class McpServer @Inject constructor(
                 else -> { /* ALLOW — proceed */ }
             }
         }
+        mcpStatusHolder.callStarted(name)
         val content = try {
             runBlocking { tools.call(name, arguments, lastClientHint) }
         } catch (e: McpError) {
+            mcpStatusHolder.callFinished(name, e.message)
             throw e
         } catch (e: Exception) {
+            mcpStatusHolder.callFinished(name, e.message)
             Log.e(TAG, "tool '$name' threw", e)
             throw McpError(-32603, "Tool failed: ${e.message}")
         }
+        mcpStatusHolder.callFinished(name)
         // A proxied guest-MCP tool (McpTools aggregation) returns the guest
         // server's own MCP content array under the reserved key __mcpContent.
         // Forward it verbatim so the guest's text/image blocks reach the

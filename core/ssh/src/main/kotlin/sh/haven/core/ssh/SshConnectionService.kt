@@ -20,8 +20,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import sh.haven.core.data.agent.McpStatusHolder
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -45,6 +48,10 @@ class SshConnectionService : Service() {
      */
     @Inject
     lateinit var reviveHooks: Set<@JvmSuppressWildcards ForegroundReviveHook>
+
+    /** Live MCP activity, folded into the ongoing notification (#239). */
+    @Inject
+    lateinit var mcpStatusHolder: McpStatusHolder
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -98,6 +105,23 @@ class SshConnectionService : Service() {
                         // sessions; a roamed headless tunnel may still read stale
                         // CONNECTED, so kick it explicitly to revive/probe now.
                         reviveHooks.forEach { it.reviveNow() }
+                    }
+                }
+        }
+        // Re-post the ongoing notification when MCP activity changes so the
+        // endpoint line (running tool / last error) stays current (#239).
+        // drop(1): skip the StateFlow's initial replay — the startForeground
+        // in onStartCommand posts the first notification. Debounced because
+        // tool calls can fire in quick bursts; the channel is IMPORTANCE_LOW
+        // so updates are silent.
+        serviceScope.launch {
+            mcpStatusHolder.activity
+                .drop(1)
+                .debounce(400)
+                .collect {
+                    runCatching {
+                        getSystemService(NotificationManager::class.java)
+                            ?.notify(NOTIFICATION_ID, buildNotification())
                     }
                 }
         }

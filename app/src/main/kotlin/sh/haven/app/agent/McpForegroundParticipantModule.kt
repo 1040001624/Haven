@@ -6,6 +6,8 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import sh.haven.core.data.agent.McpActivity
+import sh.haven.core.data.agent.McpStatusHolder
 import sh.haven.core.ssh.ForegroundKeepAlive
 import sh.haven.core.ssh.ForegroundReviveHook
 import sh.haven.core.ssh.ForegroundSessionInfo
@@ -15,6 +17,14 @@ private data class McpEndpointSession(
     override val profileId: String,
     override val label: String,
 ) : ForegroundSessionInfo
+
+/** Short notification line reflecting live MCP activity (#239). */
+private fun mcpStatusLabel(a: McpActivity): String = when {
+    a.inFlight > 0 ->
+        "MCP: running ${a.lastTool ?: "tool"}${if (a.inFlight > 1) " +${a.inFlight - 1}" else ""}…"
+    a.lastError != null -> "MCP idle · last error: ${a.lastError}"
+    else -> "MCP agent endpoint"
+}
 
 /**
  * Contributes the MCP agent endpoint as a foreground "session" so the
@@ -45,14 +55,17 @@ object McpForegroundParticipantModule {
 
     @Provides
     @IntoSet
-    fun mcp(server: Lazy<McpServer>): ForegroundSessionParticipant =
+    fun mcp(
+        server: Lazy<McpServer>,
+        statusHolder: McpStatusHolder,
+    ): ForegroundSessionParticipant =
         object : ForegroundSessionParticipant {
             override val activeSessions: List<ForegroundSessionInfo>
                 get() = if (server.get().isRunning) {
                     listOf(
                         McpEndpointSession(
                             profileId = "mcp-agent-endpoint",
-                            label = "MCP agent endpoint",
+                            label = mcpStatusLabel(statusHolder.activity.value),
                         ),
                     )
                 } else {

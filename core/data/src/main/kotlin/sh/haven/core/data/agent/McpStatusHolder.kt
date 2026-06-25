@@ -3,6 +3,7 @@ package sh.haven.core.data.agent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,6 +15,23 @@ import javax.inject.Singleton
 data class WgCollisionInfo(
     val vpnInterface: String,
     val address: String,
+)
+
+/**
+ * Live MCP tool-call activity, surfaced in the foreground-service notification
+ * so a backgrounded agent session is *visible* — running, what it's doing now,
+ * and the last error — instead of dropping silently (#239).
+ *
+ * [inFlight] counts concurrently-executing `tools/call` dispatches (the server
+ * handles each connection on its own thread); [lastTool] is the most recently
+ * dispatched tool; [lastError] is the last failure as `"tool: message"`.
+ */
+data class McpActivity(
+    val running: Boolean = false,
+    val inFlight: Int = 0,
+    val lastTool: String? = null,
+    val callCount: Int = 0,
+    val lastError: String? = null,
 )
 
 /**
@@ -34,5 +52,26 @@ class McpStatusHolder @Inject constructor() {
 
     fun setWireguardCollision(info: WgCollisionInfo?) {
         _wireguardCollision.value = info
+    }
+
+    private val _activity = MutableStateFlow(McpActivity())
+
+    /** Live tool-call activity for the foreground notification (#239). */
+    val activity: StateFlow<McpActivity> = _activity.asStateFlow()
+
+    /** Server accept-loop up/down. */
+    fun setRunning(running: Boolean) = _activity.update { it.copy(running = running) }
+
+    /** A `tools/call` dispatch began. */
+    fun callStarted(tool: String) = _activity.update {
+        it.copy(inFlight = it.inFlight + 1, lastTool = tool, callCount = it.callCount + 1)
+    }
+
+    /** A `tools/call` dispatch finished; [error] non-null records the failure. */
+    fun callFinished(tool: String, error: String? = null) = _activity.update {
+        it.copy(
+            inFlight = (it.inFlight - 1).coerceAtLeast(0),
+            lastError = error?.let { e -> "$tool: ${e.take(140)}" } ?: it.lastError,
+        )
     }
 }
