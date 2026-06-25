@@ -1,0 +1,1 @@
+• Local Linux: fixed temp-file failures (e.g. mktemp "No such file or directory") in a terminal opened inside a desktop environment. The desktop session was passing Android's private temp path into the Linux guest instead of /tmp; follow-up to the openssh-server desktop fix in 5.59.91.
