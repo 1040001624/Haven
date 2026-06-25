@@ -53,11 +53,18 @@ class LocalSessionManager @Inject constructor(
     private var sessionManager: UserPreferencesRepository.SessionManager =
         UserPreferencesRepository.SessionManager.NONE
 
+    /** LANG exported into newly-opened local shells (#282). */
+    @Volatile
+    private var terminalLocale: String = UserPreferencesRepository.DEFAULT_TERMINAL_LOCALE
+
     private val prefScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
         prefScope.launch {
             preferences.sessionManager.collect { sessionManager = it }
+        }
+        prefScope.launch {
+            preferences.terminalLocale.collect { terminalLocale = it }
         }
     }
 
@@ -258,7 +265,7 @@ class LocalSessionManager @Inject constructor(
                 "HOME=/root",
                 "USER=root",
                 "TERM=xterm-256color",
-                "LANG=en_US.UTF-8",
+                "LANG=$terminalLocale",
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 "SHELL=/bin/sh",
                 // XDG base dirs so desktop/X11 apps and `startx`/dbus-run-session
@@ -285,7 +292,7 @@ class LocalSessionManager @Inject constructor(
             val env = arrayOf(
                 "HOME=${context.filesDir.absolutePath}",
                 "TERM=xterm-256color",
-                "LANG=en_US.UTF-8",
+                "LANG=$terminalLocale",
                 "PATH=/system/bin:/vendor/bin",
                 "SHELL=/system/bin/sh",
                 "TMPDIR=${context.cacheDir.absolutePath}",

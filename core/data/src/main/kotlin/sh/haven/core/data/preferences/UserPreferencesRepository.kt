@@ -29,6 +29,8 @@ class UserPreferencesRepository @Inject constructor(
     // Extra trailing prompt characters (beyond $ # % > ❯) for command-on-attach
     // detection — supports custom prompts ending in e.g. » or 尺 (#280).
     private val terminalPromptCharsKey = stringPreferencesKey("terminal_prompt_chars")
+    // LANG value exported into the local proot/Android shell (#282).
+    private val terminalLocaleKey = stringPreferencesKey("terminal_locale")
     private val themeKey = stringPreferencesKey("theme")
     private val sessionManagerKey = stringPreferencesKey("session_manager")
     private val reticulumRpcKeyKey = stringPreferencesKey("reticulum_rpc_key")
@@ -945,6 +947,23 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    /**
+     * Locale exported as `LANG` into the local Linux (proot) shell and the
+     * Android fallback shell (#282). Default `en_US.UTF-8`. `C.UTF-8` always
+     * works without locale-gen; other locales may need generating in the guest
+     * (`locale-gen`) before programs honour them. Blank falls back to the
+     * default.
+     */
+    val terminalLocale: Flow<String> = dataStore.data.map { prefs ->
+        prefs[terminalLocaleKey]?.takeIf { it.isNotBlank() } ?: DEFAULT_TERMINAL_LOCALE
+    }
+
+    suspend fun setTerminalLocale(locale: String) {
+        dataStore.edit { prefs ->
+            prefs[terminalLocaleKey] = locale.trim()
+        }
+    }
+
     val sessionManager: Flow<SessionManager> = dataStore.data.map { prefs ->
         SessionManager.fromString(prefs[sessionManagerKey])
     }
@@ -1574,5 +1593,6 @@ class UserPreferencesRepository @Inject constructor(
         const val DEFAULT_TOOLBAR_ROW1 = "keyboard,esc,tab,shift,ctrl,alt" // legacy
         const val DEFAULT_TOOLBAR_ROW2 = "arrow_left,arrow_up,arrow_down,arrow_right,sym_pipe,sym_tilde,sym_slash,sym_backslash,sym_backtick" // legacy
         const val DEFAULT_MEDIA_EXTENSIONS = "mp3 flac ogg opus m4a aac wma wav aiff alac ape mka mp4 mkv avi mov wmv flv webm m4v ts mpg mpeg 3gp"
+        const val DEFAULT_TERMINAL_LOCALE = "en_US.UTF-8"
     }
 }

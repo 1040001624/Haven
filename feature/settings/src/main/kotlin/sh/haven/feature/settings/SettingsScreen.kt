@@ -200,6 +200,7 @@ fun SettingsScreen(
     val waylandShellCommand by viewModel.waylandShellCommand.collectAsState()
     val mediaExtensions by viewModel.mediaExtensions.collectAsState()
     val terminalPromptChars by viewModel.terminalPromptChars.collectAsState()
+    val terminalLocale by viewModel.terminalLocale.collectAsState()
     var showAuditLog by remember { mutableStateOf(false) }
     var showProotInstallLog by remember { mutableStateOf(false) }
     var showAgentActivity by remember { mutableStateOf(false) }
@@ -217,6 +218,7 @@ fun SettingsScreen(
     var showWaylandShellDialog by remember { mutableStateOf(false) }
     var showMediaExtensionsDialog by remember { mutableStateOf(false) }
     var showPromptCharsDialog by remember { mutableStateOf(false) }
+    var showLocaleDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showScrollbackRowsDialog by remember { mutableStateOf(false) }
     var showSessionManagerDialog by remember { mutableStateOf(false) }
@@ -596,6 +598,12 @@ fun SettingsScreen(
                 terminalPromptChars
             },
             onClick = { showPromptCharsDialog = true },
+        )
+        SettingsItem(
+            icon = Icons.Filled.Language,
+            title = stringResource(R.string.settings_terminal_locale_title),
+            subtitle = terminalLocale,
+            onClick = { showLocaleDialog = true },
         )
         SettingsToggleItem(
             icon = Icons.Filled.Search,
@@ -1454,6 +1462,43 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPromptCharsDialog = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+
+    if (showLocaleDialog) {
+        var localeText by rememberSaveable { mutableStateOf(terminalLocale) }
+        AlertDialog(
+            onDismissRequest = { showLocaleDialog = false },
+            title = { Text(stringResource(R.string.settings_terminal_locale_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.settings_terminal_locale_description),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = localeText,
+                        onValueChange = { localeText = it },
+                        label = { Text(stringResource(R.string.settings_terminal_locale_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    TextButton(onClick = {
+                        localeText = UserPreferencesRepository.DEFAULT_TERMINAL_LOCALE
+                    }) {
+                        Text(stringResource(R.string.common_reset))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setTerminalLocale(localeText.trim())
+                    showLocaleDialog = false
+                }) { Text(stringResource(R.string.common_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocaleDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

@@ -821,6 +821,15 @@ class SettingsViewModel @Inject constructor(
             preferencesRepository.setTerminalPromptChars(chars)
         }
     }
+
+    val terminalLocale: StateFlow<String> = preferencesRepository.terminalLocale
+        .stateIn(viewModelScope, SharingStarted.Eagerly, UserPreferencesRepository.DEFAULT_TERMINAL_LOCALE)
+
+    fun setTerminalLocale(locale: String) {
+        viewModelScope.launch {
+            preferencesRepository.setTerminalLocale(locale)
+        }
+    }
 }
 
 /** A selectable SSH profile for the MCP reverse-tunnel endpoint picker. */

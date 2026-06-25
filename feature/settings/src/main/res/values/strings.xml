@@ -106,6 +106,11 @@
     <string name="settings_prompt_chars_description">Extra characters that end your shell prompt, so a queued command is sent once the prompt reappears (e.g. after reconnecting or reattaching tmux). Add the trailing character(s) of your custom prompt — the built-in $ # % &gt; ❯ are always recognised.</string>
     <string name="settings_prompt_chars_label">Extra prompt characters</string>
 
+    <!-- Local terminal locale / LANG (#282) -->
+    <string name="settings_terminal_locale_title">Terminal locale</string>
+    <string name="settings_terminal_locale_description">The LANG value exported into the local Linux shell. en_US.UTF-8 (default) and C.UTF-8 always work; other locales (e.g. zh_CN.UTF-8) may need generating in the guest with locale-gen before programs use them.</string>
+    <string name="settings_terminal_locale_label">LANG</string>
+
     <!-- Backup section -->
     <string name="settings_export_backup_title">Export backup</string>
     <string name="settings_export_backup_subtitle">Keys, connections, and settings</string>
