@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -2349,7 +2350,7 @@ internal class McpTools(
         ) { args -> getProotInstallLog(args) },
 
         "run_in_proot" to ToolHandler(
-            description = "Run a shell command inside the ACTIVE distro's proot guest (the same rootfs the running desktop uses) and return its combined stdout+stderr. Distro-agnostic: invokes /bin/sh -lc in whatever distro is active (check inspect_proot.activeDistroId), so it works on Debian/Arch/Void, not just Alpine like open_local_shell. For long jobs (apt-get install, pip install) pass background:true to start it and return a jobId immediately, then poll by calling again with that jobId — the response carries the accumulated output and, once finished, the exitCode. Without background, the call blocks until the command exits (use only for quick commands). This is the agent's headless way to provision the guest (install packages, run kicad-cli ERC/DRC, etc.).",
+            description = "Run a shell command inside the ACTIVE distro's proot guest (the same rootfs the running desktop uses) and return its combined stdout+stderr. Distro-agnostic: invokes /bin/sh -lc in whatever distro is active (check inspect_proot.activeDistroId), so it works on Debian/Arch/Void, not just Alpine like open_local_shell. For long jobs (apt-get install, pip install) you can pass background:true to get a jobId immediately, then poll by calling again with that jobId — the response carries the accumulated output and, once finished, the exitCode. Even without background, a synchronous call that runs longer than ~30s is auto-backgrounded: it returns {jobId, status:\"running\", note, output:<partial>} instead of blocking past the MCP request timeout, and you poll it the same way. A quick command returns inline ({exitCode, output}). This is the agent's headless way to provision the guest (install packages, run kicad-cli ERC/DRC, etc.).",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -8645,6 +8646,44 @@ internal class McpTools(
     }
     private val prootJobs = java.util.concurrent.ConcurrentHashMap<String, ProotJob>()
 
+    /**
+     * A synchronous [runInProot] that hasn't finished within this window is
+     * auto-converted to a background job and a pollable jobId returned,
+     * rather than blocking the single HTTP response until the MCP client's
+     * request timeout fires (`-32001`). Held well under the common 60s
+     * client default so `apt-get install` / large-output commands hand back
+     * a job instead of timing out (#279 / #240).
+     */
+    private val autoBackgroundMs = 30_000L
+
+    /**
+     * Start [command] in the active proot as a streaming background job and
+     * return its jobId. Output is appended line-by-line into the job buffer;
+     * [ProotJob.running] flips false and [ProotJob.exitCode] is set when it
+     * exits. Shared by run_in_proot's explicit `background:true` path and the
+     * auto-background fallback below.
+     */
+    private fun startProotJob(command: String): String {
+        val jobId = java.util.UUID.randomUUID().toString()
+        val job = ProotJob()
+        prootJobs[jobId] = job
+        backgroundScope.launch {
+            try {
+                val proc = prootManager.startCommandInProot(command)
+                proc.inputStream.bufferedReader().forEachLine { line ->
+                    synchronized(job.output) { job.output.append(line).append('\n') }
+                }
+                job.exitCode = proc.waitFor()
+            } catch (e: Exception) {
+                synchronized(job.output) { job.output.append("\n[run_in_proot error] ${e.message}\n") }
+                job.exitCode = -1
+            } finally {
+                job.running = false
+            }
+        }
+        return jobId
+    }
+
     private fun distroToJson(
         d: sh.haven.core.local.proot.Distro,
         installed: Boolean,
@@ -9964,23 +10003,7 @@ internal class McpTools(
         // Background mode: stream the process output into a job buffer and
         // return immediately so long installs don't hold the request open.
         if (args.optBoolean("background", false)) {
-            val jobId = java.util.UUID.randomUUID().toString()
-            val job = ProotJob()
-            prootJobs[jobId] = job
-            backgroundScope.launch {
-                try {
-                    val proc = prootManager.startCommandInProot(command)
-                    proc.inputStream.bufferedReader().forEachLine { line ->
-                        synchronized(job.output) { job.output.append(line).append('\n') }
-                    }
-                    job.exitCode = proc.waitFor()
-                } catch (e: Exception) {
-                    synchronized(job.output) { job.output.append("\n[run_in_proot error] ${e.message}\n") }
-                    job.exitCode = -1
-                } finally {
-                    job.running = false
-                }
-            }
+            val jobId = startProotJob(command)
             return JSONObject().apply {
                 put("jobId", jobId)
                 put("status", "running")
@@ -9989,12 +10012,38 @@ internal class McpTools(
             }
         }
 
-        // Synchronous mode — blocks until the command exits.
-        val (out, code) = prootManager.runCommandInProot(command)
+        // Synchronous mode — start the command as a job and wait up to
+        // [autoBackgroundMs] for it to finish. A quick command returns its
+        // full output + exitCode inline (and its job is dropped); a long one
+        // (apt-get install, big output) is handed back as a pollable jobId
+        // rather than blocking the HTTP response into a client `-32001`
+        // request timeout (#279 / #240).
+        val jobId = startProotJob(command)
+        val job = prootJobs.getValue(jobId)
+        val finished = withTimeoutOrNull(autoBackgroundMs) {
+            while (job.running) delay(50)
+            true
+        } != null
+        val out = synchronized(job.output) { job.output.toString() }
+        if (finished) {
+            prootJobs.remove(jobId)
+            return JSONObject().apply {
+                put("activeDistroId", prootManager.activeDistroId)
+                put("exitCode", job.exitCode ?: -1)
+                put("output", tail(out))
+            }
+        }
         return JSONObject().apply {
+            put("jobId", jobId)
+            put("status", "running")
             put("activeDistroId", prootManager.activeDistroId)
-            put("exitCode", code)
             put("output", tail(out))
+            put(
+                "note",
+                "Command still running after ${autoBackgroundMs / 1000}s — auto-backgrounded to " +
+                    "avoid a request timeout. Poll with run_in_proot(jobId=$jobId).",
+            )
+            put("poll", "run_in_proot with jobId=$jobId")
         }
     }
 
