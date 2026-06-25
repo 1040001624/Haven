@@ -1,0 +1,1 @@
+• Local Linux desktops: new "Open terminal in <desktop>" button (and an open_desktop_terminal agent tool) — launches a shell already joined to a running desktop's session (DISPLAY / WAYLAND_DISPLAY / XDG_RUNTIME_DIR), so you can drive its apps from the command line.
