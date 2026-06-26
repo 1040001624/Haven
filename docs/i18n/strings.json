@@ -10044,6 +10044,20 @@
      }
     },
     {
+     "name": "connections_reveal_password_title",
+     "en": "Reveal saved password",
+     "comment": "ConnectionsScreen top-level",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_reveal_password_subtitle",
+     "en": "Confirm it\\'s you to show the saved password",
+     "comment": "ConnectionsScreen top-level",
+     "args": [],
+     "t": {}
+    },
+    {
      "name": "connections_renewing_cert",
      "en": "Renewing %1$s\\'s cert via %2$s…",
      "comment": "#133 phase 2b: cert renewal status banner",

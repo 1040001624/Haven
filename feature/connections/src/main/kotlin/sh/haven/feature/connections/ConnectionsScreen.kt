@@ -569,8 +569,13 @@ fun ConnectionsScreen(
         val mcpReverseTunnel = produceState(initialValue = false, key1 = profile.id) {
             value = viewModel.hasMcpReverseTunnel(profile.id)
         }
+        // #274: stored credential fields are pre-filled with the decrypted
+        // secret, so gate the eye-reveal behind a biometric prompt.
+        val revealTitle = stringResource(R.string.connections_reveal_password_title)
+        val revealSubtitle = stringResource(R.string.connections_reveal_password_subtitle)
         ConnectionEditDialog(
             existing = profile,
+            onRevealSavedSecret = { viewModel.authToRevealPassword(revealTitle, revealSubtitle) },
             discoveredDestinations = discoveredDestinations,
             discoveredHosts = discoveredHosts,
             discoveredSmbHosts = discoveredSmbHosts,

@@ -137,7 +137,19 @@ class ConnectionsViewModel @Inject constructor(
     private val desktopSessionRegistry: sh.haven.core.data.desktop.DesktopSessionRegistry,
     private val userMessageBus: sh.haven.core.data.message.UserMessageBus,
     private val usbipForwarder: sh.haven.feature.connections.usb.UsbipConnectionForwarder,
+    private val biometricGate: sh.haven.core.data.keystore.BiometricGate,
 ) : ViewModel() {
+
+    /**
+     * Gate revealing a stored credential behind a biometric/device-credential
+     * prompt (#274). Returns true only on an explicit ALLOW; DENY, timeout, or
+     * no-foreground-Activity (UNAVAILABLE) keep the value masked. Reuses the
+     * key-unlock [sh.haven.core.data.keystore.BiometricGate], whose 30s
+     * session-unlock window means one prompt per edit session.
+     */
+    suspend fun authToRevealPassword(title: String, subtitle: String): Boolean =
+        biometricGate.request(label = title, detail = subtitle) ==
+            sh.haven.core.data.keystore.BiometricGate.Decision.ALLOW
 
     /** Live USB/IP auto-forwards, keyed by sessionId (Slice 1). Torn down on disconnect. */
     private val usbForwardHandles =

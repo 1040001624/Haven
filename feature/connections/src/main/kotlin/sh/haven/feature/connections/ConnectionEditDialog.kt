@@ -109,6 +109,14 @@ private val EDIT_DIALOG_COLORS = listOf(
 @Composable
 fun ConnectionEditDialog(
     existing: ConnectionProfile? = null,
+    /**
+     * Gate for revealing a stored credential field's value (#274). Non-null
+     * only when editing an existing profile, where the password fields are
+     * pre-filled with the decrypted secret; the eye toggle awaits this
+     * (a biometric prompt) before unmasking. Null for a new connection — the
+     * user is typing the value, so revealing it needs no auth.
+     */
+    onRevealSavedSecret: (suspend () -> Boolean)? = null,
     discoveredDestinations: List<sh.haven.core.reticulum.DiscoveredDestination> = emptyList(),
     discoveredHosts: List<DiscoveredHost> = emptyList(),
     discoveredSmbHosts: List<DiscoveredHost> = emptyList(),
@@ -1373,6 +1381,7 @@ fun ConnectionEditDialog(
                         onValueChange = { emailPassword = it },
                         label = stringResource(R.string.connections_field_email_password),
                         modifier = Modifier.fillMaxWidth(),
+                        onRevealRequest = onRevealSavedSecret,
                     )
                     if (isImapProvider) {
                         // Generic IMAP/SMTP fields — gated, so they never bloat the
@@ -1496,6 +1505,7 @@ fun ConnectionEditDialog(
                             onValueChange = { emailMailboxPassword = it },
                             label = stringResource(R.string.connections_field_email_mailbox_password),
                             modifier = Modifier.fillMaxWidth(),
+                            onRevealRequest = onRevealSavedSecret,
                         )
                         Text(
                             stringResource(R.string.connections_email_mailbox_password_hint),
@@ -1770,6 +1780,7 @@ fun ConnectionEditDialog(
                         onValueChange = { rdpPassword = it },
                         label = stringResource(R.string.connections_field_password_optional),
                         modifier = Modifier.fillMaxWidth(),
+                        onRevealRequest = onRevealSavedSecret,
                     )
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
@@ -2012,6 +2023,7 @@ fun ConnectionEditDialog(
                         onValueChange = { smbPassword = it },
                         label = stringResource(R.string.connections_field_password_optional),
                         modifier = Modifier.fillMaxWidth(),
+                        onRevealRequest = onRevealSavedSecret,
                     )
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
@@ -2913,6 +2925,7 @@ fun ConnectionEditDialog(
                             label = stringResource(R.string.connections_field_passphrase),
                             placeholder = stringResource(R.string.connections_hint_ifac_passphrase),
                             modifier = Modifier.fillMaxWidth(),
+                            onRevealRequest = onRevealSavedSecret,
                         )
                     }
 
