@@ -109,7 +109,7 @@ xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 
 # Desugaring
-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version = "2.1.4" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version = "2.1.5" }
 
 # Editor
 sora-editor = { group = "io.github.Rosemoe.sora-editor", name = "editor", version.ref = "sora-editor" }
