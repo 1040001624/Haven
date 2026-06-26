@@ -173,6 +173,7 @@ class ConnectionsViewModelSessionTest {
             },
             userMessageBus = sh.haven.core.data.message.UserMessageBus(),
             usbipForwarder = mockk(relaxed = true),
+            biometricGate = mockk(relaxed = true),
         )
     }
 
