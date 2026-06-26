@@ -1,0 +1,3 @@
+Agents can answer connection password prompts over MCP
+
+New MCP verbs get_pending_auth_prompt and answer_auth_prompt let an AI agent see when a connection is waiting on a password or an encrypted key's passphrase and supply it — so agent-driven connects no longer dead-end at a prompt only a human could tap. This also makes the #292 encrypted-key passphrase flow verifiable end-to-end over MCP.
