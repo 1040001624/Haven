@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import sh.haven.core.data.db.SshKeyDao
 import sh.haven.core.data.db.entities.SshKey
+import sh.haven.core.security.CredentialEncryption
 import sh.haven.core.security.KeyEncryption
 import sh.haven.core.security.Keystore
 import sh.haven.core.security.KeystoreFetch
@@ -111,4 +112,22 @@ class SshKeyRepository @Inject constructor(
         val key = sshKeyDao.getById(id) ?: return
         sshKeyDao.upsert(key.copy(enabledForAuth = enabled))
     }
+
+    /**
+     * Store (or clear, when [passphrase] is null) the opt-in passphrase for an
+     * encrypted key (#290). Encrypted at rest via [CredentialEncryption] — the
+     * same Android-Keystore-backed scheme used for remembered host passwords.
+     * Direct upsert, so it does NOT re-encrypt [SshKey.privateKeyBytes] (same
+     * reasoning as [rename]). No-op if the key was deleted meanwhile.
+     */
+    suspend fun setStoredPassphrase(id: String, passphrase: String?) {
+        val key = sshKeyDao.getById(id) ?: return
+        sshKeyDao.upsert(
+            key.copy(passphraseEncrypted = passphrase?.let { CredentialEncryption.encrypt(context, it) })
+        )
+    }
+
+    /** Decrypt the stored passphrase for [id], or null if none is stored. */
+    suspend fun getStoredPassphrase(id: String): String? =
+        sshKeyDao.getById(id)?.passphraseEncrypted?.let { CredentialEncryption.decrypt(context, it) }
 }

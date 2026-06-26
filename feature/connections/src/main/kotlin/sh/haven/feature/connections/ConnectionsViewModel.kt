@@ -2178,6 +2178,27 @@ class ConnectionsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Persist or clear the remembered SSH password/passphrase after a successful
+     * connect. Skips multi-user profiles (a runtime-prompted username) — persisting
+     * one user's password would bleed it into other sessions. Called from both the
+     * direct connect path and the session-picker path (#290), since the latter
+     * returns before the inline save block would otherwise run.
+     */
+    private suspend fun persistRememberedPassword(
+        profile: ConnectionProfile,
+        password: String,
+        rememberPassword: Boolean?,
+        multiUserProfile: Boolean,
+    ) {
+        if (multiUserProfile) return
+        if (rememberPassword == true && password.isNotBlank()) {
+            repository.save(profile.copy(sshPassword = password))
+        } else if (rememberPassword == false && profile.sshPassword != null) {
+            repository.save(profile.copy(sshPassword = null))
+        }
+    }
+
     private fun connectSsh(
         profile: ConnectionProfile,
         password: String,
@@ -2335,6 +2356,12 @@ class ConnectionsViewModel @Inject constructor(
                             ?.split("|")
                             ?.filter { it.isNotBlank() && it in existingSessions }
                             ?: emptyList()
+                        // #290: auth already succeeded (the list command ran above), so
+                        // persist the remembered passphrase NOW — the session-picker early
+                        // return below exits before the post-finishConnect save block. If the
+                        // user later cancels the picker, the saved passphrase is still valid
+                        // and the "remember" intent was already given, so keeping it is fine.
+                        persistRememberedPassword(profile, password, rememberPassword, usernameOverride != null)
                         _sessionSelection.value = SessionSelection(
                             sessionId = sessionId,
                             profileId = profile.id,
@@ -2353,17 +2380,7 @@ class ConnectionsViewModel @Inject constructor(
                 finishConnect(sessionId, profile.id, verboseLog = verboseLogger?.drain())
 
                 // Save or clear remembered password after successful connect.
-                // Skip if the username came from a runtime prompt — the profile is
-                // explicitly multi-user and persisting one user's password would
-                // bleed it into other sessions.
-                val multiUserProfile = usernameOverride != null
-                if (!multiUserProfile) {
-                    if (rememberPassword == true && password.isNotBlank()) {
-                        repository.save(profile.copy(sshPassword = password))
-                    } else if (rememberPassword == false && profile.sshPassword != null) {
-                        repository.save(profile.copy(sshPassword = null))
-                    }
-                }
+                persistRememberedPassword(profile, password, rememberPassword, usernameOverride != null)
 
                 // Auto-deploy SSH key for VM connections after first password connect
                 if (password.isNotBlank()) {
@@ -3627,7 +3644,16 @@ class ConnectionsViewModel @Inject constructor(
             }
             // For encrypted keys, pass the original encrypted bytes + passphrase.
             // JSch decrypts at auth time — key never stored in plaintext.
-            val passphrase = if (key.isEncrypted) password.toCharArray() else CharArray(0)
+            // When the caller supplied no passphrase, fall back to the opt-in
+            // per-key stored passphrase (#290) so one encrypted key works across
+            // all profiles without prompting. A wrong/stale stored value just
+            // fails auth and surfaces the existing fallback prompt.
+            val effectivePassword = if (key.isEncrypted && password.isBlank()) {
+                sshKeyRepository.getStoredPassphrase(keyId).orEmpty()
+            } else {
+                password
+            }
+            val passphrase = if (key.isEncrypted) effectivePassword.toCharArray() else CharArray(0)
             return ConnectionConfig.AuthMethod.PrivateKey(
                 keyBytes = if (key.isEncrypted) keyBytes else rawKeyToPem(keyBytes, key.keyType),
                 passphrase = passphrase,

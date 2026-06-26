@@ -121,6 +121,7 @@ fun KeysScreen(
     val pendingCertKeyId by viewModel.pendingCertKeyId.collectAsState()
     var pendingPasswordWipe by remember { mutableStateOf<KeystoreEntry?>(null) }
     var renameTarget by remember { mutableStateOf<SshKey?>(null) }
+    var pendingStorePassphrase by remember { mutableStateOf<SshKey?>(null) }
 
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var showGenerateDialog by remember { mutableStateOf(false) }
@@ -326,6 +327,10 @@ fun KeysScreen(
                             onEnabledForAuthToggle = { enabled ->
                                 viewModel.setKeyEnabledForAuth(sshKey.id, enabled)
                             },
+                            onStorePassphraseToggle = { store ->
+                                if (store) pendingStorePassphrase = sshKey
+                                else viewModel.setKeyStoredPassphrase(sshKey.id, null)
+                            },
                             onSetVerifyRequired = { required ->
                                 viewModel.setSkVerifyRequired(sshKey.id, required)
                             },
@@ -373,6 +378,19 @@ fun KeysScreen(
             }
             item(key = "footer-spacer") { Spacer(Modifier.height(80.dp)) }
         }
+    }
+
+    pendingStorePassphrase?.let { key ->
+        PassphraseDialog(
+            title = stringResource(R.string.keys_store_passphrase),
+            prompt = stringResource(R.string.keys_store_passphrase_warning),
+            confirmLabel = stringResource(R.string.keys_store_passphrase_confirm),
+            onConfirm = { passphrase ->
+                pendingStorePassphrase = null
+                viewModel.setKeyStoredPassphrase(key.id, passphrase)
+            },
+            onDismiss = { pendingStorePassphrase = null },
+        )
     }
 
     pendingPasswordWipe?.let { entry ->
@@ -951,16 +969,19 @@ private fun GenerateKeyDialog(
 private fun PassphraseDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    title: String = stringResource(R.string.keys_encrypted_key),
+    prompt: String = stringResource(R.string.keys_passphrase_prompt),
+    confirmLabel: String = stringResource(R.string.keys_unlock),
 ) {
     var passphrase by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.keys_encrypted_key)) },
+        title = { Text(title) },
         text = {
             Column {
                 Text(
-                    stringResource(R.string.keys_passphrase_prompt),
+                    prompt,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 PasswordField(
@@ -978,7 +999,7 @@ private fun PassphraseDialog(
                 onClick = { onConfirm(passphrase) },
                 enabled = passphrase.isNotEmpty(),
             ) {
-                Text(stringResource(R.string.keys_unlock))
+                Text(confirmLabel)
             }
         },
         dismissButton = {
@@ -1125,6 +1146,7 @@ private fun SshKeyAuditRow(
     onDelete: () -> Unit,
     onBiometricToggle: (Boolean) -> Unit,
     onEnabledForAuthToggle: (Boolean) -> Unit,
+    onStorePassphraseToggle: (Boolean) -> Unit,
     onSetVerifyRequired: (Boolean) -> Unit,
     onAttachCertificate: () -> Unit,
     onRemoveCertificate: () -> Unit,
@@ -1252,6 +1274,17 @@ private fun SshKeyAuditRow(
                     leadingIcon = { Icon(Icons.Filled.VpnKey, contentDescription = null) },
                     trailingIcon = {
                         if (sshKey.enabledForAuth) Icon(Icons.Filled.Check, contentDescription = null)
+                    },
+                )
+            }
+            if (sshKey.isEncrypted) {
+                val stored = sshKey.passphraseEncrypted != null
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.keys_store_passphrase)) },
+                    onClick = { onStorePassphraseToggle(!stored); onMenuDismiss() },
+                    leadingIcon = { Icon(Icons.Filled.Password, contentDescription = null) },
+                    trailingIcon = {
+                        if (stored) Icon(Icons.Filled.Check, contentDescription = null)
                     },
                 )
             }

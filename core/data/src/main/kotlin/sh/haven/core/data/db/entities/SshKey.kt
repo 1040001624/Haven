@@ -55,6 +55,14 @@ data class SshKey(
      * key on the Keys screen.
      */
     val enabledForAuth: Boolean = true,
+    /**
+     * Optional passphrase for an encrypted key, stored encrypted-at-rest via
+     * [sh.haven.core.security.CredentialEncryption] (the `"ENC:…"` string).
+     * Opt-in per key on the Keys screen — when set, the connect flow uses it
+     * instead of prompting, so one encrypted key works across all profiles
+     * without remembering the passphrase on each (#290). Null = not stored.
+     */
+    val passphraseEncrypted: String? = null,
 ) {
     // Structural equality — NOT id-only. An id-only equals() means a row
     // whose label (or cert) changed is `.equals()` to its old self, so a
@@ -78,7 +86,8 @@ data class SshKey(
             certificateBytes.contentEquals(other.certificateBytes) &&
             caConfigId == other.caConfigId &&
             certIssuedAt == other.certIssuedAt &&
-            enabledForAuth == other.enabledForAuth
+            enabledForAuth == other.enabledForAuth &&
+            passphraseEncrypted == other.passphraseEncrypted
     }
 
     override fun hashCode(): Int {
@@ -95,6 +104,7 @@ data class SshKey(
         result = 31 * result + (caConfigId?.hashCode() ?: 0)
         result = 31 * result + (certIssuedAt?.hashCode() ?: 0)
         result = 31 * result + enabledForAuth.hashCode()
+        result = 31 * result + (passphraseEncrypted?.hashCode() ?: 0)
         return result
     }
 }

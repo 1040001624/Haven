@@ -509,6 +509,35 @@ class KeysViewModel @Inject constructor(
     }
 
     /**
+     * Store (or clear, when [passphrase] is null) the opt-in passphrase for an
+     * encrypted key (#290). A non-null passphrase is validated against the key
+     * first — a wrong one sets [error] and stores nothing, so the connect flow
+     * never gets a passphrase that silently fails auth. The repository encrypts
+     * the value at rest. Validating fetches the decrypted key bytes, which
+     * triggers the biometric prompt if the key is biometric-protected.
+     */
+    fun setKeyStoredPassphrase(keyId: String, passphrase: String?) {
+        viewModelScope.launch {
+            if (passphrase == null) {
+                repository.setStoredPassphrase(keyId, null)
+                return@launch
+            }
+            try {
+                val keyBytes = repository.getDecryptedKeyBytes(keyId)
+                if (keyBytes == null) {
+                    _error.value = "Could not read key"
+                    return@launch
+                }
+                // Throws IllegalArgumentException("Incorrect passphrase") on mismatch.
+                withContext(Dispatchers.Default) { SshKeyImporter.import(keyBytes, passphrase) }
+                repository.setStoredPassphrase(keyId, passphrase)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Incorrect passphrase"
+            }
+        }
+    }
+
+    /**
      * Flip a FIDO2/SK key's verify-required (PIN) flag in place without
      * re-registering: SK flags 0x01 (touch only) ↔ 0x05 (touch + PIN). The
      * credential was made with a PIN token so it can do UV at assertion; this

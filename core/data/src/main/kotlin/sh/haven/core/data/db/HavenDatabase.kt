@@ -50,7 +50,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         StandingPolicy::class,
         AgeIdentityEntity::class,
     ],
-    version = 69,
+    version = 70,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -1145,6 +1145,13 @@ abstract class HavenDatabase : RoomDatabase() {
                         PRIMARY KEY(`id`)
                     )
                 """.trimIndent())
+            }
+        }
+
+        /** Per-key opt-in stored passphrase for encrypted keys (#290). */
+        val MIGRATION_69_70 = object : Migration(69, 70) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "ssh_keys", "passphraseEncrypted", "TEXT DEFAULT NULL")
             }
         }
 
