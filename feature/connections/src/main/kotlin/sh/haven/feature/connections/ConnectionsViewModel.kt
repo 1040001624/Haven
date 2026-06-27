@@ -139,6 +139,7 @@ class ConnectionsViewModel @Inject constructor(
     private val usbipForwarder: sh.haven.feature.connections.usb.UsbipConnectionForwarder,
     private val biometricGate: sh.haven.core.data.keystore.BiometricGate,
     private val pendingAuthPromptHolder: sh.haven.core.data.agent.PendingAuthPromptHolder,
+    private val sessionSelectionHolder: sh.haven.core.data.agent.SessionSelectionHolder,
 ) : ViewModel() {
 
     /**
@@ -199,6 +200,13 @@ class ConnectionsViewModel @Inject constructor(
                         username = command.username,
                         rememberPassword = command.rememberPassword,
                     )
+                } else if (command is sh.haven.core.data.agent.AgentUiCommand.AnswerSessionSelection) {
+                    // MCP answer_session_picker: choose a session (or null =
+                    // create new) on the live picker and re-drive the attach,
+                    // exactly as a human tap on the picker would.
+                    if (_sessionSelection.value != null) {
+                        onSessionSelected(command.sessionId, command.sessionName)
+                    }
                 }
             }
         }
@@ -712,6 +720,30 @@ class ConnectionsViewModel @Inject constructor(
 
     private val _sessionSelection = MutableStateFlow<SessionSelection?>(null)
     val sessionSelection: StateFlow<SessionSelection?> = _sessionSelection.asStateFlow()
+
+    // Mirror the session-manager picker to a process-wide holder so the MCP
+    // agent can observe it (get_pending_session_picker) and answer it
+    // (answer_session_picker) without a human tap. Declared AFTER
+    // _sessionSelection so the Main.immediate init collector never captures the
+    // field before it's set (same gotcha as the _passwordFallback mirror).
+    init {
+        viewModelScope.launch {
+            _sessionSelection.collect { sel ->
+                sessionSelectionHolder.set(
+                    sel?.let {
+                        sh.haven.core.data.agent.PendingSessionSelection(
+                            profileId = it.profileId,
+                            sessionId = it.sessionId,
+                            managerLabel = it.managerLabel,
+                            sessionNames = it.sessionNames,
+                            previousSessionNames = it.previousSessionNames,
+                            suggestedNewName = it.suggestedNewName,
+                        )
+                    }
+                )
+            }
+        }
+    }
 
     /** SSH client + host kept alive during mosh session picker (for mosh-server exec). */
     private var moshPendingClient: SshClient? = null

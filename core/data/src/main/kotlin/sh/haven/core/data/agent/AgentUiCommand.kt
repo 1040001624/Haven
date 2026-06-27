@@ -174,6 +174,19 @@ sealed class AgentUiCommand {
     ) : AgentUiCommand()
 
     /**
+     * Answer the session-manager picker currently shown by
+     * ConnectionsViewModel (its `_sessionSelection` dialog): pick an existing
+     * session by name, or pass [sessionName] = null to create a new one — then
+     * re-drive the stalled attach through `onSessionSelected`, the same path a
+     * human tap uses. Used by the MCP `answer_session_picker` verb. No-op when
+     * no picker is pending.
+     */
+    data class AnswerSessionSelection(
+        val sessionId: String,
+        val sessionName: String? = null,
+    ) : AgentUiCommand()
+
+    /**
      * Encrypt the file at [path] on [profileId] to [recipients] (age
      * `age1…` strings), producing `<name>.age` in the same folder. The
      * collector ([sh.haven.feature.sftp.SftpViewModel]) selects the

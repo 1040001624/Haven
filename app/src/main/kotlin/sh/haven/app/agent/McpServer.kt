@@ -182,6 +182,11 @@ class McpServer @Inject constructor(
     // injects the real @Singleton in production.
     private val pendingAuthPromptHolder: sh.haven.core.data.agent.PendingAuthPromptHolder =
         sh.haven.core.data.agent.PendingAuthPromptHolder(),
+    // Same as above: defaulted for the manual test constructions; Hilt injects
+    // the real @Singleton so this mirrors the same instance ConnectionsViewModel
+    // writes the session-manager picker state to.
+    private val sessionSelectionHolder: sh.haven.core.data.agent.SessionSelectionHolder =
+        sh.haven.core.data.agent.SessionSelectionHolder(),
 ) : Closeable {
 
     /**
@@ -371,6 +376,7 @@ class McpServer @Inject constructor(
         standingPolicyRepository = standingPolicyRepository,
         mcpTunnelManager = mcpTunnelManager,
         pendingAuthPromptHolder = pendingAuthPromptHolder,
+        sessionSelectionHolder = sessionSelectionHolder,
         mcpPortProvider = { port },
     )
 

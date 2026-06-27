@@ -118,6 +118,11 @@ internal class McpTools(
     // exercise those verbs construct McpTools without supplying it.
     private val pendingAuthPromptHolder: sh.haven.core.data.agent.PendingAuthPromptHolder =
         sh.haven.core.data.agent.PendingAuthPromptHolder(),
+    // Pending session-manager picker, mirrored from ConnectionsViewModel so
+    // get_pending_session_picker / answer_session_picker can observe and answer
+    // it without a human tap. Defaulted like the auth-prompt holder above.
+    private val sessionSelectionHolder: sh.haven.core.data.agent.SessionSelectionHolder =
+        sh.haven.core.data.agent.SessionSelectionHolder(),
     /**
      * The MCP HTTP server's live bound port. Evaluated lazily so the
      * reverse-tunnel auto-detect follows an 8731+ fallback instead of a
@@ -2951,7 +2956,7 @@ internal class McpTools(
         ) { args -> setProfileRouting(args) },
 
         "create_connection" to ToolHandler(
-            description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, EMAIL. SSH-family fields: username (required), password (optional, stored), keyId (optional — references list_ssh_keys), ignoreSavedKeys (force password-only auth, never offer saved keys), useMosh (turn an SSH profile into a Mosh profile). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort, and vncSshForward + vncSshProfileId to tunnel VNC through a saved SSH profile. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. EMAIL: emailProvider (\"imap\" default, or \"proton\"); username = the email address; password = the account/app-password; for IMAP set emailServer (required) + emailPort (993) + emailSmtpPort (465) + emailTls (true), plus emailSmtpServer when the SMTP host differs (e.g. smtp.gmail.com); for Proton add emailMailboxPassword if two-password mode. EMAIL host is optional (the tunnel-ingress/bastion SPA/knock guards), not the mail server. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
+            description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, EMAIL. SSH-family fields: username (required), password (optional, stored), keyId (optional — references list_ssh_keys), ignoreSavedKeys (force password-only auth, never offer saved keys), useMosh (turn an SSH profile into a Mosh profile), sessionManager (optional: TMUX | ZELLIJ | SCREEN | BYOBU — attach through that multiplexer; omit for a plain shell). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort, and vncSshForward + vncSshProfileId to tunnel VNC through a saved SSH profile. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. EMAIL: emailProvider (\"imap\" default, or \"proton\"); username = the email address; password = the account/app-password; for IMAP set emailServer (required) + emailPort (993) + emailSmtpPort (465) + emailTls (true), plus emailSmtpServer when the SMTP host differs (e.g. smtp.gmail.com); for Proton add emailMailboxPassword if two-password mode. EMAIL host is optional (the tunnel-ingress/bastion SPA/knock guards), not the mail server. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -3150,7 +3155,7 @@ internal class McpTools(
         ) { args -> deleteConnection(args) },
 
         "connect_profile" to ToolHandler(
-            description = "Initiate a connection for a saved profile via the same code path a UI tap uses (route-through, stored password, key auth all apply). Posts an AgentUiCommand.ConnectProfile that ConnectionsViewModel observes — the actual connect happens asynchronously. Use list_sessions afterwards to confirm the session reached CONNECTED. If the profile needs a password that isn't stored and isn't a key, the UI password prompt will surface to the user. For an SSH profile that uses a session manager (tmux/zellij/screen), pass sessionName to attach or create a named session non-interactively; without it, a connect to a profile that has existing sessions surfaces the interactive picker (which the agent can't tap) and stalls.",
+            description = "Initiate a connection for a saved profile via the same code path a UI tap uses (route-through, stored password, key auth all apply). Posts an AgentUiCommand.ConnectProfile that ConnectionsViewModel observes — the actual connect happens asynchronously. Use list_sessions afterwards to confirm the session reached CONNECTED. If the profile needs a password that isn't stored and isn't a key, the UI password prompt will surface to the user. For an SSH profile that uses a session manager (tmux/zellij/screen), pass sessionName to attach or create a named session non-interactively; without it, a connect to a profile that has existing sessions surfaces the interactive picker — poll get_pending_session_picker and resolve it with answer_session_picker (no longer stalls unanswerable).",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -3197,6 +3202,34 @@ internal class McpTools(
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { _ -> "Answer Haven's pending connection password prompt?" },
         ) { args -> answerAuthPrompt(args) },
+
+        "get_pending_session_picker" to ToolHandler(
+            description = "Return the session-manager picker Haven is currently waiting on, or { pending: false } if none. A connect_profile to a tmux/zellij/screen profile that has existing remote sessions (and no sessionName preselected) surfaces this picker instead of attaching: { pending: true, profileId, sessionId, sessionManager, sessionNames: [...], previousSessionNames: [...], suggestedNewName }. Answer it with answer_session_picker. Read-only. (Previously this picker was human-only and stalled the agent.)",
+            inputSchema = emptyObjectSchema(),
+            consentLevel = ConsentLevel.NEVER,
+        ) { _ -> getPendingSessionPicker() },
+
+        "answer_session_picker" to ToolHandler(
+            description = "Answer the picker reported by get_pending_session_picker — attach to an existing remote session by name, or create a new one. Pass `sessionName` (must be one of the picker's sessionNames) to attach to it, or `createNew: true` to start a fresh session. Haven re-drives the attach through the same path a human tap uses (onSessionSelected). Returns { answered:false } when no picker is pending. Confirm the result with list_sessions / read_terminal_snapshot.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("sessionName", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Existing remote session to attach to (from get_pending_session_picker.sessionNames). Omit and set createNew=true to start a new one.")
+                    })
+                    put("createNew", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "Create a new session instead of attaching to an existing one (default false).")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                if (args.optBoolean("createNew", false)) "Create a new remote session?"
+                else "Attach to remote session \"${args.optString("sessionName")}\"?"
+            },
+        ) { args -> answerSessionPicker(args) },
     )
 
     /** Return the list of tool definitions for MCP `tools/list`. */
@@ -8383,6 +8416,7 @@ internal class McpTools(
                 keyId = args.optString("keyId").ifBlank { null },
                 authMethods = authMethodsText,
                 ignoreSavedKeys = ignoreSavedKeys,
+                sessionManager = parseSessionManager(args.optString("sessionManager")),
                 tunnelConfigId = tunnelConfigId,
                 tunnelOnly = tunnelOnly,
                 portKnockSequence = knockSequence,
@@ -8722,6 +8756,63 @@ internal class McpTools(
                 "note",
                 "Answer dispatched. get_pending_auth_prompt clears on success and re-surfaces on a wrong secret; confirm with list_sessions."
             )
+        }
+    }
+
+    /**
+     * Validate + normalise a session-manager name for create_profile. Stored
+     * uppercase to match SessionManager.valueOf in ConnectionsViewModel. Blank
+     * => null (no session manager). Throws on an unknown name.
+     */
+    private fun parseSessionManager(raw: String?): String? {
+        val v = raw?.trim()?.uppercase()?.ifBlank { null } ?: return null
+        val valid = setOf("TMUX", "ZELLIJ", "SCREEN", "BYOBU")
+        if (v !in valid) {
+            throw IllegalArgumentException("sessionManager must be one of ${valid.joinToString(", ")} (or omit for none)")
+        }
+        return v
+    }
+
+    private fun getPendingSessionPicker(): JSONObject {
+        val s = sessionSelectionHolder.selection.value
+            ?: return JSONObject().put("pending", false)
+        return JSONObject().apply {
+            put("pending", true)
+            put("profileId", s.profileId)
+            put("sessionId", s.sessionId)
+            put("sessionManager", s.managerLabel)
+            put("sessionNames", JSONArray().apply { s.sessionNames.forEach { put(it) } })
+            put("previousSessionNames", JSONArray().apply { s.previousSessionNames.forEach { put(it) } })
+            put("suggestedNewName", s.suggestedNewName)
+        }
+    }
+
+    private suspend fun answerSessionPicker(args: JSONObject): JSONObject {
+        val pending = sessionSelectionHolder.selection.value
+            ?: return JSONObject().apply {
+                put("answered", false)
+                put("note", "No session picker is pending. connect_profile (without sessionName) to a session-manager profile that has existing sessions surfaces it.")
+            }
+        val createNew = args.optBoolean("createNew", false)
+        val name = args.optString("sessionName").ifBlank { null }
+        val chosen: String? = when {
+            createNew -> null // null sessionName => onSessionSelected creates a new uniquely-named session
+            name != null -> {
+                if (name !in pending.sessionNames) {
+                    throw McpError(-32602, "sessionName \"$name\" is not in the picker (${pending.sessionNames}); pass createNew=true to make a new one")
+                }
+                name
+            }
+            else -> throw McpError(-32602, "pass sessionName=<existing> (from get_pending_session_picker) or createNew=true")
+        }
+        agentUiCommandBus.emit(
+            sh.haven.core.data.agent.AgentUiCommand.AnswerSessionSelection(pending.sessionId, chosen)
+        )
+        return JSONObject().apply {
+            put("answered", true)
+            put("sessionId", pending.sessionId)
+            put("attached", chosen ?: "(new session)")
+            put("note", "Attach dispatched via onSessionSelected. Confirm with list_sessions / read_terminal_snapshot.")
         }
     }
 
