@@ -28,7 +28,7 @@
 
 <p align="center">
   <a href="https://github.com/GlassHaven/Haven/releases/download/v5.60.4/haven-transparency.mp4">
-    <img src="docs/haven-transparency.jpg" width="300" alt="Terminal transparency over a live device wallpaper — click to watch" />
+    <img src="docs/haven-transparency.webp" width="300" alt="Terminal transparency over a live device wallpaper — click for full-quality video" />
   </a>
 </p>
 
