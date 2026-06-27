@@ -175,6 +175,7 @@ class ConnectionsViewModelSessionTest {
             usbipForwarder = mockk(relaxed = true),
             biometricGate = mockk(relaxed = true),
             pendingAuthPromptHolder = mockk(relaxed = true),
+            sessionSelectionHolder = mockk(relaxed = true),
         )
     }
 
