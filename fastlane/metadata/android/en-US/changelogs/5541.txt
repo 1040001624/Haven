@@ -1,0 +1,5 @@
+SSH terminal: clean tmux/screen attach
+
+Attaching to a tmux, screen or zellij session over SSH no longer leaves stray characters (like "0c)\") on the shell prompt. The terminal emulator now answers the multiplexer's capability probes the instant you connect, so the replies reach tmux in time instead of leaking onto the prompt. Login shells that probe on startup (e.g. fish) also draw immediately rather than pausing. (#290)
+
+Also: fixes a mislabeled "SSH password" entry when remembering an encrypted key's passphrase. Agent/MCP can now observe and answer the session-manager picker and set a session manager when creating a connection.
