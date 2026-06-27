@@ -1,0 +1,1 @@
+Terminal: the extra key rows (Ctrl, Esc, Tab, arrows, etc.) now stay visible in fullscreen mode instead of disappearing — those are the keys you still need while typing. Fullscreen continues to hide the status bar, navigation bar and tab bar.
