@@ -68,9 +68,14 @@ class TerminalRecorder(
     private val buf = ByteArray(8) // reusable header buffer
     private var bytesWritten = 0L
     private var generation = 0
+    private var closed = false
 
     @Synchronized
     fun record(data: ByteArray, offset: Int, length: Int) {
+        // A final write may race the owner's dispose() now that the emulator
+        // (and its write buffer) can outlive the recorder; swallow it instead
+        // of throwing on the main thread (#290 issue #2 lifecycle).
+        if (closed) return
         val elapsed = (System.currentTimeMillis() - startTime).toInt()
         buf[0] = (elapsed and 0xFF).toByte()
         buf[1] = (elapsed ushr 8 and 0xFF).toByte()
@@ -108,6 +113,8 @@ class TerminalRecorder(
 
     @Synchronized
     override fun close() {
+        if (closed) return
+        closed = true
         try { out.flush(); out.close() } catch (_: Exception) {}
     }
 }
@@ -120,7 +127,7 @@ class TerminalRecorder(
  * resize/layout events. This class accumulates bytes in a lock-protected
  * buffer and only keeps one pending main-thread drain in flight at a time.
  */
-private class EmulatorWriteBuffer(
+internal class EmulatorWriteBuffer(
     private val emulator: () -> TerminalEmulator?,
     private val recorder: TerminalRecorder? = null,
 ) {
@@ -295,6 +302,8 @@ class TerminalViewModel @Inject constructor(
      * inspect / drive the terminal without going through a Compose scope.
      */
     val terminalSessionRegistry: sh.haven.feature.terminal.agent.TerminalSessionRegistry,
+    /** Owns SSH emulators created at connect time; the VM adopts them (#290 issue #2). */
+    private val sshEmulatorOwner: SshTerminalEmulatorOwner,
     /** ZXing-backed barcode / QR decoder; bitmap-in, string-or-null-out. */
     private val barcodeDecoder: sh.haven.core.scan.BarcodeDecoder,
     /** Tesseract-backed OCR engine; bitmap-in, string-or-null-out. */
@@ -466,14 +475,13 @@ class TerminalViewModel @Inject constructor(
         for (tab in _tabs.value) {
             when (tab.transportType) {
                 "SSH" -> {
-                    sessionManager.detachTerminalSession(tab.sessionId)
-                    // Drop the torn-down emulator from the singleton registry so the
-                    // reattach re-registers the fresh one, keeping MCP agent reads
-                    // (read_terminal_snapshot) consistent with the UI after a
-                    // background→return. The UI itself already renders the fresh
-                    // tab emulator + replayed scrollback (#272-SSH); without this the
-                    // registry kept the stale pre-teardown emulator.
-                    terminalSessionRegistry.unregister(tab.sessionId)
+                    // The emulator lives in SshTerminalEmulatorOwner across ViewModel
+                    // lifecycles now (#290 issue #2) — do NOT detach the session or
+                    // unregister the emulator (the owner disposes both on session
+                    // teardown). Just repoint the owner's input/resize sinks off this
+                    // dying VM, back at the session, so a remote app's query is still
+                    // answered while no UI exists; the new VM re-adopts on recreation.
+                    sshEmulatorOwner.resetSinks(tab.sessionId)
                 }
                 "RETICULUM" -> reticulumSessionManager.detachTerminalSession(tab.sessionId)
                 "MOSH" -> moshSessionManager.detachTerminalSession(tab.sessionId)
@@ -977,133 +985,62 @@ class TerminalViewModel @Inject constructor(
             trackedSessionIds.retainAll(currentTabs.map { it.sessionId }.toSet())
         }
 
-        // Create tabs for new SSH sessions (or reattach to existing ones after Activity recreation)
+        // Adopt SSH emulators created at connect time by SshTerminalEmulatorOwner
+        // (#290 issue #2). The emulator already exists and has been parsing output
+        // — answering tmux's attach-time probes — since connect; here we wire it to
+        // a tab and route user input/resize through the ViewModel. After Activity
+        // recreation this re-adopts the SAME live emulator, so the screen comes back
+        // intact with no scrollback replay (the old #272-SSH replay path is gone).
         for (sessionId in activeSshIds) {
             if (sessionId in trackedSessionIds) continue
-
-            // Reattach to an existing terminal session (ViewModel recreated after background)
-            val existingTermSession = if (!sessionManager.isReadyForTerminal(sessionId) &&
-                sessionManager.hasExistingTerminalSession(sessionId)
-            ) {
-                sessionManager.getExistingTerminalSession(sessionId)
-            } else {
-                null
-            }
-
-            if (existingTermSession == null && !sessionManager.isReadyForTerminal(sessionId)) continue
-
+            val b = sshEmulatorOwner.bundleFor(sessionId) ?: continue
             val session = sshSessions[sessionId] ?: continue
-            val baseLabel = session.label
-            val tabLabel = generateTabLabel(baseLabel, session.profileId, currentTabs, sessionName = session.chosenSessionName)
-
-            lateinit var emulator: TerminalEmulator
-            val writeBuffer = EmulatorWriteBuffer({ emulator }, createRecorderIfEnabled(sessionId))
-            val mouseTracker = MouseModeTracker()
-            val oscHandler = OscHandler()
-            val cwdFlow = MutableStateFlow<String?>(null)
-            val hyperlinkFlow = MutableStateFlow<String?>(null)
-            oscHandler.onCwdChanged = { cwdFlow.value = it }
-            oscHandler.onHyperlink = { uri -> hyperlinkFlow.value = uri }
-            // The real output pipeline: OSC scan → mouse-mode scan →
-            // emulator. Shared by the live data callback and the agent's
-            // feed_terminal_output test injection so both go through the
-            // exact same path.
-            // Synchronized on the OSC handler: the live data callback and
-            // the agent's feed_terminal_output both route through here, and
-            // OscHandler / MouseModeTracker hold non-thread-safe scanner
-            // state. Uncontended in the common case (one reader thread).
-            val feedOutput: (ByteArray, Int, Int) -> Unit = { data, offset, length ->
-                synchronized(oscHandler) {
-                    oscHandler.process(data, offset, length)
-                    mouseTracker.process(oscHandler.outputBuf, 0, oscHandler.outputLen)
-                    val len = oscHandler.outputLen
-                    if (len > 0) {
-                        writeBuffer.append(oscHandler.outputBuf, 0, len)
-                    }
-                }
-            }
-
-            val termSession = existingTermSession?.also {
-                // Replay the buffered scrollback into the fresh emulator BEFORE
-                // rewiring the live stream, so the prior screen is restored on
-                // Activity recreation instead of coming back blank (#272-SSH).
-                // Only this recreation-reattach path runs here (existingTermSession
-                // is non-null only when !isReadyForTerminal); the #289 connect-window
-                // backlog is already consumed by then, so there's no double-feed.
-                sessionManager.snapshotScrollback(sessionId)?.let { buffered ->
-                    feedOutput(buffered, 0, buffered.size)
-                }
-                // Reattach: rewire data callback to the new emulator/OSC handler
-                it.replaceDataCallback { data, offset, length ->
-                    feedOutput(data, offset, length)
-                }
-                Log.d(TAG, "Reattached to existing terminal session $sessionId")
-            } ?: sessionManager.createTerminalSession(
-                sessionId = sessionId,
-                onDataReceived = { data, offset, length ->
-                    feedOutput(data, offset, length)
-                },
-            ) ?: continue
-
-            val coalescer = InputCoalescer { data -> termSession.sendToSsh(data) }
+            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs, sessionName = session.chosenSessionName)
             val sshProfile = profilesById[session.profileId]
-            val scheme = effectiveColorScheme(sshProfile)
-            val initialScheme = initialEmulatorScheme(scheme)
-            emulator = TerminalEmulatorFactory.create(
-                initialRows = 24,
-                initialCols = 80,
-                defaultForeground = Color(initialScheme.foreground),
-                defaultBackground = Color(initialScheme.background),
-                enableAltScreen = sshProfile?.disableAltScreen != true && sshProfile?.sessionManager != "screen",
-                onKeyboardInput = { data -> coalescer.send(applyModifiers(data)) },
-                onResize = { dims ->
-                    Log.d(TAG, "SSH onResize: ${dims.columns}x${dims.rows}")
-                    // Resize ALL tabs — only the active tab's Terminal composable
-                    // fires onResize, so inactive tabs would keep stale PTY sizes
-                    // unless we propagate here.
-                    for (tab in _tabs.value) {
-                        tab.resize(dims.columns, dims.rows)
-                    }
-                    // Also resize the just-created session (not yet in _tabs)
-                    termSession.resize(dims.columns, dims.rows)
-                },
-                maxScrollbackLines = terminalScrollbackRows.value,
-            )
 
-            if (existingTermSession == null) {
-                termSession.start()
+            // User input goes through keyboard-modifier state + the IME-dedupe
+            // coalescer; the owner's default sink (probe responses → session) is
+            // swapped to this while the tab is mounted.
+            val coalescer = InputCoalescer { data -> b.session?.sendToSsh(data) }
+            sshEmulatorOwner.setInputSink(sessionId) { data -> coalescer.send(applyModifiers(data)) }
+            sshEmulatorOwner.setResizeSink(sessionId) { dims ->
+                // Only the active tab's Terminal composable fires onResize; resize
+                // ALL tabs so inactive ones don't keep a stale PTY size.
+                for (tab in _tabs.value) {
+                    tab.resize(dims.columns, dims.rows)
+                }
+                b.session?.resize(dims.columns, dims.rows)
             }
 
-            val sshSessionId = session.sessionId
             val reconnectingFlow = sessionManager.sessions
-                .map { it[sshSessionId]?.status == SessionState.Status.RECONNECTING }
+                .map { it[sessionId]?.status == SessionState.Status.RECONNECTING }
                 .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
             currentTabs.add(
                 TerminalTab(
-                    sessionId = sshSessionId,
+                    sessionId = sessionId,
                     profileId = session.profileId,
                     colorTag = sshProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "SSH",
-                    emulator = emulator,
-                    mouseMode = mouseTracker.mouseMode,
-                    activeMouseMode = mouseTracker.activeMouseMode,
-                    bracketPasteMode = mouseTracker.bracketPasteMode,
-                    altScreen = mouseTracker.altScreen,
-                    oscHandler = oscHandler,
-                    feedOutput = feedOutput,
-                    cwd = cwdFlow,
-                    hyperlinkUri = hyperlinkFlow,
+                    emulator = b.emulator,
+                    mouseMode = b.mouseTracker.mouseMode,
+                    activeMouseMode = b.mouseTracker.activeMouseMode,
+                    bracketPasteMode = b.mouseTracker.bracketPasteMode,
+                    altScreen = b.mouseTracker.altScreen,
+                    oscHandler = b.oscHandler,
+                    feedOutput = b.feedOutput,
+                    cwd = b.cwdFlow,
+                    hyperlinkUri = b.hyperlinkFlow,
                     isReconnecting = reconnectingFlow,
                     secondsUntilDisconnect = NEVER_STALLS,
-                    sendInput = { data -> termSession.sendToSsh(data) },
-                    resize = { cols, rows -> termSession.resize(cols, rows) },
-                    close = { termSession.close() },
-                    colorScheme = scheme,
+                    sendInput = { data -> b.session?.sendToSsh(data) },
+                    resize = { cols, rows -> b.session?.resize(cols, rows) },
+                    close = { b.session?.close() },
+                    colorScheme = effectiveColorScheme(sshProfile),
                 )
             )
-            trackedSessionIds.add(session.sessionId)
+            trackedSessionIds.add(sessionId)
         }
 
         // Create tabs for new Reticulum sessions

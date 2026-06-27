@@ -254,12 +254,13 @@ class TerminalSessionTest {
     }
 
     @Test
-    fun `connect-window output is replayed into the emulator on first attach`() {
-        // Regression for #289: a fish login shell fires its Primary Device
-        // Attribute query (ESC [ c) the instant it starts — during the connect
-        // window, before the emulator attaches. Those bytes must be replayed
-        // into the emulator on attach, or the query is never answered and fish
-        // hangs 10s.
+    fun `data callback set at construction receives output live exactly once`() {
+        // #290 issue #2: the emulator is now wired as the data callback at
+        // connect time (via SshSessionManager's TerminalAttachmentProvider),
+        // so output is delivered straight to it from the first byte - no
+        // connect-window buffering, no replay, no duplication. This is what
+        // lets tmux's attach probes be answered within tmux's window, and also
+        // covers #289 (fish's DA1 is parsed live).
         val pipeOut = PipedOutputStream()
         val pipeIn = PipedInputStream(pipeOut)
         val channel = mockk<ChannelShell>(relaxed = true) {
@@ -269,55 +270,7 @@ class TerminalSessionTest {
         }
         val client = mockk<SshClient>(relaxed = true)
 
-        // Connect-window callback is a no-op (emulator not attached yet) — the
-        // same default openShellAndAwaitReady installs.
-        val connectWindowDelivered = CountDownLatch(1)
-        val session = TerminalSession(
-            sessionId = "test-session",
-            profileId = "test",
-            label = "test@host",
-            channel = channel,
-            client = client,
-            onDataReceived = { _, _, _ -> connectWindowDelivered.countDown() },
-        )
-        session.start()
-
-        // Remote shell fires DA1 immediately on startup, during the window.
-        val da1Query = "[c".toByteArray()
-        pipeOut.write(da1Query)
-        pipeOut.flush()
-        assertTrue(
-            "reader did not consume the connect-window query",
-            connectWindowDelivered.await(2, TimeUnit.SECONDS),
-        )
-
-        // Emulator attaches (UI mounts the tab).
-        val replayed = mutableListOf<Byte>()
-        session.replaceDataCallback { data, off, len ->
-            synchronized(replayed) { for (i in off until off + len) replayed.add(data[i]) }
-        }
-
-        // The buffered DA1 query was replayed into the emulator so it can answer.
-        synchronized(replayed) {
-            assertArrayEquals(da1Query, replayed.toByteArray())
-        }
-
-        session.close()
-    }
-
-    @Test
-    fun `connect-window backlog is replayed only once, not on later reattaches`() {
-        // The backlog must be consumed on the FIRST attach only — a later
-        // reattach (after backgrounding) must not re-inject stale startup bytes.
-        val pipeOut = PipedOutputStream()
-        val pipeIn = PipedInputStream(pipeOut)
-        val channel = mockk<ChannelShell>(relaxed = true) {
-            every { inputStream } returns pipeIn
-            every { getOutputStream() } returns ByteArrayOutputStream()
-            every { isConnected } returns true
-        }
-        val client = mockk<SshClient>(relaxed = true)
-
+        val received = mutableListOf<Byte>()
         val delivered = CountDownLatch(1)
         val session = TerminalSession(
             sessionId = "test-session",
@@ -325,23 +278,71 @@ class TerminalSessionTest {
             label = "test@host",
             channel = channel,
             client = client,
-            onDataReceived = { _, _, _ -> delivered.countDown() },
+            onDataReceived = { data, off, len ->
+                synchronized(received) { for (k in off until off + len) received.add(data[k]) }
+                delivered.countDown()
+            },
+        )
+        session.start()
+
+        val da1Query = "[c".toByteArray()
+        pipeOut.write(da1Query)
+        pipeOut.flush()
+        assertTrue(
+            "reader did not deliver the query to the connect-time callback",
+            delivered.await(2, TimeUnit.SECONDS),
+        )
+
+        // Delivered exactly once, no buffering/replay duplicating it.
+        synchronized(received) {
+            assertArrayEquals(da1Query, received.toByteArray())
+        }
+
+        session.close()
+    }
+
+    @Test
+    fun `replaceDataCallback swaps the live callback without replaying past output`() {
+        // Reattach swaps the data callback; it must NOT replay bytes seen
+        // before the swap (the old #289 connect-window replay is gone now that
+        // the emulator attaches at connect).
+        val pipeOut = PipedOutputStream()
+        val pipeIn = PipedInputStream(pipeOut)
+        val channel = mockk<ChannelShell>(relaxed = true) {
+            every { inputStream } returns pipeIn
+            every { getOutputStream() } returns ByteArrayOutputStream()
+            every { isConnected } returns true
+        }
+        val client = mockk<SshClient>(relaxed = true)
+
+        val first = CountDownLatch(1)
+        val session = TerminalSession(
+            sessionId = "test-session",
+            profileId = "test",
+            label = "test@host",
+            channel = channel,
+            client = client,
+            onDataReceived = { _, _, _ -> first.countDown() },
         )
         session.start()
         pipeOut.write("[c".toByteArray())
         pipeOut.flush()
-        assertTrue(delivered.await(2, TimeUnit.SECONDS))
+        assertTrue(first.await(2, TimeUnit.SECONDS))
 
-        // First attach drains the backlog.
-        session.replaceDataCallback { _, _, _ -> }
-
-        // Second attach (reattach) must replay nothing.
-        val secondAttach = mutableListOf<Byte>()
+        // Swap in a capturing callback - it must see only bytes that arrive
+        // AFTER the swap, never the earlier query.
+        val afterSwap = mutableListOf<Byte>()
+        val second = CountDownLatch(1)
         session.replaceDataCallback { data, off, len ->
-            synchronized(secondAttach) { for (i in off until off + len) secondAttach.add(data[i]) }
+            synchronized(afterSwap) { for (k in off until off + len) afterSwap.add(data[k]) }
+            second.countDown()
         }
-        synchronized(secondAttach) {
-            assertEquals(0, secondAttach.size)
+        pipeOut.write("XY".toByteArray())
+        pipeOut.flush()
+        assertTrue(second.await(2, TimeUnit.SECONDS))
+
+        synchronized(afterSwap) {
+            assertArrayEquals("XY".toByteArray(), afterSwap.toByteArray())
         }
 
         session.close()

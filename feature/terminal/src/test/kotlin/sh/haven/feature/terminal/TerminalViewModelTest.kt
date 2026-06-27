@@ -21,6 +21,7 @@ class TerminalViewModelTest {
     private lateinit var moshSessionManager: MoshSessionManager
     private lateinit var etSessionManager: EtSessionManager
     private lateinit var localSessionManager: LocalSessionManager
+    private lateinit var sshEmulatorOwner: SshTerminalEmulatorOwner
     private lateinit var viewModel: TerminalViewModel
 
     @Before
@@ -38,6 +39,11 @@ class TerminalViewModelTest {
         localSessionManager = mockk<LocalSessionManager>(relaxed = true) {
             every { sessions } returns MutableStateFlow(emptyMap())
         }
+        // No connect-time bundle in unit tests (the real emulator needs JNI),
+        // so the SSH adopt branch skips — matching the old isReadyForTerminal skip.
+        sshEmulatorOwner = mockk(relaxed = true) {
+            every { bundleFor(any()) } returns null
+        }
         viewModel = TerminalViewModel(
             mockk(relaxed = true),
             sessionManager,
@@ -53,6 +59,7 @@ class TerminalViewModelTest {
             sh.haven.core.data.message.UserMessageBus(),
             mockk(relaxed = true),
             sh.haven.feature.terminal.agent.TerminalSessionRegistry(),
+            sshEmulatorOwner,
             mockk(relaxed = true), // BarcodeDecoder
             mockk(relaxed = true), // TextRecognizer
         )

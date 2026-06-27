@@ -43,6 +43,7 @@ class HavenApp : Application(), Configuration.Provider {
     @Inject lateinit var guestServiceManager: sh.haven.core.local.GuestServiceManager
     @Inject lateinit var sessionManagerRegistry: sh.haven.core.ssh.SessionManagerRegistry
     @Inject lateinit var mailWatchManager: sh.haven.app.agent.mailrules.MailWatchManager
+    @Inject lateinit var sshTerminalEmulatorOwner: sh.haven.feature.terminal.SshTerminalEmulatorOwner
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -61,6 +62,10 @@ class HavenApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Register the connect-time SSH emulator provider before any SSH session
+        // can be created, so tmux's attach-time probes are answered live (#290 #2).
+        sshTerminalEmulatorOwner.start()
 
         // Apply the saved theme override to AppCompatDelegate before any
         // activity is created, so the cold-launch splash window uses the

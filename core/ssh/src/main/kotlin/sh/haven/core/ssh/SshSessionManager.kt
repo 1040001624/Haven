@@ -63,6 +63,31 @@ sealed interface ShellOutcome {
 }
 
 /**
+ * A terminal emulator wired to a freshly-created [TerminalSession] at connect
+ * time. [onData] becomes the session's data callback (so output is parsed — and
+ * terminal capability probes answered — live from the first byte, before the
+ * reader starts), and [onReady] is called right after the session is built so
+ * the provider can point the emulator's input/resize back at the session.
+ *
+ * This is the seam that lets the emulator be created at connect (#290 issue #2)
+ * without core/ssh depending on the feature/terminal module that owns it: the
+ * owner registers a [TerminalAttachmentProvider]; [SshSessionManager] calls it
+ * from [SshSessionManager.createTerminalSession]. When no provider is
+ * registered the session falls back to the caller-supplied callback (the
+ * pre-existing no-op-then-attach-later behaviour), so tests and any non-UI
+ * caller keep working.
+ */
+interface TerminalAttachment {
+    val onData: (ByteArray, Int, Int) -> Unit
+    fun onReady(session: TerminalSession)
+}
+
+/** Supplies a [TerminalAttachment] for a session being created, or null to fall back. */
+fun interface TerminalAttachmentProvider {
+    fun attach(sessionId: String): TerminalAttachment?
+}
+
+/**
  * Manages active SSH sessions across the app.
  * Sessions are identified by a unique sessionId (UUID).
  * Multiple sessions may share the same profileId (multi-tab).
@@ -76,6 +101,15 @@ class SshSessionManager @Inject constructor(
     // Off-thread sink for reconnect breadcrumbs — never blocks the reader /
     // ioExecutor; logEvent self-gates on the connection-logging preference.
     private val logScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Registered by the feature-layer emulator owner (#290 issue #2) so the
+     * terminal emulator is wired as the data callback at connect time. Null
+     * until the owner's `start()` runs; [createTerminalSession] falls back to
+     * the caller-supplied callback when null.
+     */
+    @Volatile
+    var terminalAttachmentProvider: TerminalAttachmentProvider? = null
 
     /**
      * Record a reconnect-lifecycle breadcrumb in the connection log (visible in
@@ -377,13 +411,18 @@ class SshSessionManager @Inject constructor(
         val ring = agentScrollback.computeIfAbsent(sessionId) {
             ScrollbackRing(AGENT_SCROLLBACK_CAPACITY_BYTES)
         }
+        // Wire the emulator as the data callback at connect time so terminal
+        // probes are parsed/answered live from the first byte (#290 issue #2).
+        // Falls back to the caller-supplied callback when no owner is
+        // registered (tests / non-UI callers).
+        val attachment = terminalAttachmentProvider?.attach(sessionId)
         val termSession = TerminalSession(
             sessionId = sessionId,
             profileId = session.profileId,
             label = session.label,
             channel = channel,
             client = session.client,
-            onDataReceived = onDataReceived,
+            onDataReceived = attachment?.onData ?: onDataReceived,
             // Permanent ring mirror — NOT swapped by replaceDataCallback, so it
             // survives reattach now that the session is created at connect time
             // and the emulator attaches afterwards. (#215 follow-up)
@@ -421,6 +460,10 @@ class SshSessionManager @Inject constructor(
             onBreadcrumb = { detail -> breadcrumb(session.profileId, detail) },
         )
         attachTerminalSession(sessionId, termSession)
+        // Let the owner point the emulator's input/resize sinks back at this
+        // session BEFORE the reader starts (term.start() runs after this
+        // returns), so the inputSink is set before the first byte arrives.
+        attachment?.onReady(termSession)
         return termSession
     }
 
