@@ -410,6 +410,10 @@ class SettingsViewModel @Inject constructor(
                 UserPreferencesRepository.TerminalColorScheme.HAVEN,
             )
 
+    val terminalBackgroundOpacity: StateFlow<Float> =
+        preferencesRepository.terminalBackgroundOpacity
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
+
     val terminalAutoSwitchScheme: StateFlow<Boolean> =
         preferencesRepository.terminalAutoSwitchScheme
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -726,6 +730,12 @@ class SettingsViewModel @Inject constructor(
     fun setTerminalColorScheme(scheme: UserPreferencesRepository.TerminalColorScheme) {
         viewModelScope.launch {
             preferencesRepository.setTerminalColorScheme(scheme)
+        }
+    }
+
+    fun setTerminalBackgroundOpacity(opacity: Float) {
+        viewModelScope.launch {
+            preferencesRepository.setTerminalBackgroundOpacity(opacity)
         }
     }
 

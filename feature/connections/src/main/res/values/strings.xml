@@ -228,6 +228,9 @@
     <string name="connections_helper_destination_hash">32-character hex</string>
     <string name="connections_field_color_scheme">Terminal colour scheme</string>
     <string name="connections_color_scheme_inherit">Use default (global setting)</string>
+    <string name="connections_field_background_opacity">Override background opacity</string>
+    <string name="connections_helper_background_opacity">Below 100%% the terminal becomes translucent and shows the device wallpaper behind the text for this profile. Off = use the global setting.</string>
+    <string name="connections_background_opacity_value">Opacity: %1$d%%</string>
     <string name="connections_tunnel_dropdown_label">Tunnel: %1$s</string>
     <string name="connections_session_default_with">Default (%1$s)</string>
     <string name="connections_discovered_count">Discovered (%1$d)</string>

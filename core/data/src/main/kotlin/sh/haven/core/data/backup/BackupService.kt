@@ -123,6 +123,7 @@ class BackupService @Inject constructor(
                 put("fileTransport", p.fileTransport)
                 put("tunnelConfigId", p.tunnelConfigId ?: JSONObject.NULL)
                 put("terminalColorScheme", p.terminalColorScheme ?: JSONObject.NULL)
+                put("terminalBackgroundOpacity", p.terminalBackgroundOpacity?.toDouble() ?: JSONObject.NULL)
                 put("portKnockSequence", p.portKnockSequence ?: JSONObject.NULL)
                 put("portKnockDelayMs", p.portKnockDelayMs)
                 put("spaKey", p.spaKey ?: JSONObject.NULL)
@@ -389,6 +390,12 @@ class BackupService @Inject constructor(
                             fileTransport = c.optString("fileTransport", "AUTO"),
                             tunnelConfigId = c.optStringOrNull("tunnelConfigId"),
                             terminalColorScheme = c.optStringOrNull("terminalColorScheme"),
+                            terminalBackgroundOpacity =
+                                if (c.has("terminalBackgroundOpacity") && !c.isNull("terminalBackgroundOpacity")) {
+                                    c.optDouble("terminalBackgroundOpacity").toFloat()
+                                } else {
+                                    null
+                                },
                             portKnockSequence = c.optStringOrNull("portKnockSequence"),
                             portKnockDelayMs = c.optInt("portKnockDelayMs", 100),
                             spaKey = c.optStringOrNull("spaKey"),

@@ -1396,7 +1396,7 @@ internal class McpTools(
         ) { args -> writeClipboard(args) },
 
         "set_preference" to ToolHandler(
-            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe). Returns { key, value }.",
+            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), terminal_background_opacity (float 0.0..1.0 — below 1.0 the terminal renders over the device wallpaper), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe). Returns { key, value }.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -5631,6 +5631,10 @@ internal class McpTools(
         "terminal_auto_switch_scheme",
         "terminal_light_color_scheme",
         "terminal_dark_color_scheme",
+        // Terminal background opacity (float 0.0..1.0). Below 1.0 the terminal
+        // renders over the device wallpaper. MCP-drivable so the see-through
+        // path is testable without dragging the Settings slider.
+        "terminal_background_opacity",
         // SSH profile id the MCP server tunnels its loopback listener back
         // to (dedicated headless `-R`). Empty string clears it. See
         // McpTunnelManager.
@@ -5722,6 +5726,12 @@ internal class McpTools(
                 ?: throw McpError(-32602, "value must be true/false for $key, got \"$rawValue\"")
             else -> throw McpError(-32602, "value must be a boolean for $key, got ${rawValue?.javaClass?.simpleName}")
         }
+        fun coerceFloat(): Float = when (rawValue) {
+            is Number -> rawValue.toFloat()
+            is String -> rawValue.toFloatOrNull()
+                ?: throw McpError(-32602, "value must be a number for $key, got \"$rawValue\"")
+            else -> throw McpError(-32602, "value must be a number for $key, got ${rawValue?.javaClass?.simpleName}")
+        }
         // Parse a TerminalColorScheme enum name (case-insensitive). Reject
         // unknown names rather than silently defaulting to HAVEN — a caller
         // that fat-fingers the scheme should hear about it, not have its
@@ -5748,6 +5758,7 @@ internal class McpTools(
             "terminal_auto_switch_scheme" -> preferencesRepository.setTerminalAutoSwitchScheme(coerceBool())
             "terminal_light_color_scheme" -> preferencesRepository.setTerminalLightColorScheme(coerceScheme())
             "terminal_dark_color_scheme" -> preferencesRepository.setTerminalDarkColorScheme(coerceScheme())
+            "terminal_background_opacity" -> preferencesRepository.setTerminalBackgroundOpacity(coerceFloat())
             "mcp_tunnel_endpoint_profile_id" ->
                 preferencesRepository.setMcpTunnelEndpointProfileId((rawValue as? String)?.ifBlank { null })
             "mcp_wireguard_enabled" -> preferencesRepository.setMcpWireguardEnabled(coerceBool())

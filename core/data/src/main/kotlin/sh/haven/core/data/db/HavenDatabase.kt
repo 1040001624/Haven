@@ -50,7 +50,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         StandingPolicy::class,
         AgeIdentityEntity::class,
     ],
-    version = 70,
+    version = 71,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -1152,6 +1152,13 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_69_70 = object : Migration(69, 70) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "ssh_keys", "passphraseEncrypted", "TEXT DEFAULT NULL")
+            }
+        }
+
+        /** Per-profile terminal background opacity (null = inherit global). */
+        val MIGRATION_70_71 = object : Migration(70, 71) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "connection_profiles", "terminalBackgroundOpacity", "REAL")
             }
         }
 

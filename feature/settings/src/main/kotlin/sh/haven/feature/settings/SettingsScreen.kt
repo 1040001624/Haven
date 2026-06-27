@@ -68,6 +68,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.KeyboardAlt
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Keyboard
@@ -168,6 +169,7 @@ fun SettingsScreen(
     val autoSwitchColorScheme by viewModel.terminalAutoSwitchScheme.collectAsState()
     val lightColorScheme by viewModel.terminalLightColorScheme.collectAsState()
     val darkColorScheme by viewModel.terminalDarkColorScheme.collectAsState()
+    val backgroundOpacity by viewModel.terminalBackgroundOpacity.collectAsState()
     val toolbarLayout by viewModel.toolbarLayout.collectAsState()
     val toolbarLayoutJson by viewModel.toolbarLayoutJson.collectAsState()
     val snippetLibrary by viewModel.snippetLibrary.collectAsState()
@@ -226,6 +228,7 @@ fun SettingsScreen(
     var showColorSchemeDialog by remember { mutableStateOf(false) }
     var showLightColorSchemeDialog by remember { mutableStateOf(false) }
     var showDarkColorSchemeDialog by remember { mutableStateOf(false) }
+    var showBackgroundOpacityDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showToolbarConfigDialog by remember { mutableStateOf(false) }
     var showKeyboardModeDialog by remember { mutableStateOf(false) }
@@ -466,6 +469,15 @@ fun SettingsScreen(
                 onClick = { showColorSchemeDialog = true },
             )
         }
+        SettingsItem(
+            icon = Icons.Filled.Opacity,
+            title = stringResource(R.string.settings_terminal_opacity_title),
+            subtitle = stringResource(
+                R.string.settings_terminal_opacity_value,
+                (backgroundOpacity * 100).roundToInt(),
+            ),
+            onClick = { showBackgroundOpacityDialog = true },
+        )
         SettingsItem(
             icon = Icons.Filled.TextFields,
             title = stringResource(R.string.settings_font_size_title),
@@ -1543,6 +1555,17 @@ fun SettingsScreen(
         )
     }
 
+    if (showBackgroundOpacityDialog) {
+        TerminalOpacityDialog(
+            currentOpacity = backgroundOpacity,
+            onDismiss = { showBackgroundOpacityDialog = false },
+            onConfirm = { selected ->
+                viewModel.setTerminalBackgroundOpacity(selected)
+                showBackgroundOpacityDialog = false
+            },
+        )
+    }
+
     if (showLockTimeoutDialog) {
         AlertDialog(
             onDismissRequest = { showLockTimeoutDialog = false },
@@ -2192,6 +2215,53 @@ private fun SessionManagerDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_close))
+            }
+        },
+    )
+}
+
+@Composable
+private fun TerminalOpacityDialog(
+    currentOpacity: Float,
+    onDismiss: () -> Unit,
+    onConfirm: (Float) -> Unit,
+) {
+    var sliderValue by remember { mutableFloatStateOf(currentOpacity) }
+    val pct = (sliderValue * 100).roundToInt()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_terminal_opacity_title)) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_terminal_opacity_value, pct),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    text = stringResource(R.string.settings_terminal_opacity_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(sliderValue) }) {
+                Text(stringResource(R.string.common_ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
             }
         },
     )

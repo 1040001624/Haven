@@ -184,6 +184,11 @@
     <string name="settings_font_size_sample">Sample text</string>
     <string name="settings_font_size_value">%1$dsp</string>
 
+    <!-- Terminal background opacity -->
+    <string name="settings_terminal_opacity_title">Background opacity</string>
+    <string name="settings_terminal_opacity_value">%1$d%%</string>
+    <string name="settings_terminal_opacity_hint">Below 100%% the terminal becomes translucent and shows your device wallpaper behind the text.</string>
+
     <!-- Scrollback rows dialog -->
     <string name="settings_scrollback_rows_dialog_title">Scrollback rows per tab</string>
     <string name="settings_scrollback_rows_dialog_body">Larger scrollback uses more memory. Roughly 2 KB per line at typical column widths, multiplied by the number of open tabs.</string>

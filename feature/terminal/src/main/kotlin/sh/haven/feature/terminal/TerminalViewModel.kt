@@ -258,6 +258,10 @@ data class TerminalTab(
      *  that flipping the system between light and dark mode repaints
      *  every tab that doesn't have an explicit override. */
     val colorScheme: UserPreferencesRepository.TerminalColorScheme? = null,
+    /** Per-tab terminal background opacity override (0.0–1.0). Null = follow
+     *  the live global preference. The screen resolves null at render time so
+     *  changing the global slider repaints tabs without an explicit override. */
+    val backgroundOpacity: Float? = null,
 )
 
 /** VNC connection info for the active terminal's host. */
@@ -557,6 +561,11 @@ class TerminalViewModel @Inject constructor(
             UserPreferencesRepository.TerminalColorScheme.HAVEN,
         )
 
+    /** Live global terminal background opacity (0.0–1.0). 1.0 = opaque. */
+    val terminalBackgroundOpacity: StateFlow<Float> =
+        preferencesRepository.terminalBackgroundOpacity
+            .stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+
     /**
      * Scrollback ring size for newly created emulators (#151). Read at
      * construction by [TerminalEmulatorFactory.create]; existing tabs keep
@@ -586,6 +595,15 @@ class TerminalViewModel @Inject constructor(
             }.getOrNull()
         }
     }
+
+    /**
+     * Per-tab background opacity override for a tab built off [profile].
+     * Returns the profile's value when set, or null to follow the live
+     * global opacity (resolved by the screen at render time).
+     */
+    private fun effectiveOpacity(
+        profile: sh.haven.core.data.db.entities.ConnectionProfile?,
+    ): Float? = profile?.terminalBackgroundOpacity
 
     /**
      * Pick the scheme used to seed a brand-new emulator's default fg/bg.
@@ -1045,6 +1063,7 @@ class TerminalViewModel @Inject constructor(
                     resize = { cols, rows -> b.session?.resize(cols, rows) },
                     close = { b.session?.close() },
                     colorScheme = effectiveColorScheme(sshProfile),
+                    backgroundOpacity = effectiveOpacity(sshProfile),
                 )
             )
             trackedSessionIds.add(sessionId)
@@ -1128,6 +1147,7 @@ class TerminalViewModel @Inject constructor(
                     resize = { cols, rows -> rnsSession.resize(cols, rows) },
                     close = { rnsSession.close() },
                     colorScheme = rnsScheme,
+                    backgroundOpacity = effectiveOpacity(rnsProfile),
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -1233,6 +1253,7 @@ class TerminalViewModel @Inject constructor(
                     resize = { cols, rows -> moshSession.resize(cols, rows) },
                     close = { moshSession.close() },
                     colorScheme = moshScheme,
+                    backgroundOpacity = effectiveOpacity(moshProfile),
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -1337,6 +1358,7 @@ class TerminalViewModel @Inject constructor(
                     resize = { cols, rows -> etSession.resize(cols, rows) },
                     close = { etSession.close() },
                     colorScheme = etScheme,
+                    backgroundOpacity = effectiveOpacity(etProfile),
                 )
             )
             trackedSessionIds.add(session.sessionId)
@@ -1406,6 +1428,7 @@ class TerminalViewModel @Inject constructor(
                         resize = { cols, rows -> existingHeadless.resize(cols, rows) },
                         close = { existingHeadless.close() },
                         colorScheme = localScheme,
+                        backgroundOpacity = effectiveOpacity(localProfile),
                     )
                 )
                 trackedSessionIds.add(sessionId)
@@ -1489,6 +1512,7 @@ class TerminalViewModel @Inject constructor(
                         resize = { cols, rows -> reattached.resize(cols, rows) },
                         close = { reattached.close() },
                         colorScheme = localScheme,
+                        backgroundOpacity = effectiveOpacity(localProfile),
                     )
                 )
                 Log.d(TAG, "Reattached to existing local session $sessionId")
@@ -1571,6 +1595,7 @@ class TerminalViewModel @Inject constructor(
                     resize = { cols, rows -> localSession.resize(cols, rows) },
                     close = { localSession.close() },
                     colorScheme = localScheme,
+                    backgroundOpacity = effectiveOpacity(localProfile),
                 )
             )
             trackedSessionIds.add(session.sessionId)

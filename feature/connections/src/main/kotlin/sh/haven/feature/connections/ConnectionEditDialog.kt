@@ -55,6 +55,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,6 +80,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.collectAsState
@@ -370,6 +372,10 @@ fun ConnectionEditDialog(
     // UserPreferencesRepository.TerminalColorScheme enum names.
     var terminalColorScheme by rememberSaveable { mutableStateOf(existing?.terminalColorScheme) }
     var showColorSchemeDialog by rememberSaveable { mutableStateOf(false) }
+    // Per-profile terminal background opacity. Null = inherit the global pref.
+    var terminalBackgroundOpacity by rememberSaveable {
+        mutableStateOf(existing?.terminalBackgroundOpacity)
+    }
     // Per-profile reconnect controls (#150). Defaults match the new
     // ConnectionProfile column defaults so the dialog reads "as before"
     // for existing profiles.
@@ -2657,6 +2663,33 @@ fun ConnectionEditDialog(
                         Text(activeSchemeEnum?.label ?: stringResource(R.string.connections_color_scheme_inherit))
                     }
 
+                    // Per-profile terminal background opacity. Off = inherit the
+                    // global pref; on = explicit value. Below 100% the terminal
+                    // shows the device wallpaper behind the text on this profile.
+                    Spacer(Modifier.height(8.dp))
+                    val opacityOverride = terminalBackgroundOpacity != null
+                    BooleanToggleRow(
+                        label = stringResource(R.string.connections_field_background_opacity),
+                        checked = opacityOverride,
+                        onCheckedChange = { on ->
+                            terminalBackgroundOpacity =
+                                if (on) (terminalBackgroundOpacity ?: 1f) else null
+                        },
+                        description = stringResource(R.string.connections_helper_background_opacity),
+                    )
+                    if (opacityOverride) {
+                        val pct = ((terminalBackgroundOpacity ?: 1f) * 100).roundToInt()
+                        Text(
+                            stringResource(R.string.connections_background_opacity_value, pct),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Slider(
+                            value = terminalBackgroundOpacity ?: 1f,
+                            onValueChange = { terminalBackgroundOpacity = it },
+                            valueRange = 0f..1f,
+                        )
+                    }
+
                     }
                     CollapsibleSection(stringResource(R.string.connections_section_authentication), secAuthExpanded, { secAuthExpanded = !secAuthExpanded }) {
                     // Agent forwarding toggle (OpenSSH ForwardAgent)
@@ -3362,6 +3395,7 @@ fun ConnectionEditDialog(
                             usbForwardVidPid = usbForwardVidPid,
                             disableAltScreen = disableAltScreen,
                             terminalColorScheme = terminalColorScheme,
+                            terminalBackgroundOpacity = terminalBackgroundOpacity,
                             useAndroidShell = useAndroidShell,
                             prootDistroId = if (useAndroidShell) null else prootDistroId,
                             forwardAgent = forwardAgent,

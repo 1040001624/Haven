@@ -37,6 +37,9 @@ fun HavenTerminal(
     maxFontSize: TextUnit = 30.sp,
     backgroundColor: Color = Color.Black,
     foregroundColor: Color = Color.White,
+    /** Alpha for the terminal's screen-fill background (0.0–1.0). Below 1 the
+     *  empty areas reveal whatever sits behind the Canvas. Default 1 = opaque. */
+    backgroundOpacity: Float = 1f,
     keyboardEnabled: Boolean = false,
     showSoftKeyboard: Boolean = true,
     focusRequester: FocusRequester = remember { FocusRequester() },
@@ -67,6 +70,7 @@ fun HavenTerminal(
         maxFontSize = maxFontSize,
         backgroundColor = backgroundColor,
         foregroundColor = foregroundColor,
+        backgroundOpacity = backgroundOpacity,
         keyboardEnabled = keyboardEnabled,
         showSoftKeyboard = showSoftKeyboard,
         focusRequester = focusRequester,

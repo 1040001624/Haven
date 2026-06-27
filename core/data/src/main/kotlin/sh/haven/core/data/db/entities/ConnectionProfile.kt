@@ -230,6 +230,13 @@ data class ConnectionProfile(
      */
     val terminalColorScheme: String? = null,
     /**
+     * Per-profile terminal background opacity (0.0 = fully transparent,
+     * 1.0 = opaque). Null = inherit the global preference. When the
+     * effective value is below 1, the terminal renders over the device
+     * wallpaper (see TerminalScreen's window FLAG_SHOW_WALLPAPER toggle).
+     */
+    val terminalBackgroundOpacity: Float? = null,
+    /**
      * Per-profile auto-reconnect controls (#150). Today the SSH session
      * manager auto-reconnects unconditionally on transport drop with a
      * hard-coded 5-attempt cap. These three columns expose that policy

@@ -6,7 +6,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -555,6 +557,40 @@ fun TerminalScreen(
     val terminalFg: Color = if (activeTabScheme.isDynamic) MaterialTheme.colorScheme.onSurface
         else Color(activeTabScheme.foreground)
 
+    // Terminal background opacity (see-through to wallpaper). The active
+    // tab's per-profile override wins over the global pref, mirroring the
+    // colour-scheme resolution above.
+    val globalBgOpacity by viewModel.terminalBackgroundOpacity.collectAsState()
+    val effectiveBgOpacity =
+        (tabs.getOrNull(activeTabIndex)?.backgroundOpacity ?: globalBgOpacity).coerceIn(0f, 1f)
+
+    // When the active terminal opts into < 1.0 opacity, make the Activity
+    // window translucent and show the device wallpaper behind it; the
+    // terminal's screen-fill is drawn with the matching alpha (passed to
+    // HavenTerminal below). Restored to opaque when the terminal isn't the
+    // active page, when opacity returns to 1.0, or when the screen leaves
+    // composition. Gated on isActive so other panes (SFTP/Desktop) never
+    // inherit the translucent window.
+    val surfaceArgb = MaterialTheme.colorScheme.surface.toArgb()
+    val showWallpaper = isActive && effectiveBgOpacity < 1f
+    DisposableEffect(showWallpaper, surfaceArgb) {
+        val window = (view.context as? Activity)?.window
+        // Only touch the window when transparency is actually engaged so users
+        // who never enable it keep the default opaque window untouched. The
+        // onDispose below fires on the true→false transition (and on leave),
+        // restoring opacity.
+        if (window != null && showWallpaper) {
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        }
+        onDispose {
+            if (window != null && showWallpaper) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                window.setBackgroundDrawable(ColorDrawable(surfaceArgb))
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (tabs.isEmpty()) {
             EmptyTerminalState(
@@ -1078,6 +1114,7 @@ fun TerminalScreen(
                                 reflowOnKeyboard = isMouseMode || reflowTerminalOnKeyboard,
                                 backgroundColor = terminalBg,
                                 foregroundColor = terminalFg,
+                                backgroundOpacity = effectiveBgOpacity,
                                 focusRequester = focusRequester,
                                 modifierManager = modifierManager,
                                 onPasteShortcut = pasteShortcut,

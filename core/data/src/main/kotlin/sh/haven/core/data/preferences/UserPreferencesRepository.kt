@@ -40,6 +40,7 @@ class UserPreferencesRepository @Inject constructor(
     private val terminalAutoSwitchSchemeKey = booleanPreferencesKey("terminal_auto_switch_scheme")
     private val terminalLightColorSchemeKey = stringPreferencesKey("terminal_light_color_scheme")
     private val terminalDarkColorSchemeKey = stringPreferencesKey("terminal_dark_color_scheme")
+    private val terminalBackgroundOpacityKey = floatPreferencesKey("terminal_background_opacity")
     private val toolbarRowsKey = intPreferencesKey("toolbar_rows") // legacy
     private val toolbarRow1Key = stringPreferencesKey("toolbar_row1") // legacy
     private val toolbarRow2Key = stringPreferencesKey("toolbar_row2") // legacy
@@ -1341,6 +1342,22 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setTerminalDarkColorScheme(scheme: TerminalColorScheme) {
         dataStore.edit { prefs ->
             prefs[terminalDarkColorSchemeKey] = scheme.name
+        }
+    }
+
+    /**
+     * Global terminal background opacity (0.0–1.0). 1.0 = opaque (default).
+     * Below 1.0 the terminal renders semi-transparently over the device
+     * wallpaper. A per-profile override may supersede this (see
+     * `ConnectionProfile.terminalBackgroundOpacity`).
+     */
+    val terminalBackgroundOpacity: Flow<Float> = dataStore.data.map { prefs ->
+        (prefs[terminalBackgroundOpacityKey] ?: 1f).coerceIn(0f, 1f)
+    }
+
+    suspend fun setTerminalBackgroundOpacity(opacity: Float) {
+        dataStore.edit { prefs ->
+            prefs[terminalBackgroundOpacityKey] = opacity.coerceIn(0f, 1f)
         }
     }
 

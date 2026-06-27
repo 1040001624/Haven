@@ -8364,6 +8364,29 @@
      }
     },
     {
+     "name": "connections_field_background_opacity",
+     "en": "Override background opacity",
+     "comment": "#135 follow-up: hardcoded English strings replaced with resources for zh-CN and the other 9 locales. Same audit pass that v5.24.83 and v5.24.89 did for SettingsScreen and the bulk of ConnectionEditDialog — these are the ones the previous round missed.",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_helper_background_opacity",
+     "en": "Below 100%% the terminal becomes translucent and shows the device wallpaper behind the text for this profile. Off = use the global setting.",
+     "comment": "#135 follow-up: hardcoded English strings replaced with resources for zh-CN and the other 9 locales. Same audit pass that v5.24.83 and v5.24.89 did for SettingsScreen and the bulk of ConnectionEditDialog — these are the ones the previous round missed.",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_background_opacity_value",
+     "en": "Opacity: %1$d%%",
+     "comment": "#135 follow-up: hardcoded English strings replaced with resources for zh-CN and the other 9 locales. Same audit pass that v5.24.83 and v5.24.89 did for SettingsScreen and the bulk of ConnectionEditDialog — these are the ones the previous round missed.",
+     "args": [
+      "%1$d"
+     ],
+     "t": {}
+    },
+    {
      "name": "connections_tunnel_dropdown_label",
      "en": "Tunnel: %1$s",
      "comment": "#135 follow-up: hardcoded English strings replaced with resources for zh-CN and the other 9 locales. Same audit pass that v5.24.83 and v5.24.89 did for SettingsScreen and the bulk of ConnectionEditDialog — these are the ones the previous round missed.",
@@ -22659,6 +22682,29 @@
       "ru": "%1$dsp",
       "zh": "%1$dsp"
      }
+    },
+    {
+     "name": "settings_terminal_opacity_title",
+     "en": "Background opacity",
+     "comment": "Terminal background opacity",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_terminal_opacity_value",
+     "en": "%1$d%%",
+     "comment": "Terminal background opacity",
+     "args": [
+      "%1$d"
+     ],
+     "t": {}
+    },
+    {
+     "name": "settings_terminal_opacity_hint",
+     "en": "Below 100%% the terminal becomes translucent and shows your device wallpaper behind the text.",
+     "comment": "Terminal background opacity",
+     "args": [],
+     "t": {}
     },
     {
      "name": "settings_scrollback_rows_dialog_title",
