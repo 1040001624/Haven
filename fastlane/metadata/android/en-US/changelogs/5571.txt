@@ -1,0 +1,5 @@
+rclone remote setup fixes (#295):
+
+• Credential fields no longer pre-fill with bogus "[]"/"{}" placeholders. rclone reports some option defaults as JSON lists/maps; those are now treated as empty instead of being sent back as literal text, which had been breaking remote verification.
+
+• For non-OAuth remotes (SFTP, FTP, S3, WebDAV, …), Save is now disabled until you tap "Configure & verify" and it succeeds — so a remote is always written to rclone.conf and verified before the profile is saved. A hint shows while this step is still required.

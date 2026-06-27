@@ -546,7 +546,7 @@ class RcloneClient @Inject constructor(
                 name = o.getString("Name"),
                 help = o.optString("Help", ""),
                 provider = o.optString("Provider", ""),
-                default = o.optString("Default", ""),
+                default = scalarDefault(o),
                 required = o.optBoolean("Required", false),
                 isPassword = o.optBoolean("IsPassword", false),
                 advanced = o.optBoolean("Advanced", false),
@@ -574,7 +574,7 @@ class RcloneClient @Inject constructor(
                 ConfigOption(
                     name = opt.optString("Name", ""),
                     help = opt.optString("Help", ""),
-                    default = opt.optString("Default", ""),
+                    default = scalarDefault(opt),
                     required = opt.optBoolean("Required", false),
                     isPassword = opt.optBoolean("IsPassword", false),
                     type = opt.optString("Type", ""),
@@ -584,6 +584,19 @@ class RcloneClient @Inject constructor(
         )
     }
 }
+
+/**
+ * Read an rclone option's `Default` as a scalar string. rclone returns list/map
+ * defaults as JSON (`[]` / `{}`); `optString` would coerce those to the literal
+ * "[]"/"{}", which then pre-fills the field and gets sent back as a bogus value,
+ * breaking config verification (#295). Only scalar defaults (string/number/bool)
+ * are real values; anything else (array, object, JSON null, absent) becomes "".
+ */
+internal fun scalarDefault(o: JSONObject): String =
+    o.opt("Default").let { dv ->
+        if (dv == null || dv == JSONObject.NULL || dv is JSONArray || dv is JSONObject) ""
+        else dv.toString()
+    }
 
 class RcloneException(
     val method: String,

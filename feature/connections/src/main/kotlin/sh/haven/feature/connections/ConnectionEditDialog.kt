@@ -338,6 +338,12 @@ fun ConnectionEditDialog(
     var rnsHost by rememberSaveable { mutableStateOf(existing?.reticulumHost ?: "") }
     var rcloneRemoteName by rememberSaveable { mutableStateOf(existing?.rcloneRemoteName ?: "") }
     var rcloneProvider by rememberSaveable { mutableStateOf(existing?.rcloneProvider ?: "") }
+    // A non-OAuth rclone profile is only really saved once its remote has been
+    // written to rclone.conf via the Configure button — saving a profile shell
+    // that points at a never-created remote silently loses the config (#295).
+    // Existing rclone profiles are already configured; a new one isn't until
+    // Configure succeeds, and editing a credential field invalidates it.
+    var rcloneConfigured by rememberSaveable { mutableStateOf(existing?.connectionType == "RCLONE") }
     // EMAIL engines: "imap" (JVM, password/app-password — the common case, listed
     // first) or "proton" (Go bridge, SRP). Gmail/Outlook (OAuth) land in stage 2b
     // on the same IMAP engine.
@@ -1277,6 +1283,13 @@ fun ConnectionEditDialog(
                         val rcloneCfgStatus by rcloneCfgVm.status.collectAsState()
                         val rcloneParams = remember(rcloneProvider) { mutableStateMapOf<String, String>() }
                         LaunchedEffect(rcloneProvider) { rcloneCfgVm.loadOptions(rcloneProvider) }
+                        // A successful Configure means the remote is now in
+                        // rclone.conf — only then may the profile be saved (#295).
+                        LaunchedEffect(rcloneCfgStatus) {
+                            if (rcloneCfgStatus is RcloneConfigViewModel.Status.Success) {
+                                rcloneConfigured = true
+                            }
+                        }
                         Text(
                             stringResource(R.string.connections_helper_rclone_credentials),
                             style = MaterialTheme.typography.bodySmall,
@@ -1288,6 +1301,9 @@ fun ConnectionEditDialog(
                                 value = rcloneParams[opt.name] ?: opt.default,
                                 onValueChange = {
                                     rcloneParams[opt.name] = it
+                                    // Changing a credential invalidates the verified
+                                    // remote — must re-Configure before saving (#295).
+                                    rcloneConfigured = false
                                     rcloneCfgVm.clearStatus()
                                 },
                                 label = {
@@ -1335,6 +1351,18 @@ fun ConnectionEditDialog(
                                 modifier = Modifier.padding(top = 4.dp),
                             )
                             else -> {}
+                        }
+                        // Make the gated Save discoverable: until Configure
+                        // succeeds, Save stays disabled for a non-OAuth remote (#295).
+                        if (!rcloneConfigured && rcloneProvider.isNotBlank() &&
+                            rcloneCfgStatus !is RcloneConfigViewModel.Status.Error
+                        ) {
+                            Text(
+                                stringResource(R.string.connections_rclone_configure_first),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
                         }
                     }
                 } else if (connectionType == "EMAIL") {
@@ -3071,7 +3099,10 @@ fun ConnectionEditDialog(
                 "VNC" -> host.isNotBlank() && (!vncSshForward || vncSshProfileId != null)
                 "RDP" -> host.isNotBlank() && rdpUsername.isNotBlank() && (!rdpSshForward || rdpSshProfileId != null)
                 "SMB" -> host.isNotBlank() && smbShare.isNotBlank() && (!smbSshForward || smbSshProfileId != null)
-                "RCLONE" -> rcloneProvider.isNotBlank()
+                // OAuth providers authenticate on connect (no Configure step); every
+                // other provider must have its remote written via Configure first (#295).
+                "RCLONE" -> rcloneProvider.isNotBlank() &&
+                    (rcloneProvider in sh.haven.core.rclone.RCLONE_OAUTH_PROVIDERS || rcloneConfigured)
                 "EMAIL" -> emailUsername.isNotBlank() && emailPassword.isNotBlank() &&
                     (!emailProvider.equals("imap", ignoreCase = true) || emailServer.isNotBlank())
                 else -> destinationHash.length == 32 && (localSideband || rnsHost.isNotBlank())

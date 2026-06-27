@@ -11670,6 +11670,13 @@
      }
     },
     {
+     "name": "connections_rclone_configure_first",
+     "en": "Tap “Configure &amp; verify” to save this remote before you can Save the connection.",
+     "comment": "Connection edit dialog: remaining field labels, toggles and helper text.",
+     "args": [],
+     "t": {}
+    },
+    {
      "name": "connections_dropdown_select_ssh",
      "en": "Select SSH connection",
      "comment": "Connection edit dialog: remaining field labels, toggles and helper text.",
