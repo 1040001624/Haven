@@ -581,7 +581,9 @@ fun TerminalScreen(
         if (tabs.isEmpty()) {
             EmptyTerminalState(
                 fontSize = fontSize,
-                backgroundColor = terminalBg,
+                // Match the terminal's own translucency so the empty (no-session)
+                // state shows the wallpaper too, instead of a solid block.
+                backgroundColor = terminalBg.copy(alpha = effectiveBgOpacity),
                 foregroundColor = terminalFg,
                 // Carry the page-swipe override so the empty Terminal page can
                 // still be swiped to an adjacent tab. The pager's built-in
