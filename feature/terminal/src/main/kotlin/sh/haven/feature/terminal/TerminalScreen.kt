@@ -241,6 +241,7 @@ fun TerminalScreen(
     val newTabSessionPicker by viewModel.newTabSessionPicker.collectAsState()
     val newTabLoading by viewModel.newTabLoading.collectAsState()
     val newTabMessage by viewModel.newTabMessage.collectAsState()
+    val fidoTouchPrompt by viewModel.fidoTouchPrompt.collectAsState()
     var vncDialogInfo by remember { mutableStateOf<VncInfo?>(null) }
     var localVncLoading by remember { mutableStateOf(false) }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -528,6 +529,16 @@ fun TerminalScreen(
             renameDialog = { currentLabel, onDismiss, onRenameTo ->
                 RenameSessionDialog(currentLabel = currentLabel, onDismiss = onDismiss, onRename = onRenameTo)
             },
+        )
+    }
+
+    // Security-key (FIDO2) touch/PIN prompt for a new-tab fresh dial that needs
+    // an assertion — same dialog the Connections screen shows, so the auth no
+    // longer blocks silently when triggered from the terminal.
+    fidoTouchPrompt?.let { prompt ->
+        sh.haven.feature.connections.FidoTouchPromptDialog(
+            prompt = prompt,
+            onCancel = { viewModel.cancelFido() },
         )
     }
 

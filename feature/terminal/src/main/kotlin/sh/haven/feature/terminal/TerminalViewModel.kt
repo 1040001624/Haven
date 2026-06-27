@@ -1832,6 +1832,15 @@ class TerminalViewModel @Inject constructor(
     fun dismissNewTabMessage() { _newTabMessage.value = null }
 
     /**
+     * FIDO2/security-key touch/PIN prompt, surfaced so the terminal screen can
+     * show the same dialog as the Connections screen when a new-tab fresh dial
+     * needs a security-key assertion — otherwise that auth would block with no
+     * UI. Backed by the singleton [sh.haven.core.fido.FidoAuthenticator].
+     */
+    val fidoTouchPrompt: StateFlow<sh.haven.core.fido.FidoTouchPrompt?> = fidoAuthenticator.touchPrompt
+    fun cancelFido() = fidoAuthenticator.cancelPending()
+
+    /**
      * Add a new tab by creating a fresh connection to the same server as the current tab.
      */
     fun addTab() {
