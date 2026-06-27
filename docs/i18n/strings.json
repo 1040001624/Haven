@@ -22701,7 +22701,7 @@
     },
     {
      "name": "settings_terminal_opacity_hint",
-     "en": "Below 100%% the terminal becomes translucent and shows your device wallpaper behind the text.",
+     "en": "Below 100%% Haven becomes translucent and shows your device wallpaper behind every screen (terminal, lists, settings). A per-connection override applies only to that terminal.",
      "comment": "Terminal background opacity",
      "args": [],
      "t": {}

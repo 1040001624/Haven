@@ -97,6 +97,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.layout.WindowInsets
@@ -436,6 +437,9 @@ fun SftpScreen(
 
     Scaffold(
         modifier = sftpModifier,
+        // Defer to the app Scaffold background so the global background-opacity
+        // (wallpaper see-through) applies here too.
+        containerColor = Color.Transparent,
         // The outer pager already has .imePadding() on its modifier; letting
         // this inner Scaffold's contentWindowInsets also include WindowInsets.ime
         // (the default) creates a double-source: both the outer imePadding and

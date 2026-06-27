@@ -187,7 +187,7 @@
     <!-- Terminal background opacity -->
     <string name="settings_terminal_opacity_title">Background opacity</string>
     <string name="settings_terminal_opacity_value">%1$d%%</string>
-    <string name="settings_terminal_opacity_hint">Below 100%% the terminal becomes translucent and shows your device wallpaper behind the text.</string>
+    <string name="settings_terminal_opacity_hint">Below 100%% Haven becomes translucent and shows your device wallpaper behind every screen (terminal, lists, settings). A per-connection override applies only to that terminal.</string>
 
     <!-- Scrollback rows dialog -->
     <string name="settings_scrollback_rows_dialog_title">Scrollback rows per tab</string>

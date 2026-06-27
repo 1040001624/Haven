@@ -895,6 +895,9 @@ fun ConnectionsScreen(
     }
 
     Scaffold(
+        // Defer to the app Scaffold's background so the global background-opacity
+        // (wallpaper see-through) applies here too instead of being covered.
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.connections_title)) },

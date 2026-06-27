@@ -133,6 +133,13 @@ fun HavenNavHost(
     val alwaysShowAllTabs by preferencesRepository.alwaysShowAllTabs
         .collectAsState(initial = false)
 
+    // App-wide background opacity (reuses the terminal background-opacity
+    // setting). Below 1.0 the device wallpaper shows through every screen's
+    // background. Terminal panes blend via their own translucent fill, so
+    // they get Color.Transparent here instead (see terminalTransparent).
+    val appBackgroundOpacity by preferencesRepository.terminalBackgroundOpacity
+        .collectAsState(initial = 1f)
+
     val hasTerminalProfiles = connections.any { it.isTerminal }
     // The Mail tab tracks live sessions, not saved profiles: it appears only
     // while an email connection is actually open (a CONNECTED session) and
@@ -812,12 +819,19 @@ fun HavenNavHost(
     }
 
     Scaffold(
-        // When the active terminal opts into a translucent background, drop the
-        // opaque Scaffold container so the window-level FLAG_SHOW_WALLPAPER shows
-        // the device wallpaper behind the terminal. Otherwise the normal opaque
-        // app background (matches the Scaffold default).
-        containerColor = if (terminalTransparent) Color.Transparent
-            else MaterialTheme.colorScheme.background,
+        // This app Scaffold owns the single translucent background layer.
+        // - A translucent terminal pane handles its own per-tab blend, so we
+        //   drop to fully transparent for it (terminalTransparent).
+        // - Otherwise, when the global background opacity is < 1, blend the
+        //   app background with alpha so the device wallpaper shows through
+        //   every screen. Inner screen Scaffolds are Color.Transparent so they
+        //   defer to this single layer instead of compounding it.
+        containerColor = when {
+            terminalTransparent -> Color.Transparent
+            appBackgroundOpacity < 1f ->
+                MaterialTheme.colorScheme.background.copy(alpha = appBackgroundOpacity)
+            else -> MaterialTheme.colorScheme.background
+        },
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.exclude(WindowInsets.ime),
         snackbarHost = { SnackbarHost(globalSnackbarHostState) },
         bottomBar = {

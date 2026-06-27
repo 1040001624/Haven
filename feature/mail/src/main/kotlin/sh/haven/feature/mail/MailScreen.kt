@@ -59,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -208,6 +209,7 @@ fun MailScreen(
 
     Scaffold(
         modifier = mailModifier.fillMaxSize(),
+        containerColor = Color.Transparent,
         topBar = {
             if (ui.view == MailViewModel.View.MESSAGES && ui.selectionMode) {
                 MailSelectionTopBar(
@@ -707,6 +709,7 @@ private fun ComposeView(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
