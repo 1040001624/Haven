@@ -1160,7 +1160,9 @@ fun TerminalScreen(
                         }
                     }
 
-                    if (!fullscreen) KeyboardToolbar(
+                    // Keep the extra key rows in fullscreen — Ctrl/Esc/arrows are
+                    // needed while typing. Fullscreen still hides the system + tab bars.
+                    KeyboardToolbar(
                         onSendBytes = { bytes -> activeTab.sendInput(bytes) },
                         onDispatchKey = { mods, key -> activeTab.emulator?.dispatchKey(mods, key) },
                         focusRequester = focusRequester,
