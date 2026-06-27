@@ -27,9 +27,13 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/GlassHaven/Haven/releases/download/v5.60.4/haven-transparency.mp4" width="640" muted loop controls>
-    <a href="https://github.com/GlassHaven/Haven/releases/download/v5.60.4/haven-transparency.mp4">▶ Watch: terminal transparency over a live device wallpaper</a>
-  </video>
+  <a href="https://github.com/GlassHaven/Haven/releases/download/v5.60.4/haven-transparency.mp4">
+    <img src="docs/haven-transparency.jpg" width="300" alt="Terminal transparency over a live device wallpaper — click to watch" />
+  </a>
+</p>
+
+<p align="center">
+  <sub>▶ <a href="https://github.com/GlassHaven/Haven/releases/download/v5.60.4/haven-transparency.mp4">Watch</a>: the terminal — and every Haven screen — made translucent over the device wallpaper (new in 5.60.4)</sub>
 </p>
 
 ---
