@@ -1,0 +1,5 @@
+Two terminal fixes.
+
+Standard keyboard mode (#298): a toolbar Ctrl/Alt tapped before a typed character could get stuck, so Ctrl+D didn't work and Enter was sent as Ctrl+Enter (showing up as garbage like ^[[13;5u, breaking zsh's first-run wizard). Control combos now reach the shell immediately and the modifier is consumed. Secure mode (the default) was never affected.
+
+Local proot shell (#299): bash/zsh process substitution — diff <(cmd) <(cmd) and echo <(cmd) — failed with "write error: Broken pipe". Fixed /dev/fd handling in the bundled proot.
