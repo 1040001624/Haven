@@ -1,0 +1,1 @@
+• Fixed a crash when a security-key (FIDO2/YubiKey) SSH profile re-authenticated after a dropped connection: auto-reconnect no longer carried the security-key authenticator, causing a NullPointerException. Reconnect now re-authenticates correctly, and any unwired path fails with a clear error instead of a bare crash.
