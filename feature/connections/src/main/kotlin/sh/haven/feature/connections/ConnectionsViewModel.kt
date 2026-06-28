@@ -3493,11 +3493,27 @@ class ConnectionsViewModel @Inject constructor(
                 .firstOrNull { it.startsWith("MOSH CONNECT") }
                 ?: run {
                     client.disconnect()
-                    throw Exception(
-                        "mosh-server not found or failed. " +
-                            "Install with: apt install mosh\n" +
-                            "stderr: ${result.stderr.take(200)}"
-                    )
+                    val stderr = result.stderr.trim()
+                    val out = result.stdout.trim()
+                    // Distinguish a genuinely-missing binary from one that's
+                    // installed but failed to start (most commonly a non-UTF-8
+                    // locale in the non-interactive SSH exec environment, which
+                    // mosh-server refuses to run under). Misreporting the latter
+                    // as "not installed" hid the real cause (#297).
+                    val looksMissing = result.exitStatus == 127 ||
+                        stderr.contains("command not found", ignoreCase = true) ||
+                        stderr.contains("No such file", ignoreCase = true) ||
+                        (stderr.contains("mosh-server", ignoreCase = true) &&
+                            stderr.contains("not found", ignoreCase = true))
+                    if (looksMissing) {
+                        throw Exception(
+                            "mosh-server not found. Install it on the remote host " +
+                                "(e.g. apt install mosh)."
+                        )
+                    }
+                    val detail = stderr.ifBlank { out }.take(300)
+                        .ifBlank { "(no output; mosh-server exited ${result.exitStatus})" }
+                    throw Exception("mosh-server failed to start:\n$detail")
                 }
 
             val parts = connectLine.split(" ")
