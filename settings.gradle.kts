@@ -61,6 +61,13 @@ includeBuild("rdp-kotlin") {
     }
 }
 
+// Pure-Rust SPICE client + UniFFI Kotlin bindings (#286, plain dir not submodule).
+includeBuild("spice-kotlin") {
+    dependencySubstitution {
+        substitute(module("sh.haven:spice-transport")).using(project(":"))
+    }
+}
+
 // Go bridge compiled via gomobile, single libgojni.so containing:
 //   - rcbridge: rclone for cloud storage backends
 //   - wgbridge: wireguard-go + gVisor netstack for per-app WireGuard (#102)
@@ -118,6 +125,7 @@ include(":core:mosh")
 include(":core:et")
 include(":core:vnc")
 include(":core:rdp")
+include(":core:spice")
 include(":core:smb")
 include(":core:rclone")
 include(":core:mail")
