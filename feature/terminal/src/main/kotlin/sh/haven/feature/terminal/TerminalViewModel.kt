@@ -728,6 +728,18 @@ class TerminalViewModel @Inject constructor(
     fun toggleCtrl() { _ctrlActive.value = !_ctrlActive.value }
     fun toggleAlt() { _altActive.value = !_altActive.value }
 
+    /**
+     * Clear the one-shot sticky Ctrl/Alt after a keystroke has consumed them.
+     * Called from the terminal's [org.connectbot.terminal.ModifierManager.clearTransients]
+     * so a tapped modifier can't get stuck — e.g. in Standard keyboard mode a
+     * Ctrl that the IME composed past would otherwise persist and turn the next
+     * Enter into Ctrl+Enter (`^[[13;5u`). (#298)
+     */
+    fun clearStickyModifiers() {
+        if (_ctrlActive.value) _ctrlActive.value = false
+        if (_altActive.value) _altActive.value = false
+    }
+
     fun setFontSize(sizeSp: Int) {
         viewModelScope.launch {
             preferencesRepository.setTerminalFontSize(sizeSp)

@@ -1021,7 +1021,10 @@ fun TerminalScreen(
                                 override fun isCtrlActive() = viewModel.ctrlActive.value
                                 override fun isAltActive() = viewModel.altActive.value
                                 override fun isShiftActive() = false
-                                override fun clearTransients() { /* no-op */ }
+                                // One-shot: clear the tapped modifier once the
+                                // keystroke that consumed it has dispatched, so
+                                // it can't get stuck (#298).
+                                override fun clearTransients() = viewModel.clearStickyModifiers()
                             }
                         }
 
