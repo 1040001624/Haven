@@ -10,7 +10,8 @@
 	url = https://github.com/GlassOnTin/et-kotlin.git
 [submodule "build-proot/proot-termux"]
 	path = build-proot/proot-termux
-	url = https://github.com/termux/proot
+	url = https://github.com/GlassOnTin/proot
+	branch = haven-299-fd-fix
 [submodule "wayland-android"]
 	path = wayland-android
 	url = https://github.com/GlassOnTin/wayland-android.git
