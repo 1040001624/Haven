@@ -24,6 +24,7 @@ import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.desktop.CursorSnapshot
 import sh.haven.core.data.desktop.DesktopFrameHandle
+import sh.haven.core.data.desktop.DesktopInputHandle
 import sh.haven.core.data.desktop.DesktopStatus
 import sh.haven.core.data.preferences.AppWindowDef
 import sh.haven.core.data.preferences.AppWindowOrigin
@@ -1070,6 +1071,17 @@ class DesktopViewModel @Inject constructor(
                         pointer = { pointerPos.value },
                     ),
                 )
+                // Expose mouse/clipboard input to the MCP remote-desktop tools.
+                desktopSessionRegistry.registerInputHandle(
+                    profileId,
+                    DesktopInputHandle(
+                        protocol = "VNC",
+                        mouseMove = { x, y -> newTab.remoteDesktop.sendMouseMove(x, y) },
+                        mouseClick = { x, y, button -> newTab.remoteDesktop.sendMouseClick(x, y, button) },
+                        mouseWheel = { deltaY -> newTab.remoteDesktop.sendMouseWheel(deltaY) },
+                        clipboard = { text -> newTab.remoteDesktop.sendClipboardText(text) },
+                    ),
+                )
 
                 val tc = tunneledConn
                 if (tc != null) {
@@ -1312,6 +1324,17 @@ class DesktopViewModel @Inject constructor(
                         pointer = { pointerPos.value },
                     ),
                 )
+                // Expose mouse/clipboard input to the MCP remote-desktop tools.
+                desktopSessionRegistry.registerInputHandle(
+                    profileId,
+                    DesktopInputHandle(
+                        protocol = "RDP",
+                        mouseMove = { x, y -> tab.remoteDesktop.sendMouseMove(x, y) },
+                        mouseClick = { x, y, button -> tab.remoteDesktop.sendMouseClick(x, y, button) },
+                        mouseWheel = { deltaY -> tab.remoteDesktop.sendMouseWheel(deltaY) },
+                        clipboard = { text -> tab.remoteDesktop.sendClipboardText(text) },
+                    ),
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "RDP connect failed", e)
                 if (profileId != null) {
@@ -1552,6 +1575,7 @@ class DesktopViewModel @Inject constructor(
                     releaseSshTunnelDependent(tab.profileId)
                     desktopSessionRegistry.clear(tab.profileId)
                     desktopSessionRegistry.clearFrameHandle(tab.profileId)
+                    desktopSessionRegistry.clearInputHandle(tab.profileId)
                 }
                 is DesktopTab.Rdp -> {
                     if (tab.profileId != null) {
@@ -1563,6 +1587,7 @@ class DesktopViewModel @Inject constructor(
                     releaseSshTunnelDependent(tab.profileId)
                     desktopSessionRegistry.clear(tab.profileId)
                     desktopSessionRegistry.clearFrameHandle(tab.profileId)
+                    desktopSessionRegistry.clearInputHandle(tab.profileId)
                 }
                 is DesktopTab.Wayland -> {} // compositor lifecycle managed externally
             }

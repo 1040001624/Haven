@@ -30,6 +30,22 @@ class DesktopFrameHandle(
 )
 
 /**
+ * An input handle to a live remote-desktop (VNC/RDP) tab, so the MCP layer can
+ * inject mouse/clipboard input without coupling to `DesktopViewModel` or the
+ * app-module `RemoteDesktopSession` type. The tab registers closures; the MCP
+ * input tools call them. Mirrors [DesktopFrameHandle]. Mouse buttons follow the
+ * X11 convention (1=left, 2=middle, 3=right). Keyboard input is out of scope
+ * until `RemoteDesktopSession` grows a keysym/scancode verb.
+ */
+class DesktopInputHandle(
+    val protocol: String,
+    val mouseMove: (x: Int, y: Int) -> Unit,
+    val mouseClick: (x: Int, y: Int, button: Int) -> Unit,
+    val mouseWheel: (deltaY: Int) -> Unit,
+    val clipboard: (text: String) -> Unit,
+)
+
+/**
  * App-scoped mirror of the live state of remote-desktop tabs, keyed by the
  * connection profile id.
  *
@@ -78,4 +94,26 @@ class DesktopSessionRegistry @Inject constructor() {
 
     /** All registered frame handles, keyed by profileId. */
     fun frameHandles(): Map<String, DesktopFrameHandle> = frameHandles.toMap()
+
+    // --- Input handles (for MCP remote-desktop input tools) ---
+
+    private val inputHandles = ConcurrentHashMap<String, DesktopInputHandle>()
+
+    /** Register (or replace) the input handle for [profileId]. */
+    fun registerInputHandle(profileId: String?, handle: DesktopInputHandle) {
+        if (profileId == null) return
+        inputHandles[profileId] = handle
+    }
+
+    /** Drop the input handle for [profileId] — the desktop tab is gone. */
+    fun clearInputHandle(profileId: String?) {
+        if (profileId == null) return
+        inputHandles.remove(profileId)
+    }
+
+    /** The input handle for [profileId], or null if none registered. */
+    fun inputHandle(profileId: String): DesktopInputHandle? = inputHandles[profileId]
+
+    /** All registered input handles, keyed by profileId. */
+    fun inputHandles(): Map<String, DesktopInputHandle> = inputHandles.toMap()
 }

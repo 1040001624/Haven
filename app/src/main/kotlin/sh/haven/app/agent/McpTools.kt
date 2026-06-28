@@ -24,6 +24,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.haven.core.data.agent.ConsentLevel
+import sh.haven.core.data.desktop.DesktopInputHandle
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.PortForwardRule
 import sh.haven.core.data.db.entities.TunnelConfig
@@ -2095,6 +2096,62 @@ internal class McpTools(
                 "Let the agent see what $who is rendering"
             },
         ) { args -> captureDesktopTab(args) },
+
+        "tap_desktop_tab" to ToolHandler(
+            description = "Click a point on a remote-desktop VIEWER tab (RDP/VNC) — inject a mouse click into the remote server. Coordinates are in the REMOTE framebuffer's pixel space (the same space capture_desktop_tab reports: 0..width, 0..height), NOT Haven's own UI (that's tap_haven_ui). Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one desktop tab is open. Buttons follow X11: 1=left (default), 2=middle, 3=right. Keyboard typing is not yet supported (the session abstraction has no key verb). Returns { profileId, protocol, x, y, button }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id of the desktop tab (from list_desktop_sessions). Omit when exactly one is open.") })
+                    put("x", JSONObject().apply { put("type", "integer"); put("description", "Remote framebuffer X (0..width from capture_desktop_tab).") })
+                    put("y", JSONObject().apply { put("type", "integer"); put("description", "Remote framebuffer Y (0..height from capture_desktop_tab).") })
+                    put("button", JSONObject().apply { put("type", "integer"); put("description", "X11 button: 1=left (default), 2=middle, 3=right.") })
+                })
+                put("required", JSONArray().put("x").put("y"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val pid = args.optString("profileId").takeIf { it.isNotBlank() }
+                val who = if (pid != null) "desktop '${profileLabel(pid)}'" else "the open remote desktop"
+                "Click (${args.optInt("x")},${args.optInt("y")}) on $who"
+            },
+        ) { args -> tapDesktopTab(args) },
+
+        "scroll_desktop_tab" to ToolHandler(
+            description = "Scroll a remote-desktop VIEWER tab (RDP/VNC) by injecting mouse-wheel notches into the remote server. deltaY > 0 scrolls down, < 0 scrolls up; magnitude is the number of notches. Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one is open. Returns { profileId, protocol, deltaY }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id (from list_desktop_sessions). Omit when exactly one is open.") })
+                    put("deltaY", JSONObject().apply { put("type", "integer"); put("description", "Wheel notches: >0 scrolls down, <0 scrolls up.") })
+                })
+                put("required", JSONArray().put("deltaY"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                val pid = args.optString("profileId").takeIf { it.isNotBlank() }
+                val who = if (pid != null) "desktop '${profileLabel(pid)}'" else "the open remote desktop"
+                "Scroll $who"
+            },
+        ) { args -> scrollDesktopTab(args) },
+
+        "send_desktop_clipboard" to ToolHandler(
+            description = "Set the clipboard on a remote-desktop VIEWER tab (RDP/VNC) to the given text, so it can be pasted inside the remote server (Ctrl+V / right-click paste). This is the closest substitute for typing while keyboard injection is unsupported. Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one is open. Returns { profileId, protocol, chars }.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id (from list_desktop_sessions). Omit when exactly one is open.") })
+                    put("text", JSONObject().apply { put("type", "string"); put("description", "Text to place on the remote clipboard.") })
+                })
+                put("required", JSONArray().put("text"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args ->
+                val pid = args.optString("profileId").takeIf { it.isNotBlank() }
+                val who = if (pid != null) "desktop '${profileLabel(pid)}'" else "the open remote desktop"
+                "Set $who clipboard (${args.optString("text").length} chars)"
+            },
+        ) { args -> sendDesktopClipboard(args) },
 
         "capture_haven_ui" to ToolHandler(
             description = "Capture HAVEN'S OWN rendered screen — the app UI the user is looking at right now (Connections list, terminal tab, a dialog, the file browser, an agent overlay), NOT a remote desktop (capture_desktop_tab) or the terminal text (read_terminal_snapshot). This is the 'perceive' half of the self-hosting loop: after install_apk_from_backend deploys a build, capture_haven_ui lets the agent see the result and diff it. Returns the image plus { width, height, imageWidth, imageHeight, format }. width/height are the FULL window in pixels — pass tap_haven_ui / swipe_haven_ui coordinates in THAT space even when the returned image was downscaled via maxWidth. If Settings → screen security (FLAG_SECURE) is on, returns { secure: true } with no image (capture is intentionally blocked). Errors if Haven is not in the foreground.",
@@ -9593,6 +9650,58 @@ internal class McpTools(
             // block and strips them from structuredContent / the text echo.
             put("__imageBase64", b64)
             put("__mimeType", if (format == "jpeg") "image/jpeg" else "image/png")
+        }
+    }
+
+    /**
+     * Resolve the [DesktopInputHandle] for a remote-desktop tab the same way
+     * [captureDesktopTab] resolves frame handles: explicit profileId, or the
+     * sole open tab. Used by the remote-desktop input tools.
+     */
+    private fun resolveDesktopInput(args: JSONObject): Pair<String, DesktopInputHandle> {
+        val explicitPid = args.optString("profileId").takeIf { it.isNotBlank() }
+        val handles = desktopSessionRegistry.inputHandles()
+        val pid = explicitPid ?: when (handles.size) {
+            1 -> handles.keys.first()
+            0 -> throw McpError(-32602, "No remote-desktop tab is open. Use connect_profile, then list_desktop_sessions.")
+            else -> throw McpError(-32602, "Multiple desktop tabs open (${handles.keys.joinToString()}); pass profileId.")
+        }
+        val handle = desktopSessionRegistry.inputHandle(pid)
+            ?: throw McpError(-32602, "No controllable desktop tab for profile '$pid' (call list_desktop_sessions).")
+        return pid to handle
+    }
+
+    /** Inject a mouse click into a remote-desktop tab (RDP/VNC). */
+    private fun tapDesktopTab(args: JSONObject): JSONObject {
+        val (pid, h) = resolveDesktopInput(args)
+        val x = requireIntArg(args, "x")
+        val y = requireIntArg(args, "y")
+        val button = args.optInt("button", 1).coerceIn(1, 7)
+        h.mouseClick(x, y, button)
+        return JSONObject().apply {
+            put("profileId", pid); put("protocol", h.protocol)
+            put("x", x); put("y", y); put("button", button)
+        }
+    }
+
+    /** Inject mouse-wheel scrolling into a remote-desktop tab (RDP/VNC). */
+    private fun scrollDesktopTab(args: JSONObject): JSONObject {
+        val (pid, h) = resolveDesktopInput(args)
+        val deltaY = requireIntArg(args, "deltaY")
+        h.mouseWheel(deltaY)
+        return JSONObject().apply {
+            put("profileId", pid); put("protocol", h.protocol); put("deltaY", deltaY)
+        }
+    }
+
+    /** Set the remote-desktop tab's clipboard text (RDP/VNC). */
+    private fun sendDesktopClipboard(args: JSONObject): JSONObject {
+        val (pid, h) = resolveDesktopInput(args)
+        if (!args.has("text")) throw McpError(-32602, "text is required")
+        val text = args.optString("text")
+        h.clipboard(text)
+        return JSONObject().apply {
+            put("profileId", pid); put("protocol", h.protocol); put("chars", text.length)
         }
     }
 
