@@ -356,9 +356,20 @@ data class ConnectionProfile(
             override fun serialize() = "PASSWORD"
         }
 
-        /** Public-key auth using the saved key [keyId] (null = any usable key). */
+        /** Public-key auth using the saved key [keyId] (null = any usable software key). */
         data class Key(val keyId: String?) : AuthMethodSpec {
             override fun serialize() = if (keyId.isNullOrEmpty()) "KEY" else "KEY:$keyId"
+        }
+
+        /**
+         * "Present whichever hardware/FIDO key you have" — offers every enrolled
+         * `sk-*` key as an either-of pool (the user taps one; only that one is
+         * offered, #237). Distinct from listing several [Key]s, which requires
+         * ALL of them (a server-driven multi-key chain). [Key]`(null)` ("any
+         * software key") never includes hardware keys, hence this separate spec.
+         */
+        data object AnyHardwareKey : AuthMethodSpec {
+            override fun serialize() = "ANY_HARDWARE_KEY"
         }
 
         /** Interactive PAM prompts (OTP etc.) — answered live, never stored. */
@@ -403,6 +414,7 @@ data class ConnectionProfile(
                 token == "PASSWORD" -> Password
                 token == "KEYBOARD_INTERACTIVE" -> KeyboardInteractive
                 token == "KEY" -> Key(null)
+                token == "ANY_HARDWARE_KEY" -> AnyHardwareKey
                 token.startsWith("KEY:") -> Key(token.removePrefix("KEY:").ifEmpty { null })
                 token == "TOTP" -> Totp(null)
                 token.startsWith("TOTP:") -> Totp(token.removePrefix("TOTP:").ifEmpty { null })

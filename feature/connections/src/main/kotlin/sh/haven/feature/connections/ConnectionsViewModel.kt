@@ -3369,7 +3369,11 @@ class ConnectionsViewModel @Inject constructor(
 
         try {
             withContext(Dispatchers.IO) {
-                val authMethod = resolveAuthMethod(jumpProfile, effectivePassword)
+                // Plural resolver so a jump host (the SSH leg under SPICE/VNC/RDP)
+                // honours its full auth-methods spec — "Any hardware key", AND
+                // chains, etc. — not just the legacy single keyId. Falls back to
+                // the singular path for simple/legacy profiles. (#286)
+                val authMethod = resolveAuthMethods(jumpProfile, effectivePassword)
                 val config = ConnectionConfig(
                     host = jumpProfile.host,
                     port = jumpProfile.port,
@@ -3769,6 +3773,11 @@ class ConnectionsViewModel @Inject constructor(
         (specs.singleOrNull() as? ConnectionProfile.AuthMethodSpec.Key)?.keyId?.let { kid ->
             resolveExplicitKey(kid, password)?.let { return it }
         }
+        // A lone "Any hardware key" must resolve to the FIDO pool, not fall to
+        // resolveAuthMethod (which only knows password / any-software-key).
+        if (specs.singleOrNull() is ConnectionProfile.AuthMethodSpec.AnyHardwareKey) {
+            return resolveAnyHardwareKeys() ?: ConnectionConfig.AuthMethod.Password(password)
+        }
         if (specs.size <= 1) return resolveAuthMethod(profile, password)
 
         val methods = specs.mapNotNull { spec ->
@@ -3778,6 +3787,7 @@ class ConnectionsViewModel @Inject constructor(
                 is ConnectionProfile.AuthMethodSpec.Key ->
                     if (spec.keyId != null) resolveExplicitKey(spec.keyId!!, password)
                     else resolveAnyUnencryptedKeys()
+                ConnectionProfile.AuthMethodSpec.AnyHardwareKey -> resolveAnyHardwareKeys()
                 ConnectionProfile.AuthMethodSpec.KeyboardInteractive -> null
                 // TOTP is auto-filled into the live keyboard-interactive
                 // round (#178), not registered as a JSch credential.
@@ -3931,6 +3941,32 @@ class ConnectionsViewModel @Inject constructor(
                 )
             },
         )
+    }
+
+    /**
+     * Every enrolled hardware/FIDO (`sk-*`) key as an either-of pool — each a
+     * [ConnectionConfig.AuthMethod.FidoKey] with `anyOf = true`, so [SshClient]
+     * asks the user to present whichever one they have and offers only that
+     * (#237). Backs the "Any hardware key" auth option. Null if none enrolled.
+     * Unlike [resolveExplicitKey] (which yields a single required key) and
+     * unlike pinning/listing keys (require-all), this is convenience OR-auth.
+     * sk-key bytes are a credential handle, not loadable material, so they're
+     * passed verbatim (no PEM wrap, unlike [resolveAnyUnencryptedKeys]).
+     */
+    private suspend fun resolveAnyHardwareKeys(): ConnectionConfig.AuthMethod? {
+        val keys = sshKeyRepository.getAllDecrypted()
+            .filter { it.keyType.startsWith("sk-") && it.enabledForAuth }
+        if (keys.isEmpty()) return null
+        val fidoKeys = keys.map { key ->
+            ConnectionConfig.AuthMethod.FidoKey(
+                skKeyData = key.privateKeyBytes,
+                certBytes = key.certificateBytes,
+                keyLabel = key.label,
+                anyOf = true,
+            )
+        }
+        return if (fidoKeys.size == 1) fidoKeys.single()
+        else ConnectionConfig.AuthMethod.Multi(fidoKeys)
     }
 
     /**

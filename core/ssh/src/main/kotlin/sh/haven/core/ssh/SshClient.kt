@@ -150,39 +150,48 @@ class SshClient : Closeable {
     }
 
     /**
-     * Add the profile's SK (FIDO2) keys as JSch identities. A single key is
-     * added directly. With several, [FidoAuthenticator.detectPresentSkKey] asks
-     * the user to present any one of them and adds only the detected key
-     * (either/or, #237) — so SSH's "server accepts the first trusted key" rule
-     * doesn't force whichever key is listed first. If nothing is detected (all
-     * verify-required, or no key presented in time) it falls back to adding all
-     * keys in listed order — the pre-existing behaviour.
+     * Add the profile's SK (FIDO2) keys as JSch identities, split by intent:
+     *
+     * - **Required** keys ([FidoKey.anyOf] == false — pinned, or several listed
+     *   to require all): every one is offered unconditionally, so a server
+     *   configured for a multi-key chain (`AuthenticationMethods
+     *   publickey,publickey`) can complete its rounds (the user touches each).
+     * - **Any-hardware-key** pool ([FidoKey.anyOf] == true): with more than one,
+     *   [FidoAuthenticator.detectPresentSkKey] asks the user to present any one
+     *   and only that key is offered (either/or, #237) — so SSH's "first trusted
+     *   key wins" rule doesn't force whichever key happens to be listed first.
+     *   If nothing is detected (all verify-required, or none presented in time)
+     *   it falls back to offering all of them in order.
      */
     private fun applyFidoAuth(fidoAuths: List<ConnectionConfig.AuthMethod.FidoKey>, sess: Session) {
+        if (fidoAuths.isEmpty()) return
+        val (anyOfPool, required) = fidoAuths.partition { it.anyOf }
+        // Required / pinned: offer all so a multi-key server is satisfiable.
+        required.forEach { addFidoIdentity(it, sess) }
         when {
-            fidoAuths.isEmpty() -> return
-            fidoAuths.size == 1 -> addFidoIdentity(fidoAuths[0], sess)
+            anyOfPool.isEmpty() -> {}
+            anyOfPool.size == 1 -> addFidoIdentity(anyOfPool[0], sess)
             else -> {
-                val candidates = fidoAuths.map { SkKeyData.deserialize(it.skKeyData) }
+                val candidates = anyOfPool.map { SkKeyData.deserialize(it.skKeyData) }
                 val detected = try {
                     runBlocking { fidoAuthenticator?.detectPresentSkKey(candidates, keyLabel = null) }
                 } catch (e: sh.haven.core.fido.FidoCancelledException) {
                     throw e // user cancelled the key prompt — abort the connect, don't fall back
                 } catch (e: Exception) {
-                    Log.w(TAG, "Either/or SK detection failed: ${e.message}")
+                    Log.w(TAG, "Any-hardware-key detection failed: ${e.message}")
                     null
                 }
                 val chosen = detected?.let { d ->
-                    fidoAuths.firstOrNull {
+                    anyOfPool.firstOrNull {
                         SkKeyData.deserialize(it.skKeyData).credentialId.contentEquals(d.credentialId)
                     }
                 }
                 if (chosen != null) {
-                    Log.d(TAG, "Either/or: offering the presented SK key only")
+                    Log.d(TAG, "Any-hardware-key: offering the presented SK key only")
                     addFidoIdentity(chosen, sess)
                 } else {
-                    Log.d(TAG, "Either/or: no key detected — offering all ${fidoAuths.size} in order")
-                    fidoAuths.forEach { addFidoIdentity(it, sess) }
+                    Log.d(TAG, "Any-hardware-key: none detected — offering all ${anyOfPool.size} in order")
+                    anyOfPool.forEach { addFidoIdentity(it, sess) }
                 }
             }
         }

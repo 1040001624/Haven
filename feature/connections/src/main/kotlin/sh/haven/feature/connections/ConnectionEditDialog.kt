@@ -3888,6 +3888,8 @@ private fun AuthMethodsEditor(
                     Text(stringResource(R.string.common_password), modifier = Modifier.weight(1f))
                 ConnectionProfile.AuthMethodSpec.KeyboardInteractive ->
                     Text(stringResource(R.string.connections_auth_method_keyboard_interactive), modifier = Modifier.weight(1f))
+                ConnectionProfile.AuthMethodSpec.AnyHardwareKey ->
+                    Text(stringResource(R.string.connections_auth_any_hardware_key), modifier = Modifier.weight(1f))
                 is ConnectionProfile.AuthMethodSpec.Key -> {
                     var expanded by remember { mutableStateOf(false) }
                     Box(modifier = Modifier.weight(1f)) {
@@ -3908,6 +3910,13 @@ private fun AuthMethodsEditor(
                                 text = { Text(stringResource(R.string.connections_auth_key_any_menu)) },
                                 onClick = {
                                     emit(specs.toMutableList().also { it[index] = ConnectionProfile.AuthMethodSpec.Key(null) })
+                                    expanded = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.connections_auth_any_hardware_key)) },
+                                onClick = {
+                                    emit(specs.toMutableList().also { it[index] = ConnectionProfile.AuthMethodSpec.AnyHardwareKey })
                                     expanded = false
                                 },
                             )
@@ -4028,6 +4037,13 @@ private fun AuthMethodsEditor(
                     text = { Text(stringResource(R.string.connections_auth_key_any_menu)) },
                     onClick = {
                         emit(specs + ConnectionProfile.AuthMethodSpec.Key(null))
+                        addExpanded = false; addKeyPicker = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_auth_any_hardware_key)) },
+                    onClick = {
+                        emit(specs + ConnectionProfile.AuthMethodSpec.AnyHardwareKey)
                         addExpanded = false; addKeyPicker = false
                     },
                 )

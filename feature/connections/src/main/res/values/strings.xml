@@ -517,7 +517,8 @@
 
     <!-- #210 i18n sweep: ordered multi-factor auth methods editor (#166). -->
     <string name="connections_auth_methods_title">Authentication methods</string>
-    <string name="connections_auth_methods_description">All listed methods are offered to the server, in order — for chains that need more than one (e.g. key + password). To require just one (e.g. a YubiKey), remove the others, or use a key\'s \"Use only this key\". A hardware security key (FIDO/YubiKey) must be picked by name — \"Any software key\" never offers it.</string>
+    <string name="connections_auth_methods_description">All listed methods are offered to the server, in order; a server that requires several (e.g. key + password, or two keys) must satisfy each. \"Any software key\" tries your software keys; \"Any hardware key\" lets you tap whichever security key you have; pin a key by name to require that specific one. \"Any software key\" never offers a hardware (FIDO/YubiKey) key.</string>
+    <string name="connections_auth_any_hardware_key">Any hardware key (FIDO)</string>
     <string name="connections_auth_method_keyboard_interactive">Keyboard-interactive (OTP)</string>
     <string name="connections_auth_method_ssh_key">SSH key</string>
     <string name="connections_auth_method_totp">Authenticator code (TOTP)</string>

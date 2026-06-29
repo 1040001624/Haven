@@ -167,6 +167,14 @@ data class ConnectionConfig(
             /** Profile key name, surfaced in the touch prompt so the user
              * presents the right key when several are listed (#237). */
             val keyLabel: String? = null,
+            /**
+             * True when this key belongs to an "Any hardware key" either-of
+             * pool — [SshClient] detects the presented key and offers only it.
+             * False (pinned / explicitly listed) ⇒ offer it unconditionally, so
+             * a chain of several required keys can satisfy a multi-key server.
+             * Not part of [equals]/[hashCode] — it's a routing flag, not identity.
+             */
+            val anyOf: Boolean = false,
         ) : AuthMethod {
             override fun equals(other: Any?): Boolean {
                 if (this === other) return true
