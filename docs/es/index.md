@@ -60,7 +60,7 @@ instalaciones directas siguen la clave de GitHub Releases.
 ## De un vistazo
 
 - **[Terminal](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, restauración de sesiones tmux, barra de herramientas de teclado configurable, integración OSC 7/8/9/52/133/777.
-- **[Escritorios](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), un compositor Wayland nativo con aceleración por GPU y un gestor de escritorios locales multi-distribución.
+- **[Escritorios](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), un compositor Wayland nativo con aceleración por GPU y un gestor de escritorios locales multi-distribución.
 - **[Archivos y nube](../features/files-and-cloud.md)** — SFTP/SCP, SMB, más de 60 proveedores en la nube (rclone), copia/movimiento entre sistemas de archivos; además de transcodificación FFmpeg, HLS y DLNA.
 - **[Conexiones](../features/connections.md)** — reenvío de puertos (-L/-R/-D/-J), proxies SOCKS/HTTP/Tor, túneles WireGuard y Tailscale por aplicación, port knocking + fwknop SPA, claves SSH y FIDO2.
 - **[Correo](../features/email.md)** — ProtonMail + IMAP/SMTP, redactar/responder/reenviar, multicuenta, automatización con Reglas de correo.

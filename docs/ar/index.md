@@ -65,7 +65,7 @@ title: Haven
 ## لمحة سريعة
 
 - **[الطرفية](../features/terminal.md)** — Mosh / Eternal Terminal / SSH، استعادة جلسات tmux، شريط أدوات لوحة مفاتيح قابل للتخصيص، تكامل OSC 7/8/9/52/133/777.
-- **[أسطح المكتب](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt)، RDP (IronRDP + EGFX)، مُركِّب Wayland أصلي مُسرَّع بواسطة وحدة معالجة الرسوميات، ومدير أسطح مكتب محلية متعدد التوزيعات.
+- **[أسطح المكتب](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt)، RDP (IronRDP + EGFX)، SPICE (QEMU/KVM، GLZ/QUIC)، مُركِّب Wayland أصلي مُسرَّع بواسطة وحدة معالجة الرسوميات، ومدير أسطح مكتب محلية متعدد التوزيعات.
 - **[الملفات والسحابة](../features/files-and-cloud.md)** — SFTP/SCP، SMB، أكثر من 60 مزوّد سحابي (rclone)، النسخ/النقل عبر أنظمة الملفات؛ إضافةً إلى ترميز FFmpeg و HLS و DLNA.
 - **[الاتصالات](../features/connections.md)** — إعادة توجيه المنافذ (-L/-R/-D/-J)، وكلاء SOCKS/HTTP/Tor، أنفاق WireGuard و Tailscale لكل تطبيق، طَرْق المنافذ + fwknop SPA، مفاتيح SSH و FIDO2.
 - **[البريد الإلكتروني](../features/email.md)** — ProtonMail + IMAP/SMTP، الكتابة/الرد/إعادة التوجيه، تعدد الحسابات، أتمتة قواعد البريد.

@@ -60,7 +60,7 @@ title: Haven
 ## এক নজরে
 
 - **[টার্মিনাল](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux সেশন পুনরুদ্ধার, কনফিগারযোগ্য কীবোর্ড টুলবার, OSC 7/8/9/52/133/777 ইন্টিগ্রেশন।
-- **[ডেস্কটপ](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), একটি GPU-অ্যাক্সিলারেটেড নেটিভ Wayland কম্পোজিটর, এবং একটি বহু-ডিস্ট্রো লোকাল-ডেস্কটপ ম্যানেজার।
+- **[ডেস্কটপ](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), একটি GPU-অ্যাক্সিলারেটেড নেটিভ Wayland কম্পোজিটর, এবং একটি বহু-ডিস্ট্রো লোকাল-ডেস্কটপ ম্যানেজার।
 - **[ফাইল ও ক্লাউড](../features/files-and-cloud.md)** — SFTP/SCP, SMB, ৬০+ ক্লাউড প্রদানকারী (rclone), ক্রস-ফাইলসিস্টেম কপি/মুভ; এছাড়াও FFmpeg ট্রান্সকোড, HLS, এবং DLNA।
 - **[সংযোগ](../features/connections.md)** — পোর্ট ফরওয়ার্ডিং (-L/-R/-D/-J), SOCKS/HTTP/Tor প্রক্সি, প্রতি-অ্যাপ WireGuard ও Tailscale টানেল, পোর্ট নকিং + fwknop SPA, SSH কী ও FIDO2।
 - **[ইমেইল](../features/email.md)** — ProtonMail + IMAP/SMTP, রচনা/উত্তর/ফরওয়ার্ড, বহু-অ্যাকাউন্ট, Mail Rules অটোমেশন।

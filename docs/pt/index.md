@@ -60,7 +60,7 @@ sideloads diretos seguem a chave do GitHub Releases.
 ## Visão geral
 
 - **[Terminal](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, restauração de sessão tmux, barra de ferramentas de teclado configurável, integração OSC 7/8/9/52/133/777.
-- **[Áreas de trabalho](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), um compositor Wayland nativo acelerado por GPU e um gerenciador de áreas de trabalho locais multi-distribuição.
+- **[Áreas de trabalho](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), um compositor Wayland nativo acelerado por GPU e um gerenciador de áreas de trabalho locais multi-distribuição.
 - **[Arquivos e nuvem](../features/files-and-cloud.md)** — SFTP/SCP, SMB, mais de 60 provedores de nuvem (rclone), cópia/movimentação entre sistemas de arquivos; além de transcodificação com FFmpeg, HLS e DLNA.
 - **[Conexões](../features/connections.md)** — encaminhamento de portas (-L/-R/-D/-J), proxies SOCKS/HTTP/Tor, túneis WireGuard e Tailscale por aplicativo, port knocking + fwknop SPA, chaves SSH e FIDO2.
 - **[E-mail](../features/email.md)** — ProtonMail + IMAP/SMTP, escrever/responder/encaminhar, várias contas, automação de Regras de E-mail.

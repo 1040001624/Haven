@@ -60,7 +60,7 @@ title: Haven
 ## Обзор
 
 - **[Терминал](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, восстановление сессий tmux, настраиваемая панель инструментов клавиатуры, интеграция OSC 7/8/9/52/133/777.
-- **[Рабочие столы](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), нативный композитор Wayland с GPU-ускорением и менеджер локальных рабочих столов для нескольких дистрибутивов.
+- **[Рабочие столы](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), нативный композитор Wayland с GPU-ускорением и менеджер локальных рабочих столов для нескольких дистрибутивов.
 - **[Файлы и облако](../features/files-and-cloud.md)** — SFTP/SCP, SMB, более 60 облачных провайдеров (rclone), копирование/перемещение между файловыми системами; плюс перекодирование FFmpeg, HLS и DLNA.
 - **[Соединения](../features/connections.md)** — проброс портов (-L/-R/-D/-J), прокси SOCKS/HTTP/Tor, попакетные туннели WireGuard и Tailscale, port knocking + fwknop SPA, ключи SSH и FIDO2.
 - **[Почта](../features/email.md)** — ProtonMail + IMAP/SMTP, создание/ответ/пересылка, несколько аккаунтов, автоматизация Mail Rules.

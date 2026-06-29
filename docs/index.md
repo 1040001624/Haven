@@ -71,7 +71,7 @@ sideloads track the GitHub Releases key.
 ## At a glance
 
 - **[Terminal](features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
-- **[Desktops](features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
+- **[Desktops](features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
 - **[Files & cloud](features/files-and-cloud.md)** — SFTP/SCP, SMB, 60+ cloud providers (rclone), cross-filesystem copy/move; plus FFmpeg transcode, HLS, and DLNA.
 - **[Connections](features/connections.md)** — port forwarding (-L/-R/-D/-J), SOCKS/HTTP/Tor proxies, per-app WireGuard & Tailscale tunnels, port knocking + fwknop SPA, SSH keys & FIDO2.
 - **[Email](features/email.md)** — ProtonMail + IMAP/SMTP, compose/reply/forward, multi-account, Mail Rules automation.
@@ -82,6 +82,18 @@ sideloads track the GitHub Releases key.
 - **[Security](features/security.md)** — biometric lock, no telemetry, encrypted backup/restore (AES-256-GCM).
 
 Browse the [full feature index](FEATURES.md).
+
+## Why one app
+
+The list above is the parts; the point is how they compose. Each of these is one flow inside Haven — no second app, no `curl | ssh` incantation:
+
+- Tap a 4K MKV in Google Drive → FFmpeg transcodes it over HTTP and the result lands back in the same Drive folder, never touching local disk.
+- SSH to a box, forward its port, tap the VNC profile that targets `localhost` — the desktop opens in the same app, keyboard and clipboard shared.
+- Cut a log directory from an S3 bucket, switch tabs, paste it onto an SFTP server — rclone does the server-side copy when it can, otherwise Haven streams it through.
+- Run your agent CLI in the on-device Linux shell; it pushes over the SSH agent you forwarded from your laptop while you watch on the same screen.
+- Cast a cloud video to the TV across the room over HLS, copy the LAN URL from the snackbar, send it to a friend so they can watch too.
+
+The phone is the thin client, Haven is the thin-client OS, and the cloud, your servers, and your agents are the computer. Width is sufficient; composition is the point. ([Vision](https://github.com/GlassHaven/Haven/blob/main/VISION.md).)
 
 ## Languages
 

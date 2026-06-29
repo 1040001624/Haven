@@ -60,7 +60,7 @@ title: Haven
 ## 한눈에 보기
 
 - **[터미널](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux 세션 복원, 구성 가능한 키보드 툴바, OSC 7/8/9/52/133/777 통합.
-- **[데스크톱](../features/desktops.md)** — VNC(RFB 3.8 / VeNCrypt), RDP(IronRDP + EGFX), GPU 가속 네이티브 Wayland 컴포지터, 그리고 다중 배포판 로컬 데스크톱 관리자.
+- **[데스크톱](../features/desktops.md)** — VNC(RFB 3.8 / VeNCrypt), RDP(IronRDP + EGFX), SPICE(QEMU/KVM, GLZ/QUIC), GPU 가속 네이티브 Wayland 컴포지터, 그리고 다중 배포판 로컬 데스크톱 관리자.
 - **[파일 & 클라우드](../features/files-and-cloud.md)** — SFTP/SCP, SMB, 60개 이상의 클라우드 제공업체(rclone), 파일시스템 간 복사/이동; 그리고 FFmpeg 트랜스코딩, HLS, DLNA.
 - **[연결](../features/connections.md)** — 포트 포워딩(-L/-R/-D/-J), SOCKS/HTTP/Tor 프록시, 앱별 WireGuard & Tailscale 터널, 포트 노킹 + fwknop SPA, SSH 키 & FIDO2.
 - **[이메일](../features/email.md)** — ProtonMail + IMAP/SMTP, 작성/회신/전달, 다중 계정, 메일 규칙 자동화.

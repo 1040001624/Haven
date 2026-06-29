@@ -60,7 +60,7 @@ title: Haven
 ## एक नज़र में
 
 - **[टर्मिनल](../features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux सत्र पुनर्स्थापना, विन्यास-योग्य कीबोर्ड टूलबार, OSC 7/8/9/52/133/777 एकीकरण।
-- **[डेस्कटॉप](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), एक GPU-त्वरित नेटिव Wayland कंपोज़िटर, और एक बहु-डिस्ट्रो स्थानीय-डेस्कटॉप प्रबंधक।
+- **[डेस्कटॉप](../features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), एक GPU-त्वरित नेटिव Wayland कंपोज़िटर, और एक बहु-डिस्ट्रो स्थानीय-डेस्कटॉप प्रबंधक।
 - **[फ़ाइलें और क्लाउड](../features/files-and-cloud.md)** — SFTP/SCP, SMB, 60+ क्लाउड प्रदाता (rclone), क्रॉस-फ़ाइलसिस्टम कॉपी/मूव; साथ ही FFmpeg ट्रांसकोड, HLS, और DLNA।
 - **[कनेक्शन](../features/connections.md)** — पोर्ट फ़ॉरवर्डिंग (-L/-R/-D/-J), SOCKS/HTTP/Tor प्रॉक्सी, प्रति-ऐप WireGuard और Tailscale टनल, पोर्ट नॉकिंग + fwknop SPA, SSH कुंजियाँ और FIDO2।
 - **[ईमेल](../features/email.md)** — ProtonMail + IMAP/SMTP, लिखें/जवाब दें/अग्रेषित करें, बहु-खाता, Mail Rules स्वचालन।

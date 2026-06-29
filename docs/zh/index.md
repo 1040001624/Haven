@@ -55,7 +55,7 @@ title: Haven
 ## 概览
 
 - **[终端](../features/terminal.md)** — Mosh / Eternal Terminal / SSH、tmux 会话恢复、可配置的键盘工具栏、OSC 7/8/9/52/133/777 集成。
-- **[桌面](../features/desktops.md)** — VNC（RFB 3.8 / VeNCrypt）、RDP（IronRDP + EGFX）、一个 GPU 加速的原生 Wayland 合成器，以及一个多发行版本地桌面管理器。
+- **[桌面](../features/desktops.md)** — VNC（RFB 3.8 / VeNCrypt）、RDP（IronRDP + EGFX）、SPICE（QEMU/KVM、GLZ/QUIC）、一个 GPU 加速的原生 Wayland 合成器，以及一个多发行版本地桌面管理器。
 - **[文件与云](../features/files-and-cloud.md)** — SFTP/SCP、SMB、60 多个云服务商（rclone）、跨文件系统的复制/移动；外加 FFmpeg 转码、HLS 和 DLNA。
 - **[连接](../features/connections.md)** — 端口转发（-L/-R/-D/-J）、SOCKS/HTTP/Tor 代理、按应用的 WireGuard 与 Tailscale 隧道、端口敲门 + fwknop SPA、SSH 密钥与 FIDO2。
 - **[电子邮件](../features/email.md)** — ProtonMail + IMAP/SMTP、撰写/回复/转发、多账户、邮件规则自动化。

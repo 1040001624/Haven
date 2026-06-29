@@ -60,7 +60,7 @@ title: Haven
 ## ひと目で分かる機能
 
 - **[ターミナル](../features/terminal.md)** — Mosh / Eternal Terminal / SSH、tmux セッションの復元、カスタマイズ可能なキーボードツールバー、OSC 7/8/9/52/133/777 連携。
-- **[デスクトップ](../features/desktops.md)** — VNC（RFB 3.8 / VeNCrypt）、RDP（IronRDP + EGFX）、GPU アクセラレーション対応のネイティブ Wayland コンポジタ、複数ディストリビューション対応のローカルデスクトップマネージャ。
+- **[デスクトップ](../features/desktops.md)** — VNC（RFB 3.8 / VeNCrypt）、RDP（IronRDP + EGFX）、SPICE（QEMU/KVM、GLZ/QUIC）、GPU アクセラレーション対応のネイティブ Wayland コンポジタ、複数ディストリビューション対応のローカルデスクトップマネージャ。
 - **[ファイルとクラウド](../features/files-and-cloud.md)** — SFTP/SCP、SMB、60 以上のクラウドプロバイダ（rclone）、ファイルシステムをまたいだコピー／移動。さらに FFmpeg によるトランスコード、HLS、DLNA。
 - **[接続](../features/connections.md)** — ポートフォワーディング（-L/-R/-D/-J）、SOCKS/HTTP/Tor プロキシ、アプリごとの WireGuard と Tailscale トンネル、ポートノッキング + fwknop SPA、SSH 鍵と FIDO2。
 - **[メール](../features/email.md)** — ProtonMail + IMAP/SMTP、作成／返信／転送、複数アカウント、メールルールの自動化。
