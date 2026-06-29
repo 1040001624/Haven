@@ -751,8 +751,9 @@ private fun AppWindowVnc(
         // windows (null for full desktops, which don't show them).
         onMinimize = onMinimize,
         onPictureInPicture = onPictureInPicture,
-        // App windows expect ordinary 2-finger pinch-to-zoom (the desktop
-        // viewer reserves 2 fingers for remote scroll, zoom on 3).
+        // App windows: cover-fill + ordinary 2-finger pinch-zoom with a
+        // 3-finger cage-output-scale gesture. The desktop viewer instead
+        // exposes a viewport/scroll toggle for its 2-finger drag (#286).
         twoFingerZoom = true,
         // Host-controlled fullscreen: the toggle/exit/back routes here so the
         // host can swap the sheet box ↔ the full-window Dialog above.

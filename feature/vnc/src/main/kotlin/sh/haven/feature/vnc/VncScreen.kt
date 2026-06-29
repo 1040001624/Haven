@@ -49,10 +49,12 @@ import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Minimize
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.ScreenLockLandscape
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -140,6 +142,8 @@ fun VncSessionContent(
     error: StateFlow<String?>,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onTap: (Int, Int) -> Unit,
+    /** Two-finger tap → middle-button click at the tapped point (X11 button 2). */
+    onMiddleClick: (Int, Int) -> Unit = { _, _ -> },
     onLongPress: (Int, Int) -> Unit,
     onDragStart: (Int, Int) -> Unit,
     onDrag: (Int, Int) -> Unit,
@@ -241,6 +245,7 @@ fun VncSessionContent(
             fullscreen = fullscreen,
             toolbarLayout = toolbarLayout,
             onTap = onTap,
+            onMiddleClick = onMiddleClick,
             onLongPress = onLongPress,
             onDragStart = onDragStart,
             onDrag = onDrag,
@@ -397,6 +402,22 @@ private fun InputModeToggle(inputMode: String, onSetInputMode: (String) -> Unit)
     }
 }
 
+/** Two-finger drag target: viewport pan (off) vs remote scroll-wheel (on). */
+@Composable
+private fun ScrollModeToggle(twoFingerScroll: Boolean, onToggle: () -> Unit) {
+    FilledIconToggleButton(
+        checked = twoFingerScroll,
+        onCheckedChange = { onToggle() },
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            if (twoFingerScroll) Icons.Default.SwapVert else Icons.Default.OpenWith,
+            contentDescription = if (twoFingerScroll) stringResource(R.string.vnc_cd_two_finger_scroll_on)
+                                 else stringResource(R.string.vnc_cd_two_finger_viewport),
+        )
+    }
+}
+
 @Composable
 private fun MouseButtonToggles(held: Int?, onToggle: (Int) -> Unit) {
     listOf(1 to "L", 2 to "M", 3 to "R").forEach { (btn, label) ->
@@ -470,6 +491,7 @@ private fun VncViewer(
     fullscreen: Boolean,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onTap: (Int, Int) -> Unit,
+    onMiddleClick: (Int, Int) -> Unit = { _, _ -> },
     onLongPress: (Int, Int) -> Unit,
     onDragStart: (Int, Int) -> Unit,
     onDrag: (Int, Int) -> Unit,
@@ -525,9 +547,6 @@ private fun VncViewer(
         OrientationMode.Portrait -> stringResource(R.string.vnc_orientation_portrait_desc)
         OrientationMode.Auto -> stringResource(R.string.vnc_orientation_auto_desc)
     }
-    // Finger count that switches a multi-touch gesture from remote
-    // scroll-wheel to local viewport pinch-zoom + pan.
-    val zoomPanMinFingers = if (twoFingerZoom) 2 else 3
     // App-window fullscreen: cover/crop-fill the screen (no letterbox — phones
     // have rounded corners so losing a sliver is fine) and floor the digital
     // zoom at the fill scale so a pinch-out can't expose a black border. The
@@ -541,6 +560,10 @@ private fun VncViewer(
     var zoom by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
+    // Desktop only: two-finger drag = viewport pan (false) vs remote
+    // scroll-wheel (true). Pinch always zooms. Toolbar toggle (#286 —
+    // 3-finger gestures are unreliable on OnePlus/OxygenOS).
+    var twoFingerScroll by rememberSaveable { mutableStateOf(false) }
     // 3-finger fullscreen output-scale gesture (app windows): accumulates the
     // pinch and pushes quantized scale changes to the live cage via onChangeScale.
     var outputScale by remember { mutableFloatStateOf(currentScale) }
@@ -721,6 +744,9 @@ private fun VncViewer(
                         var gestureStarted = false
                         var cumulativeScrollY = 0f
                         var totalMovement = 0f
+                        // Centroid travel while ≥2 fingers are down; a near-zero
+                        // total means a 2-finger tap → middle click (#286).
+                        var twoFingerMovement = 0f
                         var lastSinglePos = firstDown.position
                         var dragging = false
                         var longPressFired = false
@@ -801,20 +827,12 @@ private fun VncViewer(
                                 // a real pan/zoom delta — which made the
                                 // viewport visibly jump as fingers lifted.
                                 if (gestureStarted && count == prevCount) {
-                                    // Routing: at/above [zoomPanMinFingers] the
-                                    // gesture operates on the local viewport
-                                    // (pan + pinch-zoom); below it, two fingers
-                                    // emit remote scroll-wheel events only.
-                                    // Default threshold is 3 (desktop: keep
-                                    // 2-finger remote scroll); app windows pass
-                                    // twoFingerZoom=true to drop it to 2 for
-                                    // ordinary pinch-to-zoom. Locked by
-                                    // totalFingers so lifting a finger
-                                    // mid-gesture doesn't re-purpose it.
-                                    if (totalFingers >= zoomPanMinFingers) {
-                                      if (coverFill && onChangeScale != null && totalFingers >= 3) {
-                                        // 3-finger fullscreen: adjust the live cage
-                                        // output scale (re-render bigger/smaller),
+                                    val dx = centroid.x - prevCentroid.x
+                                    val dy = centroid.y - prevCentroid.y
+                                    twoFingerMovement += abs(dx) + abs(dy)
+                                    if (coverFill && onChangeScale != null && totalFingers >= 3) {
+                                        // App-window 3-finger fullscreen: adjust the live
+                                        // cage output scale (re-render bigger/smaller),
                                         // not the pointless local digital zoom-out.
                                         if (prevSpan > 0f && span > 0f) {
                                             outputScale = (outputScale * (span / prevSpan)).coerceIn(0.5f, 3f)
@@ -824,49 +842,41 @@ private fun VncViewer(
                                                 onChangeScale(q)
                                             }
                                         }
-                                      } else {
-                                        // Two-finger gesture. Distinguish a pinch
-                                        // (fingers' span changing) from a drag
-                                        // (fingers translating together): a pinch
-                                        // zooms; a same-span vertical drag scrolls
-                                        // the remote when not zoomed (so 2-finger
-                                        // scroll coexists with pinch-zoom and the
-                                        // single finger stays normal mouse). When
-                                        // zoomed in, a 2-finger drag pans instead.
-                                        val dx = centroid.x - prevCentroid.x
-                                        val dy = centroid.y - prevCentroid.y
+                                    } else {
+                                        // Two fingers: pinch (span changing) = zoom; a
+                                        // same-span drag = remote scroll (scroll-mode
+                                        // toggle, or an app window not yet zoomed) or
+                                        // viewport pan (zoomed). Everything is on two
+                                        // fingers — 3-finger desktop zoom was unreliable
+                                        // on OxygenOS (#286).
                                         val spanDelta = if (prevSpan > 0f) abs(span - prevSpan) else 0f
-                                        val moveDelta = abs(dx) + abs(dy)
-                                        val pinching = spanDelta > 2f && spanDelta >= moveDelta
+                                        val pinching = spanDelta > 2f && spanDelta >= abs(dx) + abs(dy)
                                         if (pinching && prevSpan > 0f && span > 0f) {
                                             // Pinch-zoom about the centroid. Cover-fill
                                             // floors zoom at 1× (so a pinch-out can't
                                             // expose black); otherwise 0.5× min, 10× max.
                                             val newZoom = (zoom * (span / prevSpan))
                                                 .coerceIn(if (coverFill) 1f else 0.5f, 10f)
-                                            // Keep the content point under the centroid
-                                            // stationary (pivot is the view centre):
-                                            //   pan' = (centroid - centre)(1 - r) + pan*r
                                             val actualScale = if (zoom > 0f) newZoom / zoom else 1f
                                             val cx = viewSize.width / 2f
                                             val cy = viewSize.height / 2f
                                             panX = (centroid.x - cx) * (1 - actualScale) + panX * actualScale
                                             panY = (centroid.y - cy) * (1 - actualScale) + panY * actualScale
                                             zoom = newZoom
-                                        } else if (twoFingerZoom && zoom <= 1.01f) {
-                                            // App window, not zoomed: 2-finger vertical
-                                            // drag = remote wheel-scroll (content follows
-                                            // the fingers). Single finger is untouched.
+                                        } else if (twoFingerScroll || (twoFingerZoom && zoom <= 1.01f)) {
+                                            // Remote wheel-scroll: desktop scroll-mode
+                                            // toggle, or an app window not yet zoomed.
+                                            // Finger-down (dy>0) → wheel-up so content
+                                            // tracks the fingers (touchscreen convention).
                                             cumulativeScrollY += dy
                                             if (abs(cumulativeScrollY) > 40f) {
                                                 if (cumulativeScrollY < 0) onScrollDown() else onScrollUp()
                                                 cumulativeScrollY = 0f
                                             }
-                                        } else {
-                                            // Zoomed in (or desktop ≥3-finger): pan the
-                                            // magnified view, clamped so a corner of the
-                                            // scaled content can't be dragged inside the
-                                            // viewport leaving empty space (app windows).
+                                        } else if (zoom > 1f) {
+                                            // Viewport pan (zoomed). App windows clamp so a
+                                            // corner of the scaled content can't be dragged
+                                            // inside the viewport leaving empty space.
                                             panX += dx
                                             panY += dy
                                             if (twoFingerZoom && viewSize.width > 0 && viewSize.height > 0) {
@@ -882,21 +892,6 @@ private fun VncViewer(
                                                 panX = panX.coerceIn(-maxPanX, maxPanX)
                                                 panY = panY.coerceIn(-maxPanY, maxPanY)
                                             }
-                                        }
-                                      }
-                                    } else {
-                                        cumulativeScrollY += centroid.y - prevCentroid.y
-                                        if (abs(cumulativeScrollY) > 40f) {
-                                            // Direct manipulation (Android Y grows down):
-                                            // dragging fingers down (delta > 0) sends a
-                                            // wheel-up notch on the remote so the page
-                                            // moves down with the fingers, matching every
-                                            // other touchscreen app. The earlier mapping
-                                            // sent wheel-down for finger-down, which
-                                            // matched mouse-wheel convention but felt
-                                            // inverted on a touchscreen.
-                                            if (cumulativeScrollY < 0) onScrollDown() else onScrollUp()
-                                            cumulativeScrollY = 0f
                                         }
                                     }
                                 }
@@ -1002,6 +997,20 @@ private fun VncViewer(
                                 // tap (don't chain into a third touch).
                                 lastTapUpMs = 0L
                             }
+                        } else if (totalFingers == 2 && twoFingerMovement < touchSlopPx &&
+                            !longPressFired && heldButton == null) {
+                            // Two fingers down + up with no travel = middle click (#286).
+                            val (mx, my) = if (inputMode == "TOUCHPAD") {
+                                virtualCursor
+                            } else {
+                                screenToVnc(
+                                    prevCentroid, viewSize,
+                                    frame.width, frame.height,
+                                    zoom, panX, panY, coverFill,
+                                )
+                            }
+                            onMiddleClick(mx, my)
+                            lastTapUpMs = 0L
                         } else {
                             // Drag, multi-finger, or long-press fired: this
                             // gesture didn't end with a clean tap, so don't
@@ -1193,6 +1202,10 @@ private fun VncViewer(
 
                 // Direct/trackpad input-mode toggle — #183.
                 onSetInputMode?.let { InputModeToggle(inputMode, it) }
+                // Desktop only: two-finger drag = viewport pan vs remote scroll — #286.
+                if (!twoFingerZoom) {
+                    ScrollModeToggle(twoFingerScroll) { twoFingerScroll = !twoFingerScroll }
+                }
 
                 // App-window-only: background to an edge icon (keeps it alive).
                 onMinimize?.let { minimize ->
@@ -1344,6 +1357,10 @@ private fun VncViewer(
                     MouseButtonToggles(held = heldButton, onToggle = toggleHeldButton)
                     // Direct/trackpad input-mode toggle — #183.
                     onSetInputMode?.let { InputModeToggle(inputMode, it) }
+                    // Desktop only: two-finger drag = viewport pan vs remote scroll — #286.
+                    if (!twoFingerZoom) {
+                        ScrollModeToggle(twoFingerScroll) { twoFingerScroll = !twoFingerScroll }
+                    }
                     if (zoom != 1f || panX != 0f || panY != 0f) {
                         IconButton(onClick = {
                             zoom = 1f

@@ -42,9 +42,11 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.ScreenLockLandscape
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -124,6 +126,8 @@ fun RdpSessionContent(
     error: StateFlow<String?>,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onTap: (Int, Int) -> Unit,
+    /** Two-finger tap → middle-button click at the tapped point (X11 button 2). */
+    onMiddleClick: (Int, Int) -> Unit = { _, _ -> },
     onDragStart: (Int, Int) -> Unit,
     onDrag: (Int, Int) -> Unit,
     onDragEnd: () -> Unit,
@@ -154,13 +158,6 @@ fun RdpSessionContent(
      */
     onCycleOrientation: () -> Unit = {},
     onRetry: (() -> Unit)? = null,
-    /**
-     * Drop local pinch-zoom/pan to TWO fingers (SPICE #286), mirroring VNC's
-     * app-window gesture: two fingers pinch to zoom and drag to pan/scroll, so
-     * a phone user isn't forced into the awkward three-finger desktop gesture.
-     * Default false keeps the RDP desktop's 2-finger remote scroll.
-     */
-    twoFingerZoom: Boolean = false,
 ) {
     val connectedState by connected.collectAsState()
     val frameState by frame.collectAsState()
@@ -206,6 +203,7 @@ fun RdpSessionContent(
             fullscreen = fullscreen,
             toolbarLayout = toolbarLayout,
             onTap = onTap,
+            onMiddleClick = onMiddleClick,
             onDragStart = onDragStart,
             onDrag = onDrag,
             onDragEnd = onDragEnd,
@@ -222,7 +220,6 @@ fun RdpSessionContent(
             onSetInputMode = onSetInputMode,
             currentOrientation = currentOrientation,
             onCycleOrientation = onCycleOrientation,
-            twoFingerZoom = twoFingerZoom,
         )
     } else {
         DesktopPlaceholder(
@@ -464,6 +461,7 @@ private fun RdpViewer(
     fullscreen: Boolean,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onTap: (Int, Int) -> Unit,
+    onMiddleClick: (Int, Int) -> Unit = { _, _ -> },
     onDragStart: (Int, Int) -> Unit,
     onDrag: (Int, Int) -> Unit,
     onDragEnd: () -> Unit,
@@ -480,13 +478,7 @@ private fun RdpViewer(
     onSetInputMode: ((String) -> Unit)? = null,
     currentOrientation: Int = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
     onCycleOrientation: () -> Unit = {},
-    twoFingerZoom: Boolean = false,
 ) {
-    // At/above this finger count the gesture drives the local viewport
-    // (pinch-zoom + pan); below it, multi-finger drag emits remote scroll.
-    // SPICE passes twoFingerZoom=true to make pinch reachable with two
-    // fingers on a phone; RDP keeps 3 so its 2-finger remote scroll stays.
-    val zoomPanMinFingers = if (twoFingerZoom) 2 else 3
     // Map the activity-orientation constant to the local enum for
     // icon/description rendering. Source-of-truth for the value lives
     // outside this composable (RdpScreen for the standalone path,
@@ -507,6 +499,10 @@ private fun RdpViewer(
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     var panX by rememberSaveable { mutableFloatStateOf(0f) }
     var panY by rememberSaveable { mutableFloatStateOf(0f) }
+    // Two-finger drag target: false = pan the local viewport (when zoomed),
+    // true = forward as remote scroll-wheel. Pinch always zooms. Toolbar
+    // toggle (#286 — 3-finger gestures are unreliable on OnePlus/OxygenOS).
+    var twoFingerScroll by rememberSaveable { mutableStateOf(false) }
 
     // Touchpad-mode virtual cursor — composable scope so it survives lifts.
     var virtualCursor by remember(inputMode) { mutableStateOf(pointerPos) }
@@ -588,6 +584,9 @@ private fun RdpViewer(
                         var gestureStarted = false
                         var cumulativeScrollY = 0f
                         var totalMovement = 0f
+                        // Centroid travel while ≥2 fingers are down; a near-zero
+                        // total means a 2-finger tap → middle click (#286).
+                        var twoFingerMovement = 0f
                         var lastSinglePos = firstDown.position
                         var dragging = false
                         // Tap-then-drag follow-up window (touchpad mode only).
@@ -619,71 +618,38 @@ private fun RdpViewer(
                                 // different pointer set, so the apparent jump
                                 // would feed in as a real pan/zoom delta.
                                 if (gestureStarted && count == prevCount) {
-                                    // At/above zoomPanMinFingers = local viewport
-                                    // pan/zoom; below it = remote scroll-wheel only.
-                                    // See VncScreen for the full rationale.
-                                    if (totalFingers >= zoomPanMinFingers && twoFingerZoom && totalFingers == 2) {
-                                        // Two-finger (SPICE): distinguish a pinch
-                                        // (span changing) from a drag (fingers
-                                        // translating together) so 2-finger scroll
-                                        // still works when not zoomed. Mirrors VNC.
-                                        val dx = centroid.x - prevCentroid.x
-                                        val dy = centroid.y - prevCentroid.y
-                                        val spanDelta = if (prevSpan > 0f) abs(span - prevSpan) else 0f
-                                        val moveDelta = abs(dx) + abs(dy)
-                                        val pinching = spanDelta > 2f && spanDelta >= moveDelta
-                                        if (pinching && prevSpan > 0f && span > 0f) {
-                                            val newZoom = (zoom * (span / prevSpan)).coerceIn(0.5f, 5f)
-                                            val actualScale = if (zoom > 0f) newZoom / zoom else 1f
-                                            val cx = viewSize.width / 2f
-                                            val cy = viewSize.height / 2f
-                                            panX = (centroid.x - cx) * (1 - actualScale) + panX * actualScale
-                                            panY = (centroid.y - cy) * (1 - actualScale) + panY * actualScale
-                                            zoom = newZoom
-                                        } else if (zoom <= 1.01f) {
-                                            cumulativeScrollY += dy
-                                            if (abs(cumulativeScrollY) > 40f) {
-                                                if (cumulativeScrollY < 0) onScrollDown() else onScrollUp()
-                                                cumulativeScrollY = 0f
-                                            }
-                                        } else {
-                                            panX += dx
-                                            panY += dy
-                                        }
-                                    } else if (totalFingers >= 3) {
-                                        if (prevSpan > 0f && span > 0f) {
-                                            val requestedScale = span / prevSpan
-                                            val newZoom = (zoom * requestedScale).coerceIn(0.5f, 5f)
-                                            // graphicsLayer's default TransformOrigin
-                                            // is the view center, so the scale pivot
-                                            // is (cx, cy). Use the *actual* applied
-                                            // scale (clamp-aware) so we don't over-pan
-                                            // when the zoom hits a limit.
-                                            val actualScale = if (zoom > 0f) newZoom / zoom else 1f
-                                            val cx = viewSize.width / 2f
-                                            val cy = viewSize.height / 2f
-                                            panX = (centroid.x - cx) * (1 - actualScale) + panX * actualScale
-                                            panY = (centroid.y - cy) * (1 - actualScale) + panY * actualScale
-                                            zoom = newZoom
-                                        }
-                                        val dx = centroid.x - prevCentroid.x
-                                        val dy = centroid.y - prevCentroid.y
-                                        panX += dx
-                                        panY += dy
-                                    } else {
-                                        cumulativeScrollY += centroid.y - prevCentroid.y
+                                    val dx = centroid.x - prevCentroid.x
+                                    val dy = centroid.y - prevCentroid.y
+                                    twoFingerMovement += abs(dx) + abs(dy)
+                                    // Distinguish a pinch (span changing) from a
+                                    // drag (fingers translating together).
+                                    val spanDelta = if (prevSpan > 0f) abs(span - prevSpan) else 0f
+                                    val pinching = spanDelta > 2f && spanDelta >= abs(dx) + abs(dy)
+                                    if (pinching && prevSpan > 0f && span > 0f) {
+                                        // Pinch → zoom local viewport (both modes).
+                                        // graphicsLayer's TransformOrigin is the view
+                                        // centre, so pivot at (cx, cy); use the actual
+                                        // (clamp-aware) scale so we don't over-pan at a limit.
+                                        val newZoom = (zoom * (span / prevSpan)).coerceIn(0.5f, 5f)
+                                        val actualScale = if (zoom > 0f) newZoom / zoom else 1f
+                                        val cx = viewSize.width / 2f
+                                        val cy = viewSize.height / 2f
+                                        panX = (centroid.x - cx) * (1 - actualScale) + panX * actualScale
+                                        panY = (centroid.y - cy) * (1 - actualScale) + panY * actualScale
+                                        zoom = newZoom
+                                    } else if (twoFingerScroll) {
+                                        // Windows-scroll mode: drag = remote wheel.
+                                        // Finger-down (dy>0) → wheel-up so the page
+                                        // tracks the fingers (touchscreen convention).
+                                        cumulativeScrollY += dy
                                         if (abs(cumulativeScrollY) > 40f) {
-                                            // Direct manipulation (Android Y grows down):
-                                            // dragging fingers down (delta > 0) sends a
-                                            // wheel-up notch on the remote so the page
-                                            // moves down with the fingers, matching every
-                                            // other touchscreen app. The earlier mapping
-                                            // sent wheel-down for finger-down, which
-                                            // matched mouse-wheel convention but felt
-                                            // inverted on a touchscreen.
                                             if (cumulativeScrollY < 0) onScrollDown() else onScrollUp()
                                             cumulativeScrollY = 0f
                                         }
+                                    } else if (zoom > 1f) {
+                                        // Viewport mode: drag = pan (only when zoomed in).
+                                        panX += dx
+                                        panY += dy
                                     }
                                 }
 
@@ -759,6 +725,19 @@ private fun RdpViewer(
                             } else {
                                 lastTapUpMs = 0L
                             }
+                        } else if (totalFingers == 2 && twoFingerMovement < touchSlopPx) {
+                            // Two fingers down + up with no travel = middle click (#286).
+                            val (mx, my) = if (inputMode == "TOUCHPAD") {
+                                virtualCursor
+                            } else {
+                                screenToRemote(
+                                    prevCentroid, viewSize,
+                                    frame.width, frame.height,
+                                    zoom, panX, panY,
+                                )
+                            }
+                            onMiddleClick(mx, my)
+                            lastTapUpMs = 0L
                         } else {
                             lastTapUpMs = 0L
                         }
@@ -929,6 +908,8 @@ private fun RdpViewer(
 
                 // Direct/trackpad input-mode toggle — #183/#212.
                 onSetInputMode?.let { InputModeToggle(inputMode, it) }
+                // Two-finger drag: viewport pan vs remote scroll — #286.
+                ScrollModeToggle(twoFingerScroll) { twoFingerScroll = !twoFingerScroll }
 
                 Spacer(Modifier.weight(1f))
 
@@ -1029,6 +1010,8 @@ private fun RdpViewer(
                     }
                     // Direct/trackpad input-mode toggle — #183/#212.
                     onSetInputMode?.let { InputModeToggle(inputMode, it) }
+                    // Two-finger drag: viewport pan vs remote scroll — #286.
+                    ScrollModeToggle(twoFingerScroll) { twoFingerScroll = !twoFingerScroll }
                     if (zoom != 1f || panX != 0f || panY != 0f) {
                         IconButton(onClick = {
                             zoom = 1f
@@ -1072,6 +1055,22 @@ private fun InputModeToggle(inputMode: String, onSetInputMode: (String) -> Unit)
             Icons.Default.TouchApp,
             contentDescription = if (touchpad) stringResource(R.string.rdp_cd_input_mode_trackpad_on)
                                  else stringResource(R.string.rdp_cd_input_mode_direct),
+        )
+    }
+}
+
+/** Two-finger drag target: viewport pan (off) vs remote scroll-wheel (on). */
+@Composable
+private fun ScrollModeToggle(twoFingerScroll: Boolean, onToggle: () -> Unit) {
+    FilledIconToggleButton(
+        checked = twoFingerScroll,
+        onCheckedChange = { onToggle() },
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            if (twoFingerScroll) Icons.Default.SwapVert else Icons.Default.OpenWith,
+            contentDescription = if (twoFingerScroll) stringResource(R.string.rdp_cd_two_finger_scroll_on)
+                                 else stringResource(R.string.rdp_cd_two_finger_viewport),
         )
     }
 }

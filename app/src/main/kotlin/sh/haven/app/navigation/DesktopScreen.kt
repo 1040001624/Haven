@@ -221,6 +221,7 @@ fun DesktopScreen(
                             error = tab.error,
                             toolbarLayout = toolbarLayout,
                             onTap = { x, y -> desktopViewModel.sendClick(x, y) },
+                            onMiddleClick = { x, y -> desktopViewModel.sendClick(x, y, button = 2) },
                             onLongPress = { x, y -> desktopViewModel.sendClick(x, y, button = 3) },
                             onDragStart = { x, y ->
                                 desktopViewModel.sendPointer(x, y)
@@ -257,6 +258,7 @@ fun DesktopScreen(
                             error = tab.error,
                             toolbarLayout = toolbarLayout,
                             onTap = { x, y -> desktopViewModel.sendClick(x, y) },
+                            onMiddleClick = { x, y -> desktopViewModel.sendClick(x, y, button = 2) },
                             onDragStart = { x, y ->
                                 desktopViewModel.sendPointer(x, y)
                                 desktopViewModel.pressButton(1)
@@ -319,9 +321,10 @@ fun DesktopScreen(
                             currentOrientation = desktopOrientation,
                             onCycleOrientation = { desktopViewModel.cycleDesktopOrientation() },
                             onRetry = { desktopViewModel.retryTab(tab.id) },
-                            // Two-finger pinch-zoom/pan on the phone (#286), matching
-                            // VNC's app-window gesture. RDP keeps its 3-finger default.
-                            twoFingerZoom = true,
+                            // 2-finger pinch = viewport zoom, drag = pan/scroll
+                            // (toolbar toggle), tap = middle click (uniform with
+                            // RDP/VNC, #286).
+                            onMiddleClick = { x, y -> desktopViewModel.sendClick(x, y, button = 2) },
                         )
 
                         is DesktopTab.Wayland -> WaylandDesktopView(
