@@ -3462,6 +3462,7 @@ internal class McpTools(
             put("rclone")
             put("vnc")
             put("rdp")
+            put("spice")
             put("reticulum")
             put("mosh")
             put("eternal_terminal")
