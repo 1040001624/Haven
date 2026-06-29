@@ -11,6 +11,7 @@ page below; the [landing page](index.md) has a short summary.
 
 - **[Terminal](features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux-aware session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
 - **[Desktops](features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
+- **[GPU acceleration](gpu-acceleration.md)** — how guest Linux GL/Vulkan apps reach the phone's real Mali GPU from a proot cage (no `/dev/dri`): the host-brokered virgl/venus renderer and the R1→R8 deep-dive behind it.
 - **[Files & cloud storage](features/files-and-cloud.md)** — unified browser for SFTP/SCP, SMB, and 60+ cloud providers; cross-filesystem copy/move, editor and image tools, folder sync; plus on-device FFmpeg transcode, HLS streaming, and a DLNA server.
 - **[Connections & networking](features/connections.md)** — host-key TOFU, port forwarding (-L/-R/-D/-J), SOCKS/HTTP/Tor proxies, per-app WireGuard & Tailscale tunnels, port knocking and fwknop SPA, and on-device SSH key management (incl. FIDO2/SK).
 - **[Email & Mail Rules](features/email.md)** — read ProtonMail (bridge protocol) and any IMAP/SMTP mailbox; compose/reply/forward, multi-account, attachments; plus inbound automation with an approval queue.
