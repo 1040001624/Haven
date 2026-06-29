@@ -69,6 +69,27 @@
 
 See [docs/FEATURES.md](docs/FEATURES.md) for the full feature index.
 
+## Why one app
+
+The list above is the parts; the point is how they compose. Each of these is one
+flow inside Haven — no second app, no `curl | ssh` incantation:
+
+- Tap a 4K MKV in Google Drive → FFmpeg transcodes it over HTTP and the result
+  lands back in the same Drive folder, never touching local disk.
+- SSH to a box, forward its port, tap the VNC profile that targets `localhost` —
+  the desktop opens in the same app, keyboard and clipboard shared.
+- Cut a log directory from an S3 bucket, switch tabs, paste it onto an SFTP
+  server — rclone does the server-side copy when it can, otherwise Haven streams
+  it through.
+- Run your agent CLI in the on-device Linux shell; it pushes over the SSH agent
+  you forwarded from your laptop while you watch on the same screen.
+- Cast a cloud video to the TV across the room over HLS, copy the LAN URL from
+  the snackbar, send it to a friend so they can watch too.
+
+The phone is the thin client, Haven is the thin-client OS, and the cloud, your
+servers, and your agents are the computer. Width is sufficient; composition is
+the point. ([Vision](VISION.md).)
+
 ## Languages
 
 Available in 12 languages: English, Chinese (simplified), Spanish, Hindi, Arabic (with RTL support), Portuguese, Bengali, Russian, Japanese, Korean, French, and German. The UI follows the device language.
