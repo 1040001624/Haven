@@ -22,3 +22,6 @@
 [submodule "rnsh-kt"]
 	path = rnsh-kt
 	url = https://github.com/GlassOnTin/rnsh-kt.git
+[submodule "spice-kotlin"]
+	path = spice-kotlin
+	url = https://github.com/GlassOnTin/spice-kotlin.git
