@@ -1018,6 +1018,25 @@ private fun DesktopManagerSection(
                 Spacer(Modifier.height(8.dp))
             }
 
+        }
+    }
+
+    // Compositor — the local desktop environments (X11 Xfce4/Openbox, nested
+    // Wayland/Sway, the native compositor) that run inside the active distro.
+    // Its own card, separate from the distribution hub above, so each stays
+    // compact (like the Application windows card).
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                stringResource(AppR.string.app_desktop_compositor_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+
             // In-progress desktop-install indicator. The DesktopSetupDialog
             // normally shows this, but its "which DE" state is screen-local
             // `remember` and is lost when the user navigates away (e.g. to
