@@ -113,6 +113,7 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     val shareStorageWithGuest by viewModel.shareStorageWithGuest.collectAsState()
     val customBindsRev by viewModel.customBindsRev.collectAsState()
     val usbDriveStatus by viewModel.usbDriveStatus.collectAsState()
+    val applianceProvisioned by viewModel.applianceProvisioned.collectAsState()
 
     var setupDesktopDe by remember {
         mutableStateOf<ProotManager.DesktopEnvironment?>(null)
@@ -157,6 +158,8 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
             usbDriveStage = if (usbDriveStatus.phase == sh.haven.app.usb.UsbDriveVmManager.Phase.OPENING) usbDriveStatus.stage else "",
             onOpenUsbDrive = { viewModel.openUsbDrive() },
             onCloseUsbDrive = { viewModel.closeUsbDrive() },
+            applianceProvisioned = applianceProvisioned,
+            onDeleteUsbAppliance = { viewModel.deleteUsbAppliance() },
             storedVncPortFor = { viewModel.storedVncPortFor(it) },
             onSwitchDistro = { viewModel.switchActiveDistro(it) },
             onOpenShellForDistro = { viewModel.openShellForDistro(it) },
@@ -700,6 +703,8 @@ private fun DesktopManagerSection(
     usbDriveStage: String,
     onOpenUsbDrive: () -> Unit,
     onCloseUsbDrive: () -> Unit,
+    applianceProvisioned: Boolean,
+    onDeleteUsbAppliance: () -> Unit,
     storedVncPortFor: (ProotManager.DesktopEnvironment) -> Int?,
     onSwitchDistro: (String) -> Unit,
     onOpenShellForDistro: (String) -> Unit,
@@ -866,6 +871,18 @@ private fun DesktopManagerSection(
                                 if (usbDriveActive) onCloseUsbDrive() else onOpenUsbDrive()
                             },
                         )
+                        // The helper Linux is provisioned once + kept; offer to
+                        // delete it (reclaims ~280 MB, re-provisions next open).
+                        if (applianceProvisioned && !usbDriveActive) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(AppR.string.app_desktop_delete_usb_appliance)) },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                onClick = {
+                                    distroMenuOpen = false
+                                    onDeleteUsbAppliance()
+                                },
+                            )
+                        }
                     }
                 }
                 // #287: live progress while the USB-drive VM boots (it's slow,

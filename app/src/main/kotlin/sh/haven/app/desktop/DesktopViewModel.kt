@@ -772,16 +772,22 @@ class DesktopViewModel @Inject constructor(
     // --- "Open USB drive" in a VM (#287) ---
     val usbDriveStatus: StateFlow<sh.haven.app.usb.UsbDriveVmManager.Status> = usbDriveVmManager.status
 
+    // Whether the persistent USB-helper appliance is provisioned (drives the
+    // "Delete USB helper Linux" menu item; the appliance is kept across opens).
+    private val _applianceProvisioned = MutableStateFlow(usbDriveVmManager.applianceProvisioned)
+    val applianceProvisioned: StateFlow<Boolean> = _applianceProvisioned.asStateFlow()
+
     init {
         // Announce the slow VM boot's outcome on the snackbar (the drive then
-        // shows up as a "USB Drive" connection in Files).
+        // auto-opens in Files at its mount).
         viewModelScope.launch {
             var last = usbDriveVmManager.status.value.phase
             usbDriveVmManager.status.collect { s ->
+                _applianceProvisioned.value = usbDriveVmManager.applianceProvisioned
                 if (s.phase != last) {
                     when (s.phase) {
                         sh.haven.app.usb.UsbDriveVmManager.Phase.READY ->
-                            _userMessages.emit("USB drive mounted — open \"USB Drive\" in Files (or Connections).")
+                            _userMessages.emit("USB drive mounted — opening it in Files.")
                         sh.haven.app.usb.UsbDriveVmManager.Phase.ERROR ->
                             _userMessages.emit("Couldn't open USB drive: ${s.error ?: "VM failed to start"}")
                         else -> {}
@@ -789,6 +795,15 @@ class DesktopViewModel @Inject constructor(
                     last = s.phase
                 }
             }
+        }
+    }
+
+    /** Delete the persistent USB-helper appliance; the next open re-provisions it. */
+    fun deleteUsbAppliance() {
+        viewModelScope.launch {
+            usbDriveVmManager.deleteAppliance()
+            _applianceProvisioned.value = usbDriveVmManager.applianceProvisioned
+            _userMessages.emit("USB helper Linux deleted — the next USB-drive open will rebuild it once.")
         }
     }
 

@@ -1966,6 +1966,15 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> closeUsbDrive() },
 
+        "delete_usb_appliance" to ToolHandler(
+            description = "Delete the persistent USB-helper Linux appliance — the small installed Alpine VM (with usbip+ssh baked in) that open_usb_drive boots to mount drives. It's provisioned once and kept so repeat opens are fast; deleting it frees the disk (~280 MB) and forces a one-time re-provision (re-download + install) on the next open_usb_drive. Closes any live USB-drive VM first. Idempotent.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+        ) { _ -> deleteUsbAppliance() },
+
         "list_bridges" to ToolHandler(
             description = "Unified view of every phone capability Haven is currently **brokering** to a sink — the 'Bridges' registry (see docs/design/bridges.md). A bridge is one Android-held capability (a USB device, audio, etc.) re-exposed to a consumer that can't reach it directly: the AI agent, the local Linux guest, a local VM, a remote host, or the workstation. Generalises list_usb_exports across all bridge types. Each entry: source, sourceKind, sink, transport, state, plus type-specific detail (busid/port/profileId/mounts). Read-only.",
             inputSchema = JSONObject().apply {
@@ -7743,12 +7752,25 @@ internal class McpTools(
                 put("mounts", JSONArray().apply { st.mounts.forEach { put(it) } })
                 put("error", st.error ?: JSONObject.NULL)
             })
+            // Whether the persistent helper appliance is provisioned (first open
+            // provisions it once; subsequent opens are fast). delete_usb_appliance
+            // clears it.
+            put("applianceProvisioned", usbDriveVmManager.applianceProvisioned)
         }
     }
 
     private suspend fun closeUsbDrive(): JSONObject = withContext(Dispatchers.IO) {
         usbDriveVmManager.close()
         JSONObject().apply { put("closed", true) }
+    }
+
+    private suspend fun deleteUsbAppliance(): JSONObject = withContext(Dispatchers.IO) {
+        val was = usbDriveVmManager.applianceProvisioned
+        usbDriveVmManager.deleteAppliance()
+        JSONObject().apply {
+            put("deleted", was)
+            put("note", "USB-helper appliance removed; the next open_usb_drive re-provisions it (one-time).")
+        }
     }
 
     /**

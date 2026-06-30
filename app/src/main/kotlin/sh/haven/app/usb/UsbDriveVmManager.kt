@@ -191,6 +191,19 @@ class UsbDriveVmManager @Inject constructor(
         _status.value = Status(Phase.IDLE)
     }
 
+    /** True once the persistent USB-helper appliance has been provisioned. */
+    val applianceProvisioned: Boolean get() = qemuManager.isApplianceProvisioned
+
+    /**
+     * Delete the persistent USB-helper appliance (the installed Alpine that
+     * mounts drives). The next [open] re-provisions it (one-time, slow again).
+     * Closes any live VM first.
+     */
+    suspend fun deleteAppliance() {
+        runCatching { close() }
+        qemuManager.deleteAppliance()
+    }
+
     private fun resolveDrive(deviceName: String?): String {
         if (!deviceName.isNullOrBlank()) return deviceName
         val drives = massStorageDevices()

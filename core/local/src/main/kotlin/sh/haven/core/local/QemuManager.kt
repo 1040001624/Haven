@@ -86,33 +86,17 @@ class QemuManager @Inject constructor(
         _session.value = DriveSession(busid, 0, emptyList(), State.STARTING)
         try {
             ensureQemu(onStage)
-            val iso = ensureAppliance(onStage)
+            val disk = ensureProvisionedAppliance(onStage)
             val port = freeLoopbackPort()
-            synchronized(serialLock) { serial.setLength(0) }
 
             onStage("Starting the virtual machine…")
-            val proc = prootManager.startCommandInProot(qemuCommand(iso, port))
-            vmProcess = proc
-            serialReader = thread(name = "haven-qemu-serial", isDaemon = true) {
-                runCatching {
-                    proc.inputStream.bufferedReader().use { r ->
-                        val chunk = CharArray(1024)
-                        while (true) {
-                            val n = r.read(chunk); if (n < 0) break
-                            synchronized(serialLock) {
-                                serial.append(chunk, 0, n)
-                                if (serial.length > SERIAL_CAP) serial.delete(0, serial.length - SERIAL_CAP)
-                            }
-                        }
-                    }
-                }
-            }
+            startVm(qemuRuntimeCommand(disk, port))
 
-            // 1) login — nudge getty until the prompt shows, then send root. This
-            // is the slow part: the emulated CPU (no KVM) boots a real kernel, and
-            // it varies with phone load — report live elapsed + a milestone so a
-            // slow boot reads as progressing, not stuck.
-            onStage("Booting Linux — the slow step (a few minutes)…")
+            // 1) login — nudge getty until the prompt shows, then send root. The
+            // appliance disk boots the already-installed system (no apk, no
+            // re-download), so this is just a kernel boot — still TCG-slow and
+            // load-dependent, so report live elapsed + a milestone.
+            onStage("Booting the USB helper…")
             val bootOk = awaitSerial("login:", BOOT_TIMEOUT_MS, nudge = true) { sec ->
                 val hint = synchronized(serialLock) {
                     when {
@@ -128,7 +112,7 @@ class QemuManager @Inject constructor(
             Thread.sleep(1500)
             // 2) one-shot setup; wait for the done marker.
             onStage("Setting up the VM and mounting your drive…")
-            send(setupScript(busid, authorizedPubKey) + "\n")
+            send(runtimeSetupScript(busid, authorizedPubKey) + "\n")
             val setupOk = awaitSerial("HAVEN_SETUP_DONE", SETUP_TIMEOUT_MS) { sec ->
                 onStage("Setting up the VM (installing drivers, mounting; ${sec}s)…")
             }
@@ -176,21 +160,54 @@ class QemuManager @Inject constructor(
         serialReader?.interrupt(); serialReader = null
     }
 
-    private fun qemuCommand(isoGuestPath: String, port: Int): String =
+    // Provisioning boot: ISO + the blank appliance disk (virtio = /dev/vda).
+    // No hostfwd — provisioning is serial-only (install Alpine to /dev/vda).
+    private fun qemuProvisionCommand(isoGuestPath: String, diskGuestPath: String): String =
+        "exec qemu-system-x86_64 -M pc -m $VM_MEM_MB -display none -monitor none " +
+            "-serial stdio -no-reboot -boot d -cdrom $isoGuestPath " +
+            "-drive file=$diskGuestPath,if=virtio,format=raw " +
+            "-netdev user,id=n0 -device virtio-net-pci,netdev=n0"
+
+    // Runtime boot: the provisioned appliance disk ONLY (no ISO, no re-install).
+    // -boot c boots the installed system from /dev/vda; hostfwd exposes its sshd.
+    private fun qemuRuntimeCommand(diskGuestPath: String, port: Int): String =
         // exec → the launcher process *is* qemu (clean to signal). Serial on
         // stdio = our Process streams; headless; -no-reboot so poweroff exits.
         "exec qemu-system-x86_64 -M pc -m $VM_MEM_MB -display none -monitor none " +
-            "-serial stdio -no-reboot -boot d -cdrom $isoGuestPath " +
+            "-serial stdio -no-reboot -boot c " +
+            "-drive file=$diskGuestPath,if=virtio,format=raw " +
             "-netdev user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22 -device virtio-net-pci,netdev=n0"
 
-    /** The single setup line typed at the VM's root shell. */
-    private fun setupScript(busid: String, pubKey: String): String {
-        val repos = "https://dl-cdn.alpinelinux.org/alpine/v3.21/main\\n" +
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/community\\n"
+    /** Start a VM Process for [command] and begin draining its serial. */
+    private fun startVm(command: String) {
+        synchronized(serialLock) { serial.setLength(0) }
+        val proc = prootManager.startCommandInProot(command)
+        vmProcess = proc
+        serialReader = thread(name = "haven-qemu-serial", isDaemon = true) {
+            runCatching {
+                proc.inputStream.bufferedReader().use { r ->
+                    val chunk = CharArray(1024)
+                    while (true) {
+                        val n = r.read(chunk); if (n < 0) break
+                        synchronized(serialLock) {
+                            serial.append(chunk, 0, n)
+                            if (serial.length > SERIAL_CAP) serial.delete(0, serial.length - SERIAL_CAP)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The single setup line typed at the appliance's root shell each open. The
+     * appliance already has linux-tools-usbip + openssh installed (provisioned
+     * once), so this only does the per-open work: network up, authorise the
+     * caller's ephemeral key, start sshd, attach the drive over USB/IP, mount RO.
+     */
+    private fun runtimeSetupScript(busid: String, pubKey: String): String {
         // pubKey is a single "ssh-ed25519 AAAA... comment" line (no single quotes).
         return "ip link set eth0 up; udhcpc -i eth0 -q -n; " +
-            "printf '$repos' > /etc/apk/repositories; " +
-            "apk update >/dev/null 2>&1; apk add linux-tools-usbip openssh >/dev/null 2>&1; " +
             "mkdir -p /root/.ssh; echo '$pubKey' > /root/.ssh/authorized_keys; " +
             "chmod 700 /root/.ssh; chmod 600 /root/.ssh/authorized_keys; " +
             "ssh-keygen -A >/dev/null 2>&1; " +
@@ -328,6 +345,94 @@ class QemuManager @Inject constructor(
         return "/tmp/haven-vm/$APPLIANCE_NAME"
     }
 
+    /** True once the persistent appliance disk has been provisioned. */
+    val isApplianceProvisioned: Boolean
+        get() = File(File(context.cacheDir, "haven-vm"), "$APPLIANCE_DISK.ok").exists()
+
+    /**
+     * Provision the persistent appliance disk once — install Alpine +
+     * linux-tools-usbip + openssh to it (via `setup-disk -m sys`) — or return
+     * it immediately if already provisioned. After this, every [openDrive] boots
+     * the disk directly (no ISO, no apk, no network), so repeat opens are just a
+     * kernel boot. The user keeps the appliance until they [deleteAppliance].
+     *
+     * The whole sequence (install + serial-console + passwordless-root config)
+     * was validated locally under KVM; see scratch/qemu-appliance.
+     */
+    private suspend fun ensureProvisionedAppliance(onStage: (String) -> Unit): String {
+        val dir = File(context.cacheDir, "haven-vm").apply { mkdirs() }
+        val disk = File(dir, APPLIANCE_DISK)
+        val marker = File(dir, "$APPLIANCE_DISK.ok")
+        val guestDisk = "/tmp/haven-vm/$APPLIANCE_DISK"
+        if (disk.exists() && marker.exists()) return guestDisk
+
+        // (Re-)provision from scratch. Needs the ISO; drop it again afterwards.
+        disk.delete(); marker.delete()
+        val iso = ensureAppliance(onStage)
+        onStage("Building the USB helper Linux (one-time)…")
+        Log.i(TAG, "provisioning appliance disk …")
+        // Raw sparse image (truncate is universal — no qemu-img dependency).
+        prootManager.runCommandInProot("rm -f $guestDisk && truncate -s $APPLIANCE_DISK_SIZE $guestDisk")
+        startVm(qemuProvisionCommand(iso, guestDisk))
+        try {
+            val bootOk = awaitSerial("login:", BOOT_TIMEOUT_MS, nudge = true) { sec ->
+                onStage("Building the USB helper Linux — booting (${sec}s)…")
+            }
+            if (!bootOk) fail("appliance provisioning: VM didn't reach a login prompt in ${BOOT_TIMEOUT_MS / 1000}s")
+            send("root\n"); Thread.sleep(1500)
+            onStage("Building the USB helper Linux — installing (one-time)…")
+            send(provisionScript + "\n")
+            val ok = awaitSerial("HAVEN_PROVISION_DONE", PROVISION_TIMEOUT_MS) { sec ->
+                onStage("Building the USB helper Linux — installing (${sec}s)…")
+            }
+            if (!ok) fail("appliance provisioning didn't finish in ${PROVISION_TIMEOUT_MS / 1000}s")
+        } finally {
+            runCatching { send("\npoweroff\n") }
+            runCatching { vmProcess?.waitFor(6, TimeUnit.SECONDS) }
+            stopVm()
+        }
+        // setup-disk grows the sparse image well past 20 MB; a tiny file means
+        // the install never happened (marker can't gate that — the host file is
+        // what we boot next).
+        if (!disk.exists() || disk.length() < 20_000_000L) fail("appliance disk wasn't provisioned")
+        marker.writeText("ok\n")
+        // The appliance is self-contained now; reclaim the ~270 MB ISO. Deleting
+        // the appliance re-downloads + re-provisions.
+        runCatching { File(dir, APPLIANCE_NAME).delete(); File(dir, "$APPLIANCE_NAME.ok").delete() }
+        Log.i(TAG, "appliance provisioned (${disk.length() / 1024 / 1024} MB)")
+        return guestDisk
+    }
+
+    /** Delete the persistent appliance; the next [openDrive] re-provisions it. */
+    fun deleteAppliance() {
+        closeDrive()
+        val dir = File(context.cacheDir, "haven-vm")
+        val removed = File(dir, APPLIANCE_DISK).delete()
+        File(dir, "$APPLIANCE_DISK.ok").delete()
+        Log.i(TAG, "deleteAppliance: removed=$removed")
+    }
+
+    // The one-time install line typed at the ISO's root shell with a blank
+    // /dev/vda attached. Validated locally under KVM (scratch/qemu-appliance):
+    // installs the live system to disk (sys mode), keeps console=ttyS0 +
+    // passwordless serial root, and gates the done-marker on success so a failed
+    // setup-disk can't be read as provisioned.
+    private val provisionScript: String =
+        "ip link set eth0 up; udhcpc -i eth0 -q -n 2>/dev/null; " +
+            "printf 'https://dl-cdn.alpinelinux.org/alpine/v3.21/main\\n" +
+            "https://dl-cdn.alpinelinux.org/alpine/v3.21/community\\n' > /etc/apk/repositories; " +
+            "apk update -q && apk add -q linux-tools-usbip openssh e2fsprogs syslinux && " +
+            "export ERASE_DISKS=/dev/vda BOOTLOADER=syslinux && " +
+            "setup-disk -m sys -s 0 /dev/vda && " +
+            "R=\$(blkid | grep /dev/vda | grep -i ext4 | head -1 | cut -d: -f1) && [ -n \"\$R\" ] && " +
+            "mount \$R /mnt && chroot /mnt rc-update add sshd default 2>/dev/null; " +
+            "if [ -d /mnt/etc ]; then chroot /mnt rc-update add networking default 2>/dev/null; " +
+            "grep -q ttyS0 /mnt/etc/inittab || echo 'ttyS0::respawn:/sbin/getty -L 0 ttyS0 vt100' >> /mnt/etc/inittab; " +
+            "for f in /mnt/boot/extlinux.conf /mnt/extlinux.conf; do [ -f \"\$f\" ] && " +
+            "{ grep -q console=ttyS0 \"\$f\" || sed -i 's|\\(APPEND .*\\)|\\1 console=ttyS0,115200|' \"\$f\"; }; done; " +
+            "printf 'auto eth0\\niface eth0 inet dhcp\\n' > /mnt/etc/network/interfaces; " +
+            "mkdir -p /mnt/root/.ssh; chmod 700 /mnt/root/.ssh; sync; umount /mnt && echo HAVEN_PROVISION_DONE; fi"
+
     private fun freeLoopbackPort(): Int = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
 
     private fun fail(msg: String): Nothing = throw IllegalStateException(msg)
@@ -366,6 +471,11 @@ class QemuManager @Inject constructor(
         // 4 min was marginal and timed out under load before reaching login.
         private const val BOOT_TIMEOUT_MS = 420_000L
         private const val SETUP_TIMEOUT_MS = 360_000L
+        // One-time: apk download + setup-disk install over TCG can take a while.
+        private const val PROVISION_TIMEOUT_MS = 720_000L
+        // Persistent installed appliance (raw sparse image; usbip+ssh baked in).
+        private const val APPLIANCE_DISK = "usb_vm_appliance.img"
+        private const val APPLIANCE_DISK_SIZE = "2G"
         private const val SSH_TIMEOUT_MS = 30_000L
         private const val PROGRESS_TICK_MS = 15_000L
         private const val APPLIANCE_NAME = "alpine-standard-3.21.7-x86_64.iso"
