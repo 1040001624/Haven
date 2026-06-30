@@ -1966,6 +1966,15 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> closeUsbDrive() },
 
+        "list_bridges" to ToolHandler(
+            description = "Unified view of every phone capability Haven is currently **brokering** to a sink — the 'Bridges' registry (see docs/design/bridges.md). A bridge is one Android-held capability (a USB device, audio, etc.) re-exposed to a consumer that can't reach it directly: the AI agent, the local Linux guest, a local VM, a remote host, or the workstation. Generalises list_usb_exports across all bridge types. Each entry: source, sourceKind, sink, transport, state, plus type-specific detail (busid/port/profileId/mounts). Read-only.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { _ -> listBridges() },
+
         "open_local_shell" to ToolHandler(
             description = "Open a fresh local Alpine PRoot shell session and return its sessionId. Equivalent to tapping the Terminal icon in the Connections top bar — creates the local shell profile if missing, registers a session, and connects it. The returned sessionId is immediately usable with send_terminal_input and read_terminal_scrollback. Use this when you need a clean bash REPL (e.g. when an existing session has Claude Code, vim, or another stdin-capturing process in front of it). Pass `plain: true` to bypass the user's session-manager preference (tmux / zellij / screen / byobu) and exec a bare login shell — required when the agent needs Haven's own scrollback ring to capture output, which doesn't happen when a multiplexer's status bar uses DECSTBM to reserve the bottom row. NOTE: if a live local shell already exists, this returns that sessionId regardless of `plain` (response `reused: true`); call disconnect_profile on the existing profile first if you need a fresh plain-shell respawn.",
             inputSchema = JSONObject().apply {
@@ -7740,6 +7749,83 @@ internal class McpTools(
     private suspend fun closeUsbDrive(): JSONObject = withContext(Dispatchers.IO) {
         usbDriveVmManager.close()
         JSONObject().apply { put("closed", true) }
+    }
+
+    /**
+     * The Bridges registry (Phase 0, read-only reflection): aggregate every
+     * capability Haven is currently brokering to a sink. Inline for now — no
+     * BridgeRegistry abstraction until ≥1 caller needs it beyond this + the UI
+     * (docs/design/bridges.md). Generalises listUsbExports.
+     */
+    private suspend fun listBridges(): JSONObject = withContext(Dispatchers.IO) {
+        val devices = usbBroker.listDevices()
+        fun usbSource(name: String?): String {
+            if (name == null) return "USB device"
+            return devices.firstOrNull { it.deviceName == name }?.productName?.let { "USB: $it" } ?: "USB $name"
+        }
+        fun busidOf(name: String): String {
+            val p = name.trimEnd('/').split('/')
+            return "${p.getOrNull(p.size - 2)?.toIntOrNull() ?: 1}-${p.lastOrNull()?.toIntOrNull() ?: 1}"
+        }
+        val bridges = JSONArray()
+        fun add(source: String, kind: String, sink: String, transport: String, state: String, detail: JSONObject.() -> Unit = {}) {
+            bridges.put(JSONObject().apply {
+                put("source", source); put("sourceKind", kind); put("sink", sink)
+                put("transport", transport); put("state", state); detail()
+            })
+        }
+
+        // USB device → remote host (USB/IP)
+        if (usbIpServer.isRunning) {
+            val n = usbIpServer.exportedDeviceName
+            add(usbSource(n), "usb", "remote-host", "usbip", "active") {
+                if (n != null) put("busid", busidOf(n))
+                put("port", usbIpServer.boundPort ?: JSONObject.NULL)
+                put("clients", usbIpServer.clientCount)
+            }
+        }
+        // USB device → Linux guest (haven-usb shim)
+        if (usbProxyServer.isRunning) {
+            val n = usbProxyServer.proxyDeviceName
+            add(usbSource(n), "usb", "linux-guest", "haven-usb-shim", "active") {
+                put("socket", usbProxyServer.socketName)
+            }
+        }
+        // USB drive → local VM (#287)
+        val vm = usbDriveVmManager.status.value
+        if (vm.phase != sh.haven.app.usb.UsbDriveVmManager.Phase.IDLE) {
+            add(usbSource(vm.deviceName), "usb", "local-vm", "qemu+usbip", vm.phase.name.lowercase()) {
+                if (vm.busid != null) put("busid", vm.busid)
+                put("profileId", vm.profileId ?: JSONObject.NULL)
+                put("mounts", JSONArray().apply { vm.mounts.forEach { put(it) } })
+                if (vm.stage.isNotBlank()) put("stage", vm.stage)
+            }
+        }
+        // Audio out → Linux guest (PulseAudio over loopback)
+        val audio = localSessionManager.audioBridge.statusNow()
+        if (audio.state == sh.haven.core.local.AudioBridge.State.RUNNING ||
+            audio.state == sh.haven.core.local.AudioBridge.State.STARTING
+        ) {
+            add("Audio out", "audio", "linux-guest", "pulseaudio-tcp", audio.state.name.lowercase()) {
+                put("port", audio.port)
+            }
+        }
+        // adb → workstation (reverse tunnel)
+        val adbPort = preferencesRepository.mcpAdbExposedPort.first()
+        if (adbPort != null) {
+            add("adb", "adb", "workstation", "reverse-tunnel", "active") { put("port", adbPort) }
+        }
+
+        JSONObject().apply {
+            put("bridges", bridges)
+            put("count", bridges.length())
+            put(
+                "note",
+                "Every phone capability Haven is currently brokering to a sink (agent / linux-guest / " +
+                    "local-vm / remote-host / workstation). Read-only; generalises list_usb_exports. " +
+                    "Bridges/Devices manager — docs/design/bridges.md.",
+            )
+        }
     }
 
     private suspend fun openLocalShell(args: JSONObject = JSONObject()): JSONObject =
