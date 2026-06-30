@@ -805,6 +805,8 @@ class DesktopManager @Inject constructor(
         )
         // #300: remap privileged binds (<1024) up by +2000 when opted in.
         if (prootManager.remapLowPorts) prootArgs.add("-p")
+        // #301: per-distro user-defined extra binds.
+        prootArgs.addAll(prootManager.customBindShortArgs(prootManager.activeDistroId))
         // /bin/sh works on both Alpine (symlink to busybox) and Debian
         // (symlink to dash). See ProotManager.runCommandInProot.
         prootArgs.addAll(listOf("-w", "/root", "/bin/sh", "-c", shellCmd))
@@ -1088,6 +1090,8 @@ class DesktopManager @Inject constructor(
         )
         // #300: remap privileged binds (<1024) up by +2000 when opted in.
         if (prootManager.remapLowPorts) prootArgs.add("-p")
+        // #301: per-distro user-defined extra binds.
+        prootArgs.addAll(prootManager.customBindShortArgs(prootManager.activeDistroId))
         prootArgs.addAll(listOf("-w", "/root", "/bin/sh", "-c", shellCmd))
 
         Log.d(TAG, "Starting $label (nested wayland) on port $port (display $display)")
@@ -1563,6 +1567,8 @@ class DesktopManager @Inject constructor(
 
             // #300: remap privileged binds (<1024) up by +2000 when opted in.
             val portRemap = if (prootManager.remapLowPorts) arrayOf("-p") else emptyArray()
+            // #301: per-distro user-defined extra binds.
+            val customBinds = prootManager.customBindShortArgs(prootManager.activeDistroId).toTypedArray()
             val process = ProcessBuilder(
                 prootBin, "-0", "--link2symlink",
                 *portRemap,
@@ -1572,6 +1578,7 @@ class DesktopManager @Inject constructor(
                 "-b", prootManager.selinuxMaskBind(rootfsDir),
                 "-b", "${context.cacheDir.absolutePath}:/tmp",
                 "-b", "${xdgDir.absolutePath}:/tmp/xdg-runtime",
+                *customBinds,
                 "-w", "/root",
                 "/bin/sh", "-c",
                 "export HOME=/root; " +

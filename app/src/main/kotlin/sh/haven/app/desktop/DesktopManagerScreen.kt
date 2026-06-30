@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
@@ -53,6 +55,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -107,6 +110,7 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     val mirrorRegion by viewModel.mirrorRegion.collectAsState()
     val remapLowPorts by viewModel.remapLowPorts.collectAsState()
     val shareStorageWithGuest by viewModel.shareStorageWithGuest.collectAsState()
+    val customBindsRev by viewModel.customBindsRev.collectAsState()
 
     var setupDesktopDe by remember {
         mutableStateOf<ProotManager.DesktopEnvironment?>(null)
@@ -142,6 +146,10 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
             onSetRemapLowPorts = { viewModel.setRemapLowPorts(it) },
             shareStorageWithGuest = shareStorageWithGuest,
             onSetShareStorageWithGuest = { viewModel.setShareStorageWithGuest(it) },
+            customBindsRev = customBindsRev,
+            customBindsFor = { viewModel.customBinds(it) },
+            onSetCustomBinds = { id, binds -> viewModel.setCustomBinds(id, binds) },
+            onImportRootfs = { id, label, family, source -> viewModel.importRootfs(id, label, family, source) },
             storedVncPortFor = { viewModel.storedVncPortFor(it) },
             onSwitchDistro = { viewModel.switchActiveDistro(it) },
             onOpenShellForDistro = { viewModel.openShellForDistro(it) },
@@ -651,6 +659,10 @@ private fun DesktopManagerSection(
     onSetRemapLowPorts: (Boolean) -> Unit,
     shareStorageWithGuest: Boolean,
     onSetShareStorageWithGuest: (Boolean) -> Unit,
+    customBindsRev: Int,
+    customBindsFor: (String) -> List<sh.haven.core.local.proot.CustomBind>,
+    onSetCustomBinds: (String, List<sh.haven.core.local.proot.CustomBind>) -> Unit,
+    onImportRootfs: (String, String, sh.haven.core.local.proot.PackageFamily, String) -> Unit,
     storedVncPortFor: (ProotManager.DesktopEnvironment) -> Int?,
     onSwitchDistro: (String) -> Unit,
     onOpenShellForDistro: (String) -> Unit,
@@ -664,6 +676,8 @@ private fun DesktopManagerSection(
     onRetryRootfs: () -> Unit,
 ) {
     var distroMenuOpen by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var showCustomBindsDialog by remember { mutableStateOf(false) }
 
     val activeDistroLabel = installedDistros.firstOrNull { it.id == activeDistroId }?.label
         ?: DistroCatalog.lookup(activeDistroId)?.label
@@ -786,6 +800,17 @@ private fun DesktopManagerSection(
                                 },
                             )
                         }
+                        // Import a custom rootfs (#284) — also the path to a
+                        // second instance of a distro you already have (#302).
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(AppR.string.app_desktop_import_rootfs)) },
+                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = {
+                                distroMenuOpen = false
+                                showImportDialog = true
+                            },
+                        )
                     }
                 }
                 when (val s = rootfsSetupState) {
@@ -896,6 +921,32 @@ private fun DesktopManagerSection(
                     onCheckedChange = onSetShareStorageWithGuest,
                 )
                 Spacer(Modifier.height(8.dp))
+                // Custom bind mounts for the active distro (#301). Count reads
+                // through customBindsRev so it updates after the dialog saves.
+                val customBindCount = remember(activeDistroId, customBindsRev) {
+                    customBindsFor(activeDistroId).size
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCustomBindsDialog = true }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(AppR.string.app_desktop_custom_binds_title, customBindCount),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            stringResource(AppR.string.app_desktop_custom_binds_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                }
+                Spacer(Modifier.height(8.dp))
             }
 
             // In-progress desktop-install indicator. The DesktopSetupDialog
@@ -958,6 +1009,183 @@ private fun DesktopManagerSection(
             }
         }
     }
+
+    if (showImportDialog) {
+        ImportRootfsDialog(
+            onDismiss = { showImportDialog = false },
+            onImport = { id, label, family, source ->
+                onImportRootfs(id, label, family, source)
+                showImportDialog = false
+            },
+        )
+    }
+    if (showCustomBindsDialog) {
+        CustomBindsDialog(
+            distroId = activeDistroId,
+            distroLabel = activeDistroLabel,
+            initial = customBindsFor(activeDistroId),
+            onDismiss = { showCustomBindsDialog = false },
+            onSave = { binds ->
+                onSetCustomBinds(activeDistroId, binds)
+                showCustomBindsDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun ImportRootfsDialog(
+    onDismiss: () -> Unit,
+    onImport: (String, String, sh.haven.core.local.proot.PackageFamily, String) -> Unit,
+) {
+    var id by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf("") }
+    var family by remember { mutableStateOf(sh.haven.core.local.proot.PackageFamily.APT) }
+    var familyMenuOpen by remember { mutableStateOf(false) }
+    val valid = id.isNotBlank() && source.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(AppR.string.app_desktop_import_dialog_title)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(AppR.string.app_desktop_import_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = id,
+                    onValueChange = { id = it.trim() },
+                    singleLine = true,
+                    label = { Text(stringResource(AppR.string.app_desktop_import_id_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    singleLine = true,
+                    label = { Text(stringResource(AppR.string.app_desktop_import_label_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = source,
+                    onValueChange = { source = it.trim() },
+                    singleLine = true,
+                    label = { Text(stringResource(AppR.string.app_desktop_import_source_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Box {
+                    AssistChip(
+                        onClick = { familyMenuOpen = true },
+                        label = { Text("${stringResource(AppR.string.app_desktop_import_family)}: ${family.name}") },
+                        trailingIcon = { Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    )
+                    DropdownMenu(expanded = familyMenuOpen, onDismissRequest = { familyMenuOpen = false }) {
+                        sh.haven.core.local.proot.PackageFamily.entries.forEach { f ->
+                            DropdownMenuItem(
+                                text = { Text(f.name) },
+                                onClick = { family = f; familyMenuOpen = false },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onImport(id, label, family, source) }, enabled = valid) {
+                Text(stringResource(AppR.string.app_desktop_import_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(AppR.string.app_desktop_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun CustomBindsDialog(
+    distroId: String,
+    distroLabel: String,
+    initial: List<sh.haven.core.local.proot.CustomBind>,
+    onDismiss: () -> Unit,
+    onSave: (List<sh.haven.core.local.proot.CustomBind>) -> Unit,
+) {
+    // Local editable copy of (host, guest) pairs. Mutated in place; saved on Save.
+    val rows = remember(distroId) {
+        mutableStateListOf<Pair<String, String>>().apply {
+            initial.forEach { add(it.host to it.guest) }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(AppR.string.app_desktop_custom_binds_dialog_title, distroLabel)) },
+        text = {
+            Column {
+                if (rows.isEmpty()) {
+                    Text(
+                        stringResource(AppR.string.app_desktop_custom_binds_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                rows.forEachIndexed { i, (host, guest) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = host,
+                                onValueChange = { rows[i] = it.trim() to rows[i].second },
+                                singleLine = true,
+                                label = { Text(stringResource(AppR.string.app_desktop_custom_binds_host_hint)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = guest,
+                                onValueChange = { rows[i] = rows[i].first to it.trim() },
+                                singleLine = true,
+                                label = { Text(stringResource(AppR.string.app_desktop_custom_binds_guest_hint)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        IconButton(onClick = { rows.removeAt(i) }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = stringResource(AppR.string.app_desktop_custom_binds_remove_cd),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                TextButton(onClick = { rows.add("" to "") }) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(AppR.string.app_desktop_custom_binds_add))
+                }
+                Text(
+                    stringResource(AppR.string.app_desktop_custom_binds_takes_effect),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val binds = rows
+                    .map { sh.haven.core.local.proot.CustomBind(it.first.trim(), it.second.trim()) }
+                    .filter { it.host.isNotEmpty() }
+                onSave(binds)
+            }) { Text(stringResource(AppR.string.app_desktop_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(AppR.string.app_desktop_cancel)) }
+        },
+    )
 }
 
 @Composable

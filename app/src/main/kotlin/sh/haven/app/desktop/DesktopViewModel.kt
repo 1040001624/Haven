@@ -257,6 +257,44 @@ class DesktopViewModel @Inject constructor(
     }
 
     /**
+     * Import a custom rootfs tarball as a new distro (#284). [source] is an
+     * http(s) URL or an on-device file path; progress shows via the same
+     * rootfsSetupState the install path uses.
+     */
+    fun importRootfs(
+        id: String,
+        label: String,
+        family: sh.haven.core.local.proot.PackageFamily,
+        source: String,
+    ) {
+        viewModelScope.launch {
+            try {
+                prootManager.importRootfs(id, label, family, source, formatFor(source))
+            } catch (e: Exception) {
+                Log.e(TAG, "importRootfs: $id threw", e)
+            }
+        }
+    }
+
+    private fun formatFor(source: String): sh.haven.core.local.proot.RootfsFormat = when {
+        source.endsWith(".tar.xz") || source.endsWith(".txz") -> sh.haven.core.local.proot.RootfsFormat.TAR_XZ
+        source.endsWith(".tar.zst") || source.endsWith(".tar.zstd") -> sh.haven.core.local.proot.RootfsFormat.TAR_ZSTD
+        else -> sh.haven.core.local.proot.RootfsFormat.TAR_GZ
+    }
+
+    // --- Per-distro custom bind mounts (#301) ---
+
+    /** Bumped when binds change, so the Manage screen recomposes the count. */
+    val customBindsRev: StateFlow<Int> get() = prootManager.customBindsRev
+
+    fun customBinds(distroId: String): List<sh.haven.core.local.proot.CustomBind> =
+        prootManager.customBinds(distroId)
+
+    fun setCustomBinds(distroId: String, binds: List<sh.haven.core.local.proot.CustomBind>) {
+        prootManager.setCustomBinds(distroId, binds)
+    }
+
+    /**
      * Delete a distro's rootfs. Stops any DEs running on it first so
      * the session-viewer tabs don't outlive their backing rootfs.
      */

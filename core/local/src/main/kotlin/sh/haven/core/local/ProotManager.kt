@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import sh.haven.core.data.repository.ProotInstallLogRepository
 import sh.haven.core.local.proot.Arch
+import sh.haven.core.local.proot.CustomBind
 import sh.haven.core.local.proot.DesktopCatalog
 import sh.haven.core.local.proot.DesktopEnvironmentSpec
 import sh.haven.core.local.proot.Distro
@@ -36,6 +37,12 @@ private const val PREF_MIRROR_REGION = "mirror_region"
 /** Proot launch toggles for the local Linux sessions (#300 / #301). */
 private const val PREF_REMAP_LOW_PORTS = "remap_low_ports"
 private const val PREF_SHARE_STORAGE = "share_storage_with_guest"
+
+/** Per-distro custom bind mounts (#301). Key suffix is the distro id. */
+private const val PREF_CUSTOM_BINDS_PREFIX = "custom_binds_"
+
+/** User-imported distros registry (#284), stored as a JSON array. */
+private const val PREF_CUSTOM_DISTROS = "custom_distros_json"
 
 /** One-shot guard for the #262 install-marker backfill. */
 private const val PREF_MARKERS_BACKFILLED = "install_markers_backfilled_v1"
@@ -283,6 +290,48 @@ class ProotManager @Inject constructor(
         prefs.edit().putBoolean(PREF_SHARE_STORAGE, enabled).apply()
         _shareStorageWithGuest.value = enabled
     }
+
+    // --- Per-distro custom bind mounts (#301) ---
+
+    private val _customBindsRev = MutableStateFlow(0)
+
+    /**
+     * Bumped whenever any distro's custom binds change, so the Manage UI
+     * (which reads [customBinds] imperatively, keyed by distro id) recomposes.
+     */
+    val customBindsRev: StateFlow<Int> = _customBindsRev.asStateFlow()
+
+    /**
+     * Extra user-defined bind mounts for [distroId] (#301) — absolute Android
+     * paths exposed inside that distro's guest, in addition to the fixed
+     * system binds. Read at every proot launch (interactive shell, desktop,
+     * one-shot command) so a path the user adds is reachable everywhere the
+     * distro runs. Empty by default.
+     */
+    fun customBinds(distroId: String): List<CustomBind> =
+        (prefs.getString("$PREF_CUSTOM_BINDS_PREFIX$distroId", "") ?: "")
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { CustomBind.parse(it) }
+
+    /** Replace the custom binds for [distroId]. Persists immediately. */
+    fun setCustomBinds(distroId: String, binds: List<CustomBind>) {
+        val joined = binds
+            .map { it.spec().trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+        prefs.edit().putString("$PREF_CUSTOM_BINDS_PREFIX$distroId", joined).apply()
+        _customBindsRev.value++
+    }
+
+    /** Custom binds for [distroId] as proot short-form args (`-b spec …`). */
+    fun customBindShortArgs(distroId: String): List<String> =
+        customBinds(distroId).flatMap { listOf("-b", it.spec()) }
+
+    /** Custom binds for [distroId] as proot long-form args (`--bind=spec`). */
+    fun customBindLongArgs(distroId: String): List<String> =
+        customBinds(distroId).map { "--bind=${it.spec()}" }
 
     /**
      * Distros that are installed on this device — derived from the
@@ -668,11 +717,202 @@ class ProotManager @Inject constructor(
     val desktopState: StateFlow<DesktopSetupState> = _desktopState.asStateFlow()
 
     init {
+        // Register imported distros (#284) FIRST: reconcileActiveDistro and
+        // the ready check below resolve the active distro through
+        // DistroCatalog, so a custom distro that was active must be known
+        // before they run.
+        loadCustomDistros()
         migrateLegacyAlpineDir()
         backfillInstallMarkers()
         reconcileActiveDistro()
         _state.value = if (isReady) SetupState.Ready else SetupState.NotInstalled
     }
+
+    // --- User-imported distros (#284) ---
+
+    /**
+     * Load persisted custom distros and register them with [DistroCatalog]
+     * so every `lookup`/`all` caller sees them. Tolerant of a malformed
+     * entry (skips it) rather than failing the whole manager init.
+     */
+    private fun loadCustomDistros() {
+        val raw = prefs.getString(PREF_CUSTOM_DISTROS, null) ?: return
+        val parsed = runCatching {
+            val arr = org.json.JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val family = runCatching { PackageFamily.valueOf(o.optString("family")) }.getOrNull()
+                    ?: return@mapNotNull null
+                DistroCatalog.customDistro(
+                    id = id,
+                    label = o.optString("label", id),
+                    family = family,
+                    sizeMb = o.optInt("sizeMb", 0),
+                )
+            }
+        }.getOrElse {
+            Log.w(TAG, "Failed to parse custom distros: ${it.message}")
+            emptyList()
+        }
+        DistroCatalog.registerCustomDistros(parsed)
+        if (parsed.isNotEmpty()) Log.d(TAG, "Registered ${parsed.size} custom distro(s): ${parsed.map { it.id }}")
+    }
+
+    /** Persist the current custom-distro set and re-register it. */
+    private fun persistCustomDistros(distros: List<Distro>) {
+        val arr = org.json.JSONArray()
+        for (d in distros) {
+            arr.put(
+                org.json.JSONObject().apply {
+                    put("id", d.id)
+                    put("label", d.label)
+                    put("family", d.family.name)
+                    put("sizeMb", d.sizeEstimateMb)
+                },
+            )
+        }
+        prefs.edit().putString(PREF_CUSTOM_DISTROS, arr.toString()).apply()
+        DistroCatalog.registerCustomDistros(distros)
+    }
+
+    /** Custom (user-imported) distros currently registered. */
+    private val customDistros: List<Distro>
+        get() = DistroCatalog.all.filter { !DistroCatalog.isBuiltin(it.id) }
+
+    /**
+     * Import an already-built rootfs tarball as a new distro (#284) — the
+     * "bring your own rootfs" path. [source] is an http(s) URL or a local
+     * file path. The tarball is extracted to `proot/rootfs/<id>` in **raw
+     * mode** (no baseline packages, no distro hooks): the rootfs is used
+     * exactly as shipped. [family] still routes PackageOps so later package
+     * installs work.
+     *
+     * Drives the same [_state] progress (Downloading → Extracting → Ready /
+     * Error) as [installRootfs], so the existing Manage UI and
+     * `inspect_proot.osSetupState` MCP polling cover imports unchanged.
+     *
+     * [expectedSha256] is optional — verified when given (the user can pin
+     * a published checksum), skipped otherwise (it's the user's own rootfs).
+     * [stripComponents] defaults to auto: extract is retried with strip=1 if
+     * the tarball turns out to wrap its files in a single top-level dir
+     * (the proot-distro convention).
+     */
+    suspend fun importRootfs(
+        id: String,
+        label: String,
+        family: PackageFamily,
+        source: String,
+        format: RootfsFormat,
+        stripComponents: Int = 0,
+        expectedSha256: String? = null,
+    ) {
+        val slug = id.trim()
+        require(slug.matches(Regex("[a-z0-9][a-z0-9._-]*"))) {
+            "Distro id must be a slug (lowercase letters, digits, ., _, -): got '$id'"
+        }
+        require(!DistroCatalog.isBuiltin(slug)) { "'$slug' is a built-in distro id — pick another" }
+
+        val installStartedAt = System.currentTimeMillis()
+        var currentPhase: Phase = Phase.RootfsDownload
+        try {
+            _state.value = SetupState.Downloading(0)
+            installLogRepository.logEvent(distroId = slug, phase = "RootfsDownload", message = "Import: $source")
+
+            // Obtain the tarball: download a URL, or use a local file as-is.
+            val tarball: File
+            val isUrl = source.startsWith("http://") || source.startsWith("https://")
+            if (isUrl) {
+                tarball = File(context.cacheDir, "$slug-import.tar")
+                withContext(Dispatchers.IO) {
+                    val conn = URL(source).openConnection()
+                    val totalSize = conn.contentLength
+                    BufferedInputStream(conn.getInputStream()).use { input ->
+                        FileOutputStream(tarball).use { output ->
+                            val buf = ByteArray(8192)
+                            var downloaded = 0L
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) {
+                                output.write(buf, 0, n)
+                                downloaded += n
+                                if (totalSize > 0) {
+                                    _state.value = SetupState.Downloading((downloaded * 100 / totalSize).toInt())
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                tarball = File(source)
+                if (!tarball.isFile) throw IllegalArgumentException("Local rootfs not found: $source")
+            }
+
+            if (expectedSha256 != null) {
+                withContext(Dispatchers.IO) {
+                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    tarball.inputStream().buffered().use { input ->
+                        val buf = ByteArray(8192)
+                        var n: Int
+                        while (input.read(buf).also { n = it } != -1) digest.update(buf, 0, n)
+                    }
+                    val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                    if (!actual.equals(expectedSha256.trim(), ignoreCase = true)) {
+                        if (isUrl) tarball.delete()
+                        throw SecurityException("Rootfs checksum mismatch — expected $expectedSha256 but got $actual.")
+                    }
+                }
+            }
+
+            currentPhase = Phase.RootfsExtract
+            _state.value = SetupState.Extracting
+            val targetDir = File(context.filesDir, "proot/rootfs/$slug")
+            withContext(Dispatchers.IO) {
+                File(targetDir, ROOTFS_READY_MARKER).delete()
+                // Try the requested strip first; on a bin/sh-not-found failure
+                // with strip=0, retry with strip=1 (proot-distro tarballs wrap
+                // the rootfs in a single top-level dir). Saves the user from
+                // having to know their tarball's layout.
+                try {
+                    extractTarball(tarball, targetDir, RootfsSource(url = "", sha256 = "", format = format, stripComponents = stripComponents))
+                } catch (e: RuntimeException) {
+                    if (stripComponents == 0 && (e.message?.contains("bin/sh not found") == true)) {
+                        Log.d(TAG, "[import $slug] strip=0 had no bin/sh — retrying with strip=1")
+                        forceDeleteRecursively(targetDir)
+                        extractTarball(tarball, targetDir, RootfsSource(url = "", sha256 = "", format = format, stripComponents = 1))
+                    } else {
+                        throw e
+                    }
+                }
+                if (isUrl) tarball.delete()
+
+                File(targetDir, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                seedRootHome(targetDir)
+            }
+
+            // Register the distro and write the completion marker only now
+            // that extract succeeded (#262). Size = the extracted tree's size.
+            val sizeMb = runCatching { (folderSize(targetDir) / (1024 * 1024)).toInt() }.getOrDefault(0)
+            val distro = DistroCatalog.customDistro(slug, label.ifBlank { slug }, family, sizeMb)
+            persistCustomDistros((customDistros.filter { it.id != slug }) + distro)
+            runCatching { File(targetDir, ROOTFS_READY_MARKER).writeText("ready\n") }
+                .onFailure { Log.w(TAG, "import marker write failed for $slug: ${it.message}") }
+
+            setActiveDistroId(slug)
+            _state.value = SetupState.Ready
+            installLogRepository.logEvent(
+                distroId = slug, phase = "Ready", exit = 0, ok = true,
+                message = "Imported rootfs ($sizeMb MB, ${System.currentTimeMillis() - installStartedAt}ms)",
+            )
+            Log.d(TAG, "[import $slug] complete ($sizeMb MB)")
+        } catch (e: Exception) {
+            Log.e(TAG, "[import $currentPhase] failed", e)
+            installLogRepository.logEvent(distroId = slug, phase = currentPhase.name, ok = false, message = e.message ?: "Import failed")
+            _state.value = SetupState.Error(phase = currentPhase, message = e.message ?: "Import failed", logTail = "")
+        }
+    }
+
+    private fun folderSize(dir: File): Long =
+        dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
 
     /**
      * One-shot backfill for installs predating the rootfs completion
@@ -1504,6 +1744,9 @@ class ProotManager @Inject constructor(
             "--bind=$rootfsPath/proc/.sysctl_inotify_max_user_watches:/proc/sys/fs/inotify/max_user_watches",
             "--bind=$sysSelinuxMask",
             "--bind=${context.cacheDir.absolutePath}:/tmp",
+            // #301: per-distro user-defined extra binds, so a one-shot command
+            // (and MCP run_in_proot) sees the same mounts as the shell/desktop.
+            *customBindLongArgs(activeDistroId).toTypedArray(),
             "/usr/bin/env", "-i",
             "HOME=/root",
             "LANG=C.UTF-8",
@@ -2501,6 +2744,12 @@ chmod +x /root/.vnc/xstartup""")
         // there too (one-off migration edge case).
         if (distroId == DistroCatalog.DEFAULT_ID) {
             forceDeleteRecursively(File(context.filesDir, "proot/rootfs/alpine"))
+        }
+        // #284: a user-imported distro is gone for good once deleted (no
+        // pinned source to re-install from), so drop it from the registry
+        // too — otherwise it lingers as a phantom catalog entry.
+        if (!DistroCatalog.isBuiltin(distroId)) {
+            persistCustomDistros(customDistros.filter { it.id != distroId })
         }
         if (activeDistroId == distroId) {
             reconcileActiveDistro()

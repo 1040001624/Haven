@@ -278,6 +278,9 @@ class LocalSessionManager @Inject constructor(
             } else {
                 emptyArray()
             }
+            // #301: per-distro user-defined extra binds (any Android path into
+            // the guest). Keyed on the distro this session actually runs.
+            val customBinds = prootManager.customBindShortArgs(targetDistro).toTypedArray()
             val args = arrayOf(
                 prootBinary,
                 "-0",                    // fake root
@@ -304,6 +307,7 @@ class LocalSessionManager @Inject constructor(
                 // /etc/ssh/sshd_config, #283). Matches the one-shot install path.
                 "-b", prootManager.selinuxMaskBind(rootfsDir),
                 *storageBinds,
+                *customBinds,
                 "-b", "${context.cacheDir.absolutePath}:/tmp",
                 "-w", "/root",
             ) + shellArgs

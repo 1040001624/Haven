@@ -1164,7 +1164,7 @@ internal class McpTools(
         ) { _ -> readClipboard() },
 
         "get_preference" to ToolHandler(
-            description = "Read a Haven user preference by key. Whitelisted keys: terminal_scrollback_rows, terminal_tap_to_position_cursor, terminal_font_size, terminal_color_scheme, terminal_auto_switch_scheme, terminal_light_color_scheme, terminal_dark_color_scheme, mouse_input_enabled, terminal_right_click, mcp_tunnel_endpoint_profile_id, mcp_wireguard_enabled, mcp_lan_bind_enabled, mcp_wireguard_tunnel_config_id, usb_guest_exposure_enabled, connection_logging_enabled. Returns { key, value } where value's type follows the preference's type (int / boolean / string). Colour-scheme values are TerminalColorScheme enum names.",
+            description = "Read a Haven user preference by key. Whitelisted keys: terminal_scrollback_rows, terminal_tap_to_position_cursor, terminal_font_size, terminal_color_scheme, terminal_auto_switch_scheme, terminal_light_color_scheme, terminal_dark_color_scheme, mouse_input_enabled, terminal_right_click, mcp_tunnel_endpoint_profile_id, mcp_wireguard_enabled, mcp_lan_bind_enabled, mcp_wireguard_tunnel_config_id, usb_guest_exposure_enabled, connection_logging_enabled, remap_low_ports (#300 proot launch toggle), share_storage_with_guest (#301 proot launch toggle). Returns { key, value } where value's type follows the preference's type (int / boolean / string). Colour-scheme values are TerminalColorScheme enum names.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1397,7 +1397,7 @@ internal class McpTools(
         ) { args -> writeClipboard(args) },
 
         "set_preference" to ToolHandler(
-            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), terminal_background_opacity (float 0.0..1.0 — below 1.0 the terminal renders over the device wallpaper), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), connection_logging_enabled (bool — audit-log connection lifecycle events to Settings → View connection log; off by default; enable before reproducing a connection issue, then read get_connection_log), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe). Returns { key, value }.",
+            description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), terminal_background_opacity (float 0.0..1.0 — below 1.0 the terminal renders over the device wallpaper), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), connection_logging_enabled (bool — audit-log connection lifecycle events to Settings → View connection log; off by default; enable before reproducing a connection issue, then read get_connection_log), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe), remap_low_ports (bool — #300 proot launch toggle: remap guest privileged ports +2000), share_storage_with_guest (bool — #301 proot launch toggle: mount /storage + /sdcard into the local guest; default on). Takes effect on the next local session/command. Returns { key, value }.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1906,6 +1906,86 @@ internal class McpTools(
                 else "Delete distro \"$id\" and all its data? This cannot be undone."
             },
         ) { args -> deleteDistroTool(args) },
+
+        "import_distro" to ToolHandler(
+            description = "Import a custom rootfs tarball as a new distro (#284) — \"bring your own rootfs\". The tarball (http(s) URL or an on-device file path) is extracted to its own rootfs and registered as a first-class distro, so it then appears in list_distros / set_active_distro / install_desktop exactly like a built-in. Raw mode: no baseline packages and no distro hooks run — the rootfs is used as shipped; `family` only routes later package installs (apk/apt/pacman/xbps). Use this for proot-distro / Docker-export tarballs and for a SECOND instance of a distro you already have (give it a new id — that is how #302 multiple-instances is done). Returns immediately; poll inspect_proot.osSetupState (Downloading → Extracting → Ready/Error). Supported compression: .tar.gz and .tar.xz (zstd not yet supported — recompress first).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("id", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "New distro id (slug: lowercase letters/digits/.-_, e.g. \"ubuntu-trixie\" or \"debian-test2\"). Must not collide with a built-in or existing custom id.")
+                    })
+                    put("label", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Human label shown in the picker (e.g. \"Ubuntu 26.04 (imported)\").")
+                    })
+                    put("family", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Package family for later installs: APK | APT | PACMAN | XBPS | NIX.")
+                    })
+                    put("source", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Rootfs tarball: an http(s):// URL, or an absolute on-device file path.")
+                    })
+                    put("format", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional compression: TAR_GZ | TAR_XZ. Auto-detected from the source extension if omitted.")
+                    })
+                    put("stripComponents", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Optional leading path components to strip (proot-distro tarballs wrap in one dir → 1). Defaults to auto: tries 0, retries 1 if no bin/sh is found.")
+                    })
+                    put("sha256", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional SHA-256 to verify the download against. Skipped if omitted.")
+                    })
+                })
+                put("required", JSONArray().put("id").put("family").put("source"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                "Import a custom rootfs as distro \"${args.optString("id")}\" from ${args.optString("source")}?"
+            },
+        ) { args -> importDistroTool(args) },
+
+        "get_custom_binds" to ToolHandler(
+            description = "List the user-defined extra proot bind mounts (#301) for a distro — the per-distro custom Android→guest mounts added on top of the fixed system binds. Pass distroId; omit to use the active distro. Returns each bind as {host, guest} plus its proot spec.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("distroId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Distro id; omit for the active distro.")
+                    })
+                })
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> getCustomBindsTool(args) },
+
+        "set_custom_binds" to ToolHandler(
+            description = "Replace the user-defined extra proot bind mounts (#301) for a distro — exposes arbitrary Android paths inside that distro's guest (interactive shell, desktop, and run_in_proot all pick them up). proot binds are read-write. Pass distroId (omit for active) and `binds`, an array of {host, guest?} objects (guest blank = same path as host). This REPLACES the whole list; pass [] to clear. Takes effect on the NEXT session/command, not already-running ones.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("distroId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Distro id; omit for the active distro.")
+                    })
+                    put("binds", JSONObject().apply {
+                        put("type", "array")
+                        put("description", "Full replacement list. Each item: {host: \"/abs/android/path\", guest: \"/abs/guest/path\" (optional)}.")
+                        put("items", JSONObject().apply { put("type", "object") })
+                    })
+                })
+                put("required", JSONArray().put("binds"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val n = args.optJSONArray("binds")?.length() ?: 0
+                "Set $n custom bind mount(s) for distro \"${args.optString("distroId").ifEmpty { "active" }}\"?"
+            },
+        ) { args -> setCustomBindsTool(args) },
 
         "install_desktop" to ToolHandler(
             description = "Install a desktop environment on the active distro. Calls ProotManager.setupDesktop which downloads packages, configures VNC, and writes the launcher. Poll `inspect_proot.desktopSetupState` for progress. Failures are attributed to a DePhase (Packages / VncConfig / Marker) in both the state and the install log.",
@@ -5734,6 +5814,13 @@ internal class McpTools(
         // reproduce, then read get_connection_log — e.g. an immediately exiting
         // local shell (#294).
         "connection_logging_enabled",
+        // Local proot launch toggles (#300 / #301). These live in
+        // ProotManager's own SharedPreferences (not the DataStore repo), so
+        // get/set route through prootManager below. MCP-drivable so the launch
+        // behaviour is testable/restorable without driving the Desktop → Manage
+        // toggles — the toggle-state gap that previously forced UI tapping.
+        "remap_low_ports",
+        "share_storage_with_guest",
     )
 
     private suspend fun getPreference(args: JSONObject): JSONObject {
@@ -5763,6 +5850,9 @@ internal class McpTools(
             "connection_logging_enabled" -> preferencesRepository.connectionLoggingEnabled.first()
             "gpu_use_venus" -> preferencesRepository.gpuUseVenus.first()
             "toolbar_layout" -> preferencesRepository.toolbarLayoutJson.first()
+            // Proot launch toggles live in ProotManager (#300 / #301).
+            "remap_low_ports" -> prootManager.remapLowPorts
+            "share_storage_with_guest" -> prootManager.shareStorageWithGuest
             else -> throw McpError(-32602, "Preference $key is not in the whitelist")
         }
         return JSONObject().apply {
@@ -5845,6 +5935,11 @@ internal class McpTools(
                 ToolbarLayout.validate(json)?.let { throw McpError(-32602, "Invalid toolbar layout: $it") }
                 preferencesRepository.setToolbarLayoutJson(json)
             }
+            // Proot launch toggles live in ProotManager (#300 / #301). Routing
+            // through its setters updates the StateFlow, so the Desktop → Manage
+            // UI reflects the change too.
+            "remap_low_ports" -> prootManager.setRemapLowPorts(coerceBool())
+            "share_storage_with_guest" -> prootManager.setShareStorageWithGuest(coerceBool())
         }
         return JSONObject().apply {
             put("key", key)
@@ -9371,6 +9466,83 @@ internal class McpTools(
             put("distroId", target.id)
             put("label", target.label)
             put("status", "deleted")
+        }
+    }
+
+    private fun importDistroTool(args: JSONObject): JSONObject {
+        val id = args.optString("id").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "id is required")
+        val source = args.optString("source").takeIf { it.isNotEmpty() }
+            ?: throw McpError(-32602, "source is required")
+        val family = runCatching {
+            sh.haven.core.local.proot.PackageFamily.valueOf(args.optString("family").uppercase())
+        }.getOrNull() ?: throw McpError(-32602, "family must be one of APK, APT, PACMAN, XBPS, NIX")
+        val label = args.optString("label").ifBlank { id }
+        // Auto-detect compression from the source extension if not given.
+        val format = when (val f = args.optString("format")) {
+            "TAR_GZ" -> sh.haven.core.local.proot.RootfsFormat.TAR_GZ
+            "TAR_XZ" -> sh.haven.core.local.proot.RootfsFormat.TAR_XZ
+            "TAR_ZSTD" -> sh.haven.core.local.proot.RootfsFormat.TAR_ZSTD
+            "" -> when {
+                source.endsWith(".tar.xz") || source.endsWith(".txz") -> sh.haven.core.local.proot.RootfsFormat.TAR_XZ
+                source.endsWith(".tar.zst") || source.endsWith(".tar.zstd") -> sh.haven.core.local.proot.RootfsFormat.TAR_ZSTD
+                else -> sh.haven.core.local.proot.RootfsFormat.TAR_GZ
+            }
+            else -> throw McpError(-32602, "Unknown format: $f")
+        }
+        val strip = if (args.has("stripComponents")) args.optInt("stripComponents", 0) else 0
+        val sha = args.optString("sha256").takeIf { it.isNotEmpty() }
+        if (sh.haven.core.local.proot.DistroCatalog.isBuiltin(id)) {
+            throw McpError(-32602, "'$id' is a built-in distro id — pick another")
+        }
+        backgroundScope.launch {
+            try {
+                prootManager.importRootfs(id, label, family, source, format, strip, sha)
+            } catch (_: Exception) {
+                // importRootfs's catch already pushes Error state.
+            }
+        }
+        return JSONObject().apply {
+            put("id", id)
+            put("label", label)
+            put("family", family.name)
+            put("status", "started")
+            put("poll", "inspect_proot.osSetupState")
+        }
+    }
+
+    private fun getCustomBindsTool(args: JSONObject): JSONObject {
+        val distroId = args.optString("distroId").takeIf { it.isNotEmpty() } ?: prootManager.activeDistroId
+        val binds = prootManager.customBinds(distroId)
+        return JSONObject().apply {
+            put("distroId", distroId)
+            put("binds", JSONArray().apply {
+                binds.forEach {
+                    put(JSONObject().apply {
+                        put("host", it.host)
+                        put("guest", it.guest)
+                        put("spec", it.spec())
+                    })
+                }
+            })
+        }
+    }
+
+    private fun setCustomBindsTool(args: JSONObject): JSONObject {
+        val distroId = args.optString("distroId").takeIf { it.isNotEmpty() } ?: prootManager.activeDistroId
+        val arr = args.optJSONArray("binds") ?: throw McpError(-32602, "binds (array) is required")
+        val binds = (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val host = o.optString("host").trim()
+            if (host.isEmpty()) return@mapNotNull null
+            sh.haven.core.local.proot.CustomBind(host, o.optString("guest").trim())
+        }
+        prootManager.setCustomBinds(distroId, binds)
+        return JSONObject().apply {
+            put("distroId", distroId)
+            put("count", binds.size)
+            put("binds", JSONArray().apply { binds.forEach { put(it.spec()) } })
+            put("note", "Takes effect on the next session/command for this distro.")
         }
     }
 

@@ -540,6 +540,39 @@ class FidoAuthenticator @Inject constructor(
                     delay(WRONG_KEY_HOLD_MS)
                     // Loop: withDiscoveredFidoDevice re-arms discovery excluding
                     // the failed USB key and shows the WrongKey prompt.
+                } catch (e: FidoCancelledException) {
+                    // User cancelled the key wait — never swallow into the
+                    // fall-through below; let the connect abort.
+                    throw e
+                } catch (e: IOException) {
+                    // A USB device was *selected* but couldn't be used as a key:
+                    // it's HID-with-interrupt-IN+OUT but not actually CTAPHID,
+                    // CTAPHID init failed, USB permission was denied, or the
+                    // device errored. Rather than abort the whole assertion,
+                    // exclude this USB device and re-arm — which enables NFC
+                    // (no usable USB FIDO device remains) so the user can tap
+                    // their NFC key. This is the "fall through even for a FIDO-
+                    // looking device when no key is recognised on it" path, and
+                    // the safety net behind the isFidoHidDevice filter: a non-key
+                    // USB device that slips the filter degrades to "try the next
+                    // transport" instead of a hard fail. NFC errors propagate
+                    // (thisUsbId is null for an NFC device); only fall through
+                    // when there's an NFC-capable foreground activity to fall
+                    // through TO, and stay bounded by the attempt cap.
+                    val usbId = thisUsbId
+                    val canFallThrough = usbId != null &&
+                        activeActivity?.get() != null &&
+                        attempt < MAX_MISMATCH_ATTEMPTS
+                    if (!canFallThrough) {
+                        lastAssertionError = e.message
+                        throw e
+                    }
+                    failedUsbIds += usbId!!
+                    Log.w(TAG, "USB device $usbId unusable as a FIDO key " +
+                        "(${e.javaClass.simpleName}: ${e.message}) — excluding and " +
+                        "re-arming so NFC / another key can be presented")
+                    _touchPrompt.value = FidoTouchPrompt.WaitingForKey(currentKeyLabel)
+                    // Loop: re-arm excluding the failed USB device → NFC is armed.
                 }
             }
             @Suppress("UNREACHABLE_CODE")
@@ -1722,46 +1755,74 @@ class FidoAuthenticator @Inject constructor(
         )
     }
 
-    /** Check if a USB device exposes a HID interface (FIDO keys always do). */
-    private fun isFidoHidDevice(device: UsbDevice): Boolean {
-        for (i in 0 until device.interfaceCount) {
-            val iface = device.getInterface(i)
-            if (iface.interfaceClass == UsbConstants.USB_CLASS_HID) {
-                return true
-            }
-        }
-        return false
-    }
+    /**
+     * Whether [device] is a usable FIDO2 CTAPHID authenticator, probed WITHOUT
+     * opening it (so we don't request USB permission just to enumerate). True
+     * iff it has a CTAPHID interface — see [findFidoCtapHidInterface].
+     */
+    private fun isFidoHidDevice(device: UsbDevice): Boolean =
+        findFidoCtapHidInterface(device) != null
 
     /**
      * Find the FIDO CTAPHID interface on [device] and its interrupt IN/OUT
-     * endpoints.
-     *
-     * A composite "YubiKey OTP+FIDO+CCID" exposes SEVERAL HID interfaces —
-     * the keyboard (OTP) interface has only an IN endpoint, so picking "the
-     * first HID interface" lands on it and fails with "No OUT endpoint on HID
-     * interface". The CTAPHID interface is the HID interface that has BOTH an
-     * IN and an OUT endpoint; select on that, skipping keyboard-style HIDs.
+     * endpoints, or throw if it has none. Thin wrapper over the testable
+     * top-level [findFidoCtapHidInterface] with a descriptive error.
      */
     private fun findCtapHidInterface(
         device: UsbDevice,
-    ): Triple<UsbInterface, UsbEndpoint, UsbEndpoint> {
-        for (i in 0 until device.interfaceCount) {
-            val iface = device.getInterface(i)
-            if (iface.interfaceClass != UsbConstants.USB_CLASS_HID) continue
-            var epIn: UsbEndpoint? = null
-            var epOut: UsbEndpoint? = null
-            for (j in 0 until iface.endpointCount) {
-                val ep = iface.getEndpoint(j)
-                if (ep.direction == UsbConstants.USB_DIR_IN) epIn = ep
-                if (ep.direction == UsbConstants.USB_DIR_OUT) epOut = ep
-            }
-            if (epIn != null && epOut != null) return Triple(iface, epIn, epOut)
-        }
-        throw IOException(
-            "No FIDO CTAPHID interface on this device. A multi-interface key " +
-                "(OTP+FIDO+CCID) exposes a keyboard HID with no OUT endpoint — " +
-                "need the HID interface that has both IN and OUT endpoints."
+    ): Triple<UsbInterface, UsbEndpoint, UsbEndpoint> =
+        findFidoCtapHidInterface(device) ?: throw IOException(
+            "No FIDO CTAPHID interface on this device. A FIDO2 key has a HID " +
+                "interface with an interrupt IN+OUT endpoint pair; this device " +
+                "has none (e.g. a USB audio dongle's volume-button HID is " +
+                "interrupt-IN only, an OTP keyboard HID has no OUT endpoint)."
         )
+}
+
+/**
+ * The FIDO CTAPHID interface on [device] plus its interrupt IN/OUT endpoints,
+ * or null if the device has none. Top-level + internal so the device-matching
+ * heuristic is unit-testable without a Context-bound [FidoAuthenticator].
+ *
+ * A CTAPHID interface is **HID-class with a bidirectional interrupt endpoint
+ * pair** — CTAPHID is a request/response report protocol, so a real FIDO2 key
+ * always exposes both an interrupt IN and an interrupt OUT endpoint on its
+ * FIDO interface. Two false-positive classes this rejects, both of which broke
+ * NFC-key auth when plugged in:
+ *
+ *  - **USB audio dongles / DACs.** Their inline play/volume buttons are a HID
+ *    *consumer-control* interface with an interrupt-IN endpoint only (no OUT).
+ *    The old "any HID interface" check matched the dongle, Haven selected it as
+ *    the key, [findCtapHidInterface] then failed (no OUT endpoint), and the
+ *    NFC path was never armed — the reported "FIDO2 doesn't work with a USB
+ *    audio device attached" bug.
+ *  - **Composite OTP+FIDO+CCID keys' keyboard HID.** The OTP keyboard interface
+ *    is interrupt-IN only; the *CTAPHID* interface on the same device has the
+ *    IN+OUT pair, so this still matches such keys (via the right interface)
+ *    while skipping the keyboard one.
+ *
+ * This is a permission-free heuristic, not a report-descriptor parse: it does
+ * not read the HID usage page (0xF1D0), which would require opening the device.
+ * A non-FIDO HID device that happens to expose an interrupt IN+OUT pair would
+ * still match — but the assertion path now falls through to NFC / another key
+ * when such a device yields no usable credential (see getAssertion), so a
+ * false positive degrades to "try the next transport" rather than a hard fail.
+ */
+internal fun findFidoCtapHidInterface(
+    device: UsbDevice,
+): Triple<UsbInterface, UsbEndpoint, UsbEndpoint>? {
+    for (i in 0 until device.interfaceCount) {
+        val iface = device.getInterface(i)
+        if (iface.interfaceClass != UsbConstants.USB_CLASS_HID) continue
+        var epIn: UsbEndpoint? = null
+        var epOut: UsbEndpoint? = null
+        for (j in 0 until iface.endpointCount) {
+            val ep = iface.getEndpoint(j)
+            if (ep.type != UsbConstants.USB_ENDPOINT_XFER_INT) continue
+            if (ep.direction == UsbConstants.USB_DIR_IN) epIn = ep
+            else if (ep.direction == UsbConstants.USB_DIR_OUT) epOut = ep
+        }
+        if (epIn != null && epOut != null) return Triple(iface, epIn, epOut)
     }
+    return null
 }

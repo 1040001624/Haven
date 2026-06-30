@@ -32,6 +32,34 @@ enum class Arch(val abi: String) {
     }
 }
 
+/**
+ * A user-defined extra proot bind mount (#301) — exposes an Android host
+ * path inside the local guest. Persisted per-distro by ProotManager.
+ *
+ * proot binds are always read-write (mainline proot has no read-only bind
+ * flag), so there is no RO option here — the requester's accepted shape
+ * ("people can drop write permission themselves"). [guest] blank means
+ * "mount at the same path as [host]".
+ *
+ * Paths are absolute and cannot contain `:` (proot's host:guest separator)
+ * or newlines (the persistence delimiter); [parse]/[spec] rely on that.
+ */
+data class CustomBind(val host: String, val guest: String = "") {
+    /** The proot `-b` argument value: `host` or `host:guest`. */
+    fun spec(): String = if (guest.isBlank() || guest == host) host else "$host:$guest"
+
+    companion object {
+        /** Parse a proot bind spec (`host` or `host:guest`) back into a [CustomBind]. */
+        fun parse(spec: String): CustomBind {
+            val s = spec.trim()
+            // Absolute paths start with '/', so the first ':' is the host:guest
+            // separator (no ambiguity — paths don't contain ':').
+            val sep = s.indexOf(':')
+            return if (sep < 0) CustomBind(s) else CustomBind(s.substring(0, sep), s.substring(sep + 1))
+        }
+    }
+}
+
 /** Package management family. Each distro picks exactly one. */
 enum class PackageFamily {
     APK,      // Alpine, postmarketOS
@@ -485,9 +513,48 @@ object DistroCatalog {
         sizeEstimateMb = 100,
     )
 
-    val all: List<Distro> = listOf(ALPINE_3_21, DEBIAN_BOOKWORM, UBUNTU_NOBLE, ARCH_LINUX, VOID_LINUX)
+    /** Distros shipped with the app (pinned tarball + sha + hooks). */
+    val builtins: List<Distro> = listOf(ALPINE_3_21, DEBIAN_BOOKWORM, UBUNTU_NOBLE, ARCH_LINUX, VOID_LINUX)
+
+    /**
+     * User-imported distros (#284). Registered at runtime by ProotManager
+     * from persisted state, so every existing `lookup` / `all` caller (the
+     * Manage UI, McpTools, install/active-switch logic) sees an imported
+     * rootfs as a first-class distro without each having to learn about the
+     * custom registry. @Volatile + copy-on-write so UI-thread reads always
+     * observe a consistent list.
+     */
+    @Volatile
+    private var customDistros: List<Distro> = emptyList()
+
+    /** Built-ins plus any runtime-registered custom distros (#284). */
+    val all: List<Distro> get() = builtins + customDistros
 
     fun lookup(id: String): Distro? = all.firstOrNull { it.id == id }
+
+    /** Replace the registered custom-distro set. Owned by ProotManager. */
+    fun registerCustomDistros(distros: List<Distro>) { customDistros = distros }
+
+    /** True if [id] names a built-in distro (reserved — not importable). */
+    fun isBuiltin(id: String): Boolean = builtins.any { it.id == id }
+
+    /**
+     * A minimal [Distro] for a user-imported rootfs (#284): no download
+     * sources (the tarball is already on disk), no baseline packages or
+     * post-extract hooks (raw mode — the imported rootfs is used as-is).
+     * [family] still routes PackageOps so `apk`/`apt`/`pacman`/`xbps` work
+     * for later package installs and the capture-tool helpers.
+     */
+    fun customDistro(id: String, label: String, family: PackageFamily, sizeMb: Int): Distro =
+        Distro(
+            id = id,
+            label = label,
+            family = family,
+            rootfsSources = emptyMap(),
+            baselinePackages = emptyList(),
+            postExtractHooks = emptyList(),
+            sizeEstimateMb = sizeMb,
+        )
 
     /** The Phase 1 default — also what legacy installs migrate to. */
     const val DEFAULT_ID: String = "alpine-3.21"
