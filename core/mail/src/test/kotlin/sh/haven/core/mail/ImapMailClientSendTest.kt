@@ -123,6 +123,34 @@ class ImapMailClientSendTest {
     }
 
     @Test
+    fun buildsReplyThreadingHeadersWhenReplying() {
+        val p = imapParams(tls = true, smtpPort = 465)
+        val session = Session.getInstance(client.buildSmtpProps(p))
+        val parentId = "<parent-42@example.org>"
+        val chain = listOf("<root-1@example.org>", parentId)
+        val msg = client.buildMimeMessage(
+            session,
+            p,
+            OutgoingMail(to = listOf("bob@example.org"), subject = "Re: Hello", bodyText = "Reply"),
+            inReplyTo = parentId,
+            references = chain,
+        )
+        assertEquals(parentId, msg.getHeader("In-Reply-To")?.first())
+        assertEquals(chain.joinToString(" "), msg.getHeader("References")?.first())
+    }
+
+    @Test
+    fun omitsThreadingHeadersForFreshCompose() {
+        val p = imapParams(tls = true, smtpPort = 465)
+        val session = Session.getInstance(client.buildSmtpProps(p))
+        val msg = client.buildMimeMessage(
+            session, p, OutgoingMail(to = listOf("bob@example.org"), subject = "Hi", bodyText = "x"),
+        )
+        assertTrue(msg.getHeader("In-Reply-To").isNullOrEmpty())
+        assertTrue(msg.getHeader("References").isNullOrEmpty())
+    }
+
+    @Test
     fun buildsMultipartMixedWhenAttachmentsPresent() {
         val p = imapParams(tls = true, smtpPort = 465)
         val session = Session.getInstance(client.buildSmtpProps(p))

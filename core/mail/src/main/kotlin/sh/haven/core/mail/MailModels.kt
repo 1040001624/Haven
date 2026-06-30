@@ -99,9 +99,11 @@ data class MailNewMessage(
 
 /**
  * An outgoing message handed to [MailClient.send]. Carries a plain-text body and
- * optional [attachments]; HTML bodies and reply-threading headers (In-Reply-To /
- * References) are still deferred. [to] must be non-empty; the From address is the
- * authenticated account and is set by the engine, not the caller.
+ * optional [attachments]; HTML bodies are still deferred. [to] must be non-empty;
+ * the From address is the authenticated account and is set by the engine, not the
+ * caller. [inReplyToMessageId] is the opaque id (from list_mail_messages) of the
+ * message being replied to — when set, the engine resolves its RFC `Message-ID`
+ * and `References` and sets `In-Reply-To` / `References` so the reply threads.
  */
 data class OutgoingMail(
     val to: List<String>,
@@ -110,6 +112,7 @@ data class OutgoingMail(
     val subject: String,
     val bodyText: String,
     val attachments: List<OutgoingAttachment> = emptyList(),
+    val inReplyToMessageId: String? = null,
 )
 
 /**
@@ -135,6 +138,27 @@ data class SendResult(
     val messageId: String?,
     val appendedToSent: Boolean,
 )
+
+/**
+ * Criteria for [MailClient.search], ANDed together (all non-null fields must match).
+ * [from]/[to]/[subject]/[bodyText] are server-side substring matches; [unreadOnly]
+ * restricts to messages without `\Seen`; [sinceEpochSec]/[beforeEpochSec] bound the
+ * date (inclusive, day granularity on most servers). At least one field should be set.
+ */
+data class MailSearchCriteria(
+    val from: String? = null,
+    val to: String? = null,
+    val subject: String? = null,
+    val bodyText: String? = null,
+    val unreadOnly: Boolean = false,
+    val sinceEpochSec: Long? = null,
+    val beforeEpochSec: Long? = null,
+) {
+    /** True when no criterion is set — a search with this would match the whole folder. */
+    val isEmpty: Boolean
+        get() = from == null && to == null && subject == null && bodyText == null &&
+            !unreadOnly && sinceEpochSec == null && beforeEpochSec == null
+}
 
 /**
  * Result of a successful Proton SRP login + keyring unlock.

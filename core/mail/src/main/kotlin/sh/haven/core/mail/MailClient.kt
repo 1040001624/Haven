@@ -75,6 +75,14 @@ interface MailClient {
     suspend fun deleteMessage(sessionId: String, messageId: String)
 
     /**
+     * Copy [messageId] into [destFolderId], leaving the original in place (server-side
+     * IMAP COPY). On Gmail this *applies a label* — the message keeps its current
+     * folders/labels and gains [destFolderId]. Use for additive labelling (vs
+     * [moveMessage], which removes the source). Proton: 501.
+     */
+    suspend fun copyMessage(sessionId: String, messageId: String, destFolderId: String)
+
+    /**
      * Read [folderId]'s IMAP UID state for the Mail-Rules poller (UIDVALIDITY, UIDNEXT,
      * highest existing UID). Proton: throws [MailException.ProtocolError] (501).
      */
@@ -91,6 +99,37 @@ interface MailClient {
         sinceUid: Long,
         max: Int,
     ): List<MailNewMessage>
+
+    /**
+     * Server-side search of [folderId] for envelopes matching [criteria] (newest-first,
+     * capped at [limit]). Returns the same envelope shape as [listMessages] so the ids
+     * feed straight into [getMessageRaw] / the modify ops. Proton: 501.
+     */
+    suspend fun search(
+        sessionId: String,
+        folderId: String,
+        criteria: MailSearchCriteria,
+        limit: Int = DEFAULT_PAGE_SIZE,
+    ): List<MailMessage>
+
+    /**
+     * Append [mail] to the account's Drafts folder (flagged `\Draft`), without sending.
+     * Returns the Drafts folder id it landed in. Proton: 501.
+     */
+    suspend fun saveDraft(sessionId: String, mail: OutgoingMail): String
+
+    /**
+     * Create a new folder/label [name] (IMAP CREATE). On Gmail this is a new label.
+     * Returns the created folder's id (fullName). Throws if it already exists. Proton: 501.
+     */
+    suspend fun createFolder(sessionId: String, name: String): String
+
+    /**
+     * Delete the folder/label [folderId] (IMAP DELETE). On Gmail this removes the *label*
+     * (messages survive in All Mail); on a plain IMAP server it deletes the mailbox AND its
+     * messages — so this is destructive. Refuses the special-use system folders. Proton: 501.
+     */
+    suspend fun deleteFolder(sessionId: String, folderId: String)
 
     /** Revoke and drop the session. */
     suspend fun logout(sessionId: String)

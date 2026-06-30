@@ -63,6 +63,32 @@ class ImapMailClientTest {
     }
 
     @Test
+    fun imapFolderIdMapsInboxSentinel() {
+        // The engine-neutral read layer may pass Proton's inbox sentinel ("0"); IMAP has no
+        // such folder, so it normalises to "INBOX". Every other id passes through unchanged.
+        assertEquals("INBOX", ImapMailClient.imapFolderId("0"))
+        assertEquals("INBOX", ImapMailClient.imapFolderId(MailFolder.INBOX_ID))
+        assertEquals("INBOX", ImapMailClient.imapFolderId("INBOX"))
+        assertEquals("[Gmail]/All Mail", ImapMailClient.imapFolderId("[Gmail]/All Mail"))
+        assertEquals("Work/2026", ImapMailClient.imapFolderId("Work/2026"))
+    }
+
+    @Test
+    fun buildSearchTermComposesCriteria() {
+        // No criteria → null (caller treats as "no search").
+        assertNull(ImapMailClient.buildSearchTerm(MailSearchCriteria()))
+        // One criterion → the bare term (no AndTerm wrapper).
+        val one = ImapMailClient.buildSearchTerm(MailSearchCriteria(subject = "invoice"))
+        assertTrue(one is javax.mail.search.SubjectTerm)
+        // Multiple → an AndTerm over all of them.
+        val many = ImapMailClient.buildSearchTerm(
+            MailSearchCriteria(from = "a@b.com", unreadOnly = true, sinceEpochSec = 1_700_000_000L),
+        )
+        assertTrue(many is javax.mail.search.AndTerm)
+        assertEquals(3, (many as javax.mail.search.AndTerm).terms.size)
+    }
+
+    @Test
     fun folderRoleMapsImapSpecialUse() {
         // Gmail's `[Gmail]/*` special-use attributes (leaf names + RFC 6154 / Gmail attrs).
         assertEquals(MailFolderRole.SENT, ImapMailClient.folderRole("Sent Mail", listOf("\\HasNoChildren", "\\Sent")))

@@ -37,6 +37,7 @@ data class ParsedMessage(
     val subject: String,
     val from: String,
     val to: List<String>,
+    val cc: List<String> = emptyList(),
     val dateMillis: Long?,
     /**
      * Best displayable text. v1 renders this as plain text only — no WebView,

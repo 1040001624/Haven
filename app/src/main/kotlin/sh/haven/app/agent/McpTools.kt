@@ -301,7 +301,7 @@ internal class McpTools(
         },
 
         "list_mail_folders" to ToolHandler(
-            description = "List folders/labels for a connected EMAIL (ProtonMail) profile. Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, and type. Read-only.",
+            description = "List folders/labels for a connected EMAIL profile (IMAP/Gmail or Proton). Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, type, and role (inbox/sent/trash/…). Read-only.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -316,7 +316,7 @@ internal class McpTools(
         ) { args -> listMailFolders(args) },
 
         "list_mail_messages" to ToolHandler(
-            description = "List message envelopes in a folder of a connected EMAIL profile. Pass profileId and folderId (default '0' = Inbox; see list_mail_folders). Returns id, subject, from, unread, time, numAttachments per message, newest first. Read-only.",
+            description = "List message envelopes in a folder of a connected EMAIL profile. Pass profileId and folderId (default '0'/INBOX; see list_mail_folders). Returns id, subject, from, unread, time, numAttachments per message, newest first. Page with limit (default 100) + offset (skip from the newest end; offset = page*limit walks older). Read-only.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -326,7 +326,15 @@ internal class McpTools(
                     })
                     put("folderId", JSONObject().apply {
                         put("type", "string")
-                        put("description", "Folder/label id (default '0' = Inbox).")
+                        put("description", "Folder/label id (default '0'/INBOX).")
+                    })
+                    put("limit", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Max envelopes to return (default 100, 1..500).")
+                    })
+                    put("offset", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Skip this many from the newest end (default 0) — page older with offset = page*limit.")
                     })
                 })
                 put("required", JSONArray().put("profileId"))
@@ -335,7 +343,7 @@ internal class McpTools(
         ) { args -> listMailMessages(args) },
 
         "read_mail_message" to ToolHandler(
-            description = "Fetch and decrypt one message from a connected EMAIL profile, returning parsed headers and plain-text body (HTML is stripped; remote content is never loaded). Pass profileId and messageId (from list_mail_messages). Each attachment carries an { index, filename, mimeType, sizeBytes, isInline } — pass the index to save_mail_attachment to write its bytes to any connected filesystem. Read-only.",
+            description = "Fetch one message from a connected EMAIL profile (IMAP/Gmail or Proton; Proton messages are decrypted), returning parsed headers (from, to[], cc[] — cc enables reply-all) and plain-text body (HTML is stripped; remote content is never loaded). Pass profileId and messageId (from list_mail_messages). Each attachment carries an { index, filename, mimeType, sizeBytes, isInline } — pass the index to save_mail_attachment to write its bytes to any connected filesystem. Read-only.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -354,7 +362,7 @@ internal class McpTools(
         ) { args -> readMailMessage(args) },
 
         "send_mail" to ToolHandler(
-            description = "Send a plain-text email from a connected EMAIL profile. Pass profileId (from list_connections; connect_profile first), to (array of recipient addresses, at least one), subject, and body (plain text). Optional cc/bcc arrays. Optional attachments: an array of { profileId, path } files on any connected backend (\"local\" or a connected profile id) to attach. Returns { sent, messageId, appendedToSent }. IMAP/SMTP only — Proton send is not yet implemented and returns an error. Side-effectful: prompts for consent on every call and is recorded in the connection log.",
+            description = "Send a plain-text email from a connected EMAIL profile. Pass profileId (from list_connections; connect_profile first), to (array of recipient addresses, at least one), subject, and body (plain text). Optional cc/bcc arrays. Optional attachments: an array of { profileId, path } files on any connected backend (\"local\" or a connected profile id) to attach. To reply in-thread, pass inReplyToMessageId (a messageId from list_mail_messages) — the engine sets In-Reply-To/References from that message so the reply threads (set your own \"Re: …\" subject). Returns { sent, messageId, appendedToSent }. IMAP/SMTP only — Proton send is not yet implemented and returns an error. Side-effectful: prompts for consent on every call and is recorded in the connection log.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -384,6 +392,10 @@ internal class McpTools(
                         put("type", "array")
                         put("items", JSONObject().put("type", "string"))
                         put("description", "Optional Bcc addresses.")
+                    })
+                    put("inReplyToMessageId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional: messageId (from list_mail_messages) this is a reply to — threads via In-Reply-To/References.")
                     })
                     put("attachments", JSONObject().apply {
                         put("type", "array")
@@ -454,6 +466,119 @@ internal class McpTools(
                     "to ${args.optString("destPath")} on \"${profileLabel(args.optString("destProfileId"))}\"?"
             },
         ) { args -> saveMailAttachment(args) },
+
+        "modify_mail_message" to ToolHandler(
+            description = "Mutate one message on a connected EMAIL profile: mark read/unread, flag/unflag (star), move to another folder, copy/apply-a-label, or delete. Pass profileId + messageId (from list_mail_messages) + op (mark_read | mark_unread | flag | unflag | move | copy | delete). op=move and op=copy also require destFolderId (a folder id from list_mail_folders). IMAP/Gmail only — the Proton engine returns 501. On Gmail: move relabels (removes the source label, adds dest); copy is additive — it applies the dest label and KEEPS the message in its current folders (use copy to label without archiving from Inbox); delete moves to Trash. Returns { ok, op, messageId }. Side-effectful — prompts for consent on every call.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "EMAIL connection profile id.")
+                    })
+                    put("messageId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Message id from list_mail_messages.")
+                    })
+                    put("op", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "mark_read | mark_unread | flag | unflag | move | copy | delete")
+                    })
+                    put("destFolderId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Destination folder/label id (from list_mail_folders) — required when op=move or op=copy.")
+                    })
+                })
+                put("required", JSONArray().put("profileId").put("messageId").put("op"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args ->
+                val op = args.optString("op")
+                val dest = args.optString("destFolderId").ifBlank { null }
+                "Mail: $op message on \"${profileLabel(args.optString("profileId"))}\"" +
+                    (if ((op == "move" || op == "copy") && dest != null) " → $dest" else "") + "?"
+            },
+        ) { args -> modifyMailMessage(args) },
+
+        "search_mail" to ToolHandler(
+            description = "Server-side search of a folder on a connected EMAIL profile. Pass profileId, optional folderId (default INBOX; see list_mail_folders), and one or more criteria: from, to, subject, body (substring matches), unreadOnly (bool), sinceEpochSec / beforeEpochSec (Unix seconds, day granularity). Criteria are ANDed; at least one is required. Optional limit (default 100, 1..500). Returns the same envelope shape as list_mail_messages (newest first) — feed ids into read_mail_message / modify_mail_message. IMAP/Gmail only — Proton returns 501. Read-only.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
+                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder/label id to search (default INBOX).") })
+                    put("from", JSONObject().apply { put("type", "string"); put("description", "Match sender address/name (substring).") })
+                    put("to", JSONObject().apply { put("type", "string"); put("description", "Match a To recipient (substring).") })
+                    put("subject", JSONObject().apply { put("type", "string"); put("description", "Match subject (substring).") })
+                    put("body", JSONObject().apply { put("type", "string"); put("description", "Match body text (substring).") })
+                    put("unreadOnly", JSONObject().apply { put("type", "boolean"); put("description", "Only unread (no \\Seen) messages.") })
+                    put("sinceEpochSec", JSONObject().apply { put("type", "integer"); put("description", "On/after this Unix-seconds date (day granularity).") })
+                    put("beforeEpochSec", JSONObject().apply { put("type", "integer"); put("description", "On/before this Unix-seconds date (day granularity).") })
+                    put("limit", JSONObject().apply { put("type", "integer"); put("description", "Max results (default 100, 1..500).") })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.NEVER,
+        ) { args -> searchMail(args) },
+
+        "save_mail_draft" to ToolHandler(
+            description = "Save a draft (NOT sent) to the account's Drafts folder on a connected EMAIL profile — use to compose a message for the user to review/send later. Same fields as send_mail (to/cc/bcc/subject/body, optional attachments, optional inReplyToMessageId to thread) but all are optional — a draft may be incomplete. Returns { saved, draftFolderId }. IMAP/Gmail only — Proton returns 501. Writes to the mailbox — prompts for consent on every call.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
+                    put("to", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Recipient addresses (optional for a draft).") })
+                    put("subject", JSONObject().apply { put("type", "string"); put("description", "Subject line.") })
+                    put("body", JSONObject().apply { put("type", "string"); put("description", "Plain-text body.") })
+                    put("cc", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Optional Cc addresses.") })
+                    put("bcc", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Optional Bcc addresses.") })
+                    put("inReplyToMessageId", JSONObject().apply { put("type", "string"); put("description", "Optional: messageId this draft replies to — threads via In-Reply-To/References.") })
+                    put("attachments", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().apply {
+                            put("type", "object")
+                            put("properties", JSONObject().apply {
+                                put("profileId", JSONObject().apply { put("type", "string"); put("description", "Backend profile id holding the file, or \"local\".") })
+                                put("path", JSONObject().apply { put("type", "string"); put("description", "Absolute path of the file on that backend.") })
+                            })
+                            put("required", JSONArray().put("profileId").put("path"))
+                        })
+                        put("description", "Optional files to attach, each { profileId, path }.")
+                    })
+                })
+                put("required", JSONArray().put("profileId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Save a draft to \"${profileLabel(args.optString("profileId"))}\" — \"${args.optString("subject")}\"?" },
+        ) { args -> saveMailDraft(args) },
+
+        "create_mail_folder" to ToolHandler(
+            description = "Create a new folder/label on a connected EMAIL profile (IMAP CREATE; on Gmail this is a new label). Pass profileId + name (use the server's hierarchy separator for nesting, e.g. \"Work/2026\"). Returns { created, folderId } — use folderId as a destination for modify_mail_message move/copy. Fails if it already exists. IMAP/Gmail only — Proton returns 501. Changes the mailbox — prompts for consent on every call.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
+                    put("name", JSONObject().apply { put("type", "string"); put("description", "New folder/label name (e.g. \"Receipts\" or \"Work/2026\").") })
+                })
+                put("required", JSONArray().put("profileId").put("name"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "Create mail folder/label \"${args.optString("name")}\" on \"${profileLabel(args.optString("profileId"))}\"?" },
+        ) { args -> createMailFolder(args) },
+
+        "delete_mail_folder" to ToolHandler(
+            description = "Delete a folder/label on a connected EMAIL profile (IMAP DELETE). Pass profileId + folderId (from list_mail_folders). On Gmail this removes the LABEL — messages survive in All Mail; on a plain IMAP server it deletes the mailbox AND its messages (destructive). System folders (Inbox/Sent/Drafts/Trash/Spam/All Mail/…) are refused. Returns { deleted, folderId }. IMAP/Gmail only — Proton returns 501. Destructive — prompts for consent on every call.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
+                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder/label id to delete (from list_mail_folders). System folders are refused.") })
+                })
+                put("required", JSONArray().put("profileId").put("folderId"))
+            },
+            consentLevel = ConsentLevel.EVERY_CALL,
+            summarise = { args -> "DELETE mail folder/label \"${args.optString("folderId")}\" on \"${profileLabel(args.optString("profileId"))}\"? (On Gmail removes the label; on other IMAP deletes the folder + its messages.)" },
+        ) { args -> deleteMailFolder(args) },
 
         "list_rclone_provider_options" to ToolHandler(
             description = "List a credentials-based rclone provider's basic config fields — the non-advanced options needed to configure a non-OAuth remote (ftp, sftp, webdav, s3, b2, mega, filen, …). Each entry has name, help, required, isPassword, default, type. Feed the collected values into configure_rclone_remote's `parameters`. OAuth providers (drive, dropbox, onedrive, box, pcloud) are configured via the in-app browser sign-in, not this. (#181)",
@@ -3740,7 +3865,7 @@ internal class McpTools(
         }
     }
 
-    // ---- EMAIL (ProtonMail) read tools — the MCP-drivable read path (#EMAIL) ----
+    // ---- EMAIL (IMAP/Gmail or Proton) tools — the MCP-drivable mail path (#EMAIL) ----
 
     /** Non-blank, trimmed string elements of a JSON array (empty when null). */
     private fun JSONArray?.toTrimmedStringList(): List<String> {
@@ -3889,27 +4014,121 @@ internal class McpTools(
             throw McpError(-32602, "Missing required argument: profileId")
         }
         val folderId = args.optString("folderId").ifEmpty { sh.haven.core.mail.MailFolder.INBOX_ID }
+        val limit = args.optInt("limit", 100).coerceIn(1, 500)
+        val offset = args.optInt("offset", 0).coerceAtLeast(0)
         val sessionId = requireMailSession(profileId)
         return try {
-            val msgs = mailClientFor(sessionId).listMessages(sessionId, folderId, desc = true)
+            val msgs = mailClientFor(sessionId).listMessages(sessionId, folderId, desc = true, limit = limit, offset = offset)
             JSONObject().apply {
                 put("folderId", folderId)
+                put("offset", offset)
                 put("count", msgs.size)
-                put("messages", JSONArray().apply {
-                    msgs.forEach { m ->
-                        put(JSONObject().apply {
-                            put("id", m.id)
-                            put("subject", m.subject)
-                            put("from", m.from?.display() ?: "")
-                            put("unread", m.unread)
-                            put("time", m.timeSeconds)
-                            put("numAttachments", m.numAttachments)
-                        })
-                    }
-                })
+                put("messages", mailEnvelopes(msgs))
             }
         } catch (e: Exception) {
             throw McpError(-32603, "Failed to list mail messages: ${e.message}")
+        }
+    }
+
+    /** Envelope JSON array shared by list_mail_messages and search_mail. */
+    private fun mailEnvelopes(msgs: List<sh.haven.core.mail.MailMessage>): JSONArray =
+        JSONArray().apply {
+            msgs.forEach { m ->
+                put(JSONObject().apply {
+                    put("id", m.id)
+                    put("subject", m.subject)
+                    put("from", m.from?.display() ?: "")
+                    put("unread", m.unread)
+                    put("time", m.timeSeconds)
+                    put("numAttachments", m.numAttachments)
+                })
+            }
+        }
+
+    private suspend fun searchMail(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val folderId = args.optString("folderId").ifEmpty { "INBOX" }
+        val criteria = sh.haven.core.mail.MailSearchCriteria(
+            from = args.optString("from").ifBlank { null },
+            to = args.optString("to").ifBlank { null },
+            subject = args.optString("subject").ifBlank { null },
+            bodyText = args.optString("body").ifBlank { null },
+            unreadOnly = args.optBoolean("unreadOnly", false),
+            sinceEpochSec = if (args.has("sinceEpochSec")) args.optLong("sinceEpochSec") else null,
+            beforeEpochSec = if (args.has("beforeEpochSec")) args.optLong("beforeEpochSec") else null,
+        )
+        if (criteria.isEmpty) {
+            throw McpError(-32602, "Provide at least one search criterion (from/to/subject/body/unreadOnly/sinceEpochSec/beforeEpochSec)")
+        }
+        val limit = args.optInt("limit", 100).coerceIn(1, 500)
+        val sessionId = requireMailSession(profileId)
+        return try {
+            val msgs = mailClientFor(sessionId).search(sessionId, folderId, criteria, limit)
+            JSONObject().apply {
+                put("folderId", folderId)
+                put("count", msgs.size)
+                put("messages", mailEnvelopes(msgs))
+            }
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to search mail: ${e.message}")
+        }
+    }
+
+    private suspend fun saveMailDraft(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val to = args.optJSONArray("to").toTrimmedStringList()
+        val cc = args.optJSONArray("cc").toTrimmedStringList()
+        val bcc = args.optJSONArray("bcc").toTrimmedStringList()
+        val subject = args.optString("subject")
+        val body = args.optString("body")
+        val inReplyToMessageId = args.optString("inReplyToMessageId").ifBlank { null }
+        val sessionId = requireMailSession(profileId)
+        val attachments = resolveSendAttachments(args.optJSONArray("attachments"))
+        val mail = sh.haven.core.mail.OutgoingMail(
+            to = to, cc = cc, bcc = bcc, subject = subject, bodyText = body,
+            attachments = attachments, inReplyToMessageId = inReplyToMessageId,
+        )
+        return try {
+            val draftFolderId = mailClientFor(sessionId).saveDraft(sessionId, mail)
+            JSONObject().put("saved", true).put("draftFolderId", draftFolderId)
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to save draft: ${e.message}")
+        }
+    }
+
+    private suspend fun createMailFolder(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val name = args.optString("name").ifBlank {
+            throw McpError(-32602, "Missing required argument: name")
+        }
+        val sessionId = requireMailSession(profileId)
+        return try {
+            val folderId = mailClientFor(sessionId).createFolder(sessionId, name)
+            JSONObject().put("created", true).put("folderId", folderId)
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to create mail folder: ${e.message}")
+        }
+    }
+
+    private suspend fun deleteMailFolder(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val folderId = args.optString("folderId").ifBlank {
+            throw McpError(-32602, "Missing required argument: folderId")
+        }
+        val sessionId = requireMailSession(profileId)
+        return try {
+            mailClientFor(sessionId).deleteFolder(sessionId, folderId)
+            JSONObject().put("deleted", true).put("folderId", folderId)
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to delete mail folder: ${e.message}")
         }
     }
 
@@ -3928,6 +4147,7 @@ internal class McpTools(
                 put("subject", parsed.subject)
                 put("from", parsed.from)
                 put("to", JSONArray().apply { parsed.to.forEach { put(it) } })
+                put("cc", JSONArray().apply { parsed.cc.forEach { put(it) } })
                 parsed.dateMillis?.let { put("dateMillis", it) }
                 put("bodyWasHtml", parsed.bodyWasHtml)
                 put("body", parsed.bodyText)
@@ -3949,6 +4169,47 @@ internal class McpTools(
         }
     }
 
+    private suspend fun modifyMailMessage(args: JSONObject): JSONObject {
+        val profileId = args.optString("profileId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: profileId")
+        }
+        val messageId = args.optString("messageId").ifEmpty {
+            throw McpError(-32602, "Missing required argument: messageId")
+        }
+        val op = args.optString("op").ifEmpty {
+            throw McpError(-32602, "Missing required argument: op")
+        }.lowercase()
+        val sessionId = requireMailSession(profileId)
+        val client = mailClientFor(sessionId)
+        return try {
+            when (op) {
+                "mark_read" -> client.setSeen(sessionId, messageId, true)
+                "mark_unread" -> client.setSeen(sessionId, messageId, false)
+                "flag" -> client.setFlagged(sessionId, messageId, true)
+                "unflag" -> client.setFlagged(sessionId, messageId, false)
+                "move" -> {
+                    val dest = args.optString("destFolderId").ifEmpty {
+                        throw McpError(-32602, "op=move requires destFolderId (see list_mail_folders)")
+                    }
+                    client.moveMessage(sessionId, messageId, dest)
+                }
+                "copy" -> {
+                    val dest = args.optString("destFolderId").ifEmpty {
+                        throw McpError(-32602, "op=copy requires destFolderId (see list_mail_folders)")
+                    }
+                    client.copyMessage(sessionId, messageId, dest)
+                }
+                "delete" -> client.deleteMessage(sessionId, messageId)
+                else -> throw McpError(-32602, "Unknown op '$op' (mark_read|mark_unread|flag|unflag|move|copy|delete)")
+            }
+            JSONObject().put("ok", true).put("op", op).put("messageId", messageId)
+        } catch (e: McpError) {
+            throw e
+        } catch (e: Exception) {
+            throw McpError(-32603, "Failed to $op mail message: ${e.message}")
+        }
+    }
+
     private suspend fun sendMail(args: JSONObject): JSONObject {
         val profileId = args.optString("profileId").ifEmpty {
             throw McpError(-32602, "Missing required argument: profileId")
@@ -3963,11 +4224,12 @@ internal class McpTools(
         val body = args.optString("body")
         val cc = args.optJSONArray("cc").toTrimmedStringList()
         val bcc = args.optJSONArray("bcc").toTrimmedStringList()
+        val inReplyToMessageId = args.optString("inReplyToMessageId").ifBlank { null }
         val sessionId = requireMailSession(profileId)
         val attachments = resolveSendAttachments(args.optJSONArray("attachments"))
         val mail = sh.haven.core.mail.OutgoingMail(
             to = to, cc = cc, bcc = bcc, subject = subject, bodyText = body,
-            attachments = attachments,
+            attachments = attachments, inReplyToMessageId = inReplyToMessageId,
         )
         return try {
             val result = mailClientFor(sessionId).send(sessionId, mail)

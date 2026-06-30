@@ -18,6 +18,15 @@ import javax.mail.MessagingException
 import javax.mail.Session
 import javax.mail.Store
 import javax.mail.UIDFolder
+import javax.mail.search.AndTerm
+import javax.mail.search.BodyTerm
+import javax.mail.search.ComparisonTerm
+import javax.mail.search.FlagTerm
+import javax.mail.search.FromStringTerm
+import javax.mail.search.ReceivedDateTerm
+import javax.mail.search.RecipientStringTerm
+import javax.mail.search.SearchTerm
+import javax.mail.search.SubjectTerm
 import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeBodyPart
 import javax.mail.internet.MimeMessage
@@ -109,7 +118,8 @@ class ImapMailClient @Inject constructor() : MailClient {
         offset: Int,
     ): List<MailMessage> = withContext(Dispatchers.IO) {
         val s = session(sessionId)
-        val folder = s.store.getFolder(folderId)
+        val fid = imapFolderId(folderId)
+        val folder = s.store.getFolder(fid)
         folder.open(Folder.READ_ONLY)
         try {
             // Fetch only the most-recent [limit] envelopes (skipping [offset] from
@@ -127,7 +137,7 @@ class ImapMailClient @Inject constructor() : MailClient {
             }
             folder.fetch(msgs, fp)
             val uf = folder as UIDFolder
-            val list = msgs.map { m -> toMailMessage(m, uf, folderId) }
+            val list = msgs.map { m -> toMailMessage(m, uf, fid) }
             // The slice is oldest-first within the window; newest-first when desc.
             if (desc) list.asReversed() else list
         } catch (e: MessagingException) {
@@ -174,6 +184,7 @@ class ImapMailClient @Inject constructor() : MailClient {
         withContext(Dispatchers.IO) {
             val s = session(sessionId)
             val (folderId, uid) = decodeId(messageId)
+            val destFolderId = imapFolderId(destFolderId)
             val dest = s.store.getFolder(destFolderId)
             if (!dest.exists()) {
                 throw MailException.ProtocolError(404, "Destination folder not found: $destFolderId")
@@ -208,6 +219,31 @@ class ImapMailClient @Inject constructor() : MailClient {
                 throw MailException.ProtocolError(0, e.message ?: "IMAP move failed")
             } finally {
                 runCatching { src.close(true) }
+            }
+        }
+    }
+
+    override suspend fun copyMessage(sessionId: String, messageId: String, destFolderId: String) {
+        withContext(Dispatchers.IO) {
+            val s = session(sessionId)
+            val (folderId, uid) = decodeId(messageId)
+            val destId = imapFolderId(destFolderId)
+            val dest = s.store.getFolder(destId)
+            if (!dest.exists()) {
+                throw MailException.ProtocolError(404, "Destination folder not found: $destId")
+            }
+            val src = s.store.getFolder(folderId)
+            src.open(Folder.READ_ONLY)
+            try {
+                // IMAP COPY adds the message to dest, leaving the source intact. On Gmail
+                // this applies the dest label without removing any existing label.
+                val m = (src as UIDFolder).getMessageByUID(uid)
+                    ?: throw MailException.ProtocolError(404, "Message $uid not found in $folderId")
+                src.copyMessages(arrayOf<Message>(m), dest)
+            } catch (e: MessagingException) {
+                throw MailException.ProtocolError(0, e.message ?: "IMAP copy failed")
+            } finally {
+                runCatching { src.close(false) }
             }
         }
     }
@@ -263,6 +299,110 @@ class ImapMailClient @Inject constructor() : MailClient {
         }
     }
 
+    override suspend fun search(
+        sessionId: String,
+        folderId: String,
+        criteria: MailSearchCriteria,
+        limit: Int,
+    ): List<MailMessage> = withContext(Dispatchers.IO) {
+        val term = buildSearchTerm(criteria) ?: return@withContext emptyList()
+        val s = session(sessionId)
+        val fid = imapFolderId(folderId)
+        val folder = s.store.getFolder(fid)
+        folder.open(Folder.READ_ONLY)
+        try {
+            val found = folder.search(term)
+            if (found.isEmpty()) return@withContext emptyList()
+            // SEARCH returns ascending message numbers (oldest→newest); keep only the newest
+            // [limit] so a broad match doesn't fetch thousands of envelopes over the tunnel.
+            val recent = if (found.size > limit) found.copyOfRange(found.size - limit, found.size) else found
+            folder.fetch(
+                recent,
+                FetchProfile().apply {
+                    add(FetchProfile.Item.ENVELOPE)
+                    add(FetchProfile.Item.FLAGS)
+                    add(UIDFolder.FetchProfileItem.UID)
+                },
+            )
+            val uf = folder as UIDFolder
+            recent.map { toMailMessage(it, uf, fid) }
+                .sortedByDescending { it.timeSeconds }
+        } catch (e: MessagingException) {
+            throw MailException.ProtocolError(0, e.message ?: "IMAP search failed")
+        } finally {
+            runCatching { folder.close(false) }
+        }
+    }
+
+    override suspend fun saveDraft(sessionId: String, mail: OutgoingMail): String =
+        withContext(Dispatchers.IO) {
+            val s = session(sessionId)
+            val p = s.params
+            // A MimeMessage is built the same way as for send (reusing reply-threading), then
+            // appended to Drafts flagged \Draft instead of going out over SMTP.
+            val draftSession = Session.getInstance(buildSmtpProps(p))
+            val reply = mail.inReplyToMessageId?.let { resolveReplyHeaders(s, it) }
+            val msg = buildMimeMessage(draftSession, p, mail, reply?.first, reply?.second ?: emptyList())
+            val drafts = findDraftsFolder(s.store)?.takeIf { it.exists() }
+                ?: throw MailException.ProtocolError(404, "No Drafts folder on this account")
+            drafts.open(Folder.READ_WRITE)
+            try {
+                msg.setFlag(Flags.Flag.DRAFT, true)
+                msg.setFlag(Flags.Flag.SEEN, true)
+                drafts.appendMessages(arrayOf<Message>(msg))
+                drafts.fullName
+            } catch (e: MessagingException) {
+                throw MailException.ProtocolError(0, e.message ?: "IMAP draft append failed")
+            } finally {
+                runCatching { drafts.close(false) }
+            }
+        }
+
+    override suspend fun createFolder(sessionId: String, name: String): String =
+        withContext(Dispatchers.IO) {
+            val s = session(sessionId)
+            val trimmed = name.trim()
+            if (trimmed.isBlank()) throw MailException.ProtocolError(400, "Folder name is blank")
+            val folder = s.store.getFolder(trimmed)
+            try {
+                if (folder.exists()) throw MailException.ProtocolError(409, "Folder already exists: $trimmed")
+                if (!folder.create(Folder.HOLDS_MESSAGES)) {
+                    throw MailException.ProtocolError(0, "Server refused to create folder: $trimmed")
+                }
+                folder.fullName
+            } catch (e: MessagingException) {
+                throw MailException.ProtocolError(0, e.message ?: "IMAP create-folder failed")
+            }
+        }
+
+    override suspend fun deleteFolder(sessionId: String, folderId: String) {
+        withContext(Dispatchers.IO) {
+            val s = session(sessionId)
+            val fid = imapFolderId(folderId)
+            if (fid.equals("INBOX", ignoreCase = true)) {
+                throw MailException.ProtocolError(400, "Refusing to delete INBOX")
+            }
+            val folder = s.store.getFolder(fid)
+            try {
+                if (!folder.exists()) throw MailException.ProtocolError(404, "Folder not found: $fid")
+                // Refuse special-use system folders (Sent/Drafts/Trash/Spam/All Mail/…) — deleting
+                // one breaks the account; only user folders/labels may be removed.
+                val attrs = runCatching {
+                    (folder as? com.sun.mail.imap.IMAPFolder)?.attributes?.toList()
+                }.getOrNull().orEmpty()
+                if (folderRole(folder.name, attrs) != MailFolderRole.NONE) {
+                    throw MailException.ProtocolError(400, "Refusing to delete the system folder: $fid")
+                }
+                if (folder.isOpen) runCatching { folder.close(false) }
+                if (!folder.delete(true)) {
+                    throw MailException.ProtocolError(0, "Server refused to delete folder: $fid")
+                }
+            } catch (e: MessagingException) {
+                throw MailException.ProtocolError(0, e.message ?: "IMAP delete-folder failed")
+            }
+        }
+    }
+
     /**
      * Open the message's folder READ_WRITE, resolve it by UID, run [block], and close
      * (expunging when [expungeOnClose]). Shared by the flag/delete filter ops.
@@ -297,7 +437,10 @@ class ImapMailClient @Inject constructor() : MailClient {
             // the IMAP socketFactory keys. The build/send is split into testable
             // helpers (buildSmtpProps / buildMimeMessage).
             val smtpSession = Session.getInstance(buildSmtpProps(p))
-            val msg = buildMimeMessage(smtpSession, p, mail)
+            // Resolve reply-threading headers from the original message (if this is a reply),
+            // so the outgoing message carries In-Reply-To / References and threads.
+            val reply = mail.inReplyToMessageId?.let { resolveReplyHeaders(s, it) }
+            val msg = buildMimeMessage(smtpSession, p, mail, reply?.first, reply?.second ?: emptyList())
             try {
                 val transport = smtpSession.getTransport(if (smtpImplicitTls(p)) "smtps" else "smtp")
                 try {
@@ -337,8 +480,24 @@ class ImapMailClient @Inject constructor() : MailClient {
     /** SMTP host — the dedicated [MailConnectParams.Imap.smtpServer], or the IMAP host as a fallback. */
     internal fun smtpHost(p: MailConnectParams.Imap): String = p.smtpServer ?: p.server
 
-    private fun session(sessionId: String): ImapSession =
-        sessions[sessionId] ?: throw MailException.SessionExpired("IMAP session $sessionId not found")
+    private fun session(sessionId: String): ImapSession {
+        val s = sessions[sessionId]
+            ?: throw MailException.SessionExpired("IMAP session $sessionId not found")
+        // Gmail (and most IMAP servers) drop idle connections; reopen the Store on use
+        // rather than failing with "Socket is closed". IMAPStore.isConnected() pings with a
+        // NOOP so it detects a dead socket, and params still holds the creds + tunneled
+        // socket factory, so reconnecting needs no re-prompt.
+        val alive = try { s.store.isConnected() } catch (e: Exception) { false }
+        if (!alive) {
+            try {
+                val p = s.params
+                s.store.connect(p.server, p.port, p.username, p.password)
+            } catch (e: Exception) {
+                throw MailException.SessionExpired("IMAP session $sessionId reconnect failed: ${e.message}")
+            }
+        }
+        return s
+    }
 
     private fun toMailMessage(m: Message, uf: UIDFolder, folderId: String): MailMessage {
         val from = (m.from?.firstOrNull() as? InternetAddress)
@@ -458,12 +617,18 @@ class ImapMailClient @Inject constructor() : MailClient {
         smtpSession: Session,
         p: MailConnectParams.Imap,
         mail: OutgoingMail,
+        inReplyTo: String? = null,
+        references: List<String> = emptyList(),
     ): MimeMessage = MimeMessage(smtpSession).apply {
         setFrom(fromAddress(p))
         setRecipients(Message.RecipientType.TO, toAddresses(mail.to))
         if (mail.cc.isNotEmpty()) setRecipients(Message.RecipientType.CC, toAddresses(mail.cc))
         if (mail.bcc.isNotEmpty()) setRecipients(Message.RecipientType.BCC, toAddresses(mail.bcc))
         setSubject(mail.subject, "UTF-8")
+        // RFC 5322 threading: In-Reply-To = the parent's Message-ID; References = the
+        // parent's References chain plus the parent's own Message-ID.
+        if (inReplyTo != null) setHeader("In-Reply-To", inReplyTo)
+        if (references.isNotEmpty()) setHeader("References", references.joinToString(" "))
         if (mail.attachments.isEmpty()) {
             setText(mail.bodyText, "UTF-8")
         } else {
@@ -485,6 +650,29 @@ class ImapMailClient @Inject constructor() : MailClient {
         sentDate = Date()
         saveChanges()
     }
+
+    /**
+     * Read the parent message's `Message-ID` (and `References`) so a reply can thread.
+     * Returns `(inReplyTo, references)` where references = the parent's References chain
+     * plus its own Message-ID, or null if the parent or its Message-ID can't be read
+     * (a reply without these headers still sends, just unthreaded). Best-effort.
+     */
+    private fun resolveReplyHeaders(s: ImapSession, messageId: String): Pair<String, List<String>>? =
+        runCatching {
+            val (folderId, uid) = decodeId(messageId)
+            val folder = s.store.getFolder(imapFolderId(folderId))
+            folder.open(Folder.READ_ONLY)
+            try {
+                val m = (folder as UIDFolder).getMessageByUID(uid) ?: return null
+                val parentId = m.getHeader("Message-ID")?.firstOrNull()?.trim()?.ifBlank { null }
+                    ?: return null
+                val parentRefs = m.getHeader("References")?.firstOrNull()
+                    ?.split(Regex("\\s+"))?.mapNotNull { it.trim().ifBlank { null } }.orEmpty()
+                parentId to (parentRefs + parentId)
+            } finally {
+                runCatching { folder.close(false) }
+            }
+        }.getOrNull()
 
     /** From the authenticated account; synthesise a domain when the username is a bare local part. */
     private fun fromAddress(p: MailConnectParams.Imap): InternetAddress =
@@ -528,9 +716,41 @@ class ImapMailClient @Inject constructor() : MailClient {
         }
     }
 
+    /** Locate the Drafts folder: prefer the RFC 6154 `\Drafts` special-use attribute, then a name match. */
+    private fun findDraftsFolder(store: Store): Folder? {
+        val all = runCatching { store.defaultFolder.list("*").toList() }.getOrDefault(emptyList())
+        all.firstOrNull { f ->
+            runCatching {
+                (f as? com.sun.mail.imap.IMAPFolder)?.attributes
+                    ?.any { it.equals("\\Drafts", ignoreCase = true) } == true
+            }.getOrDefault(false)
+        }?.let { return it }
+        val names = setOf("drafts", "draft")
+        return all.firstOrNull {
+            it.name.lowercase() in names || it.fullName.lowercase() in names
+        }
+    }
+
     companion object {
         private const val TAG = "ImapMailClient"
         private const val TIMEOUT_MS = "30000"
+
+        /**
+         * Compose a JavaMail [SearchTerm] from [c] by ANDing every set field, or null when
+         * [c] is empty (the caller treats that as "no search"). Pure — unit-tested.
+         */
+        internal fun buildSearchTerm(c: MailSearchCriteria): SearchTerm? {
+            if (c.isEmpty) return null
+            val terms = mutableListOf<SearchTerm>()
+            c.from?.let { terms += FromStringTerm(it) }
+            c.to?.let { terms += RecipientStringTerm(Message.RecipientType.TO, it) }
+            c.subject?.let { terms += SubjectTerm(it) }
+            c.bodyText?.let { terms += BodyTerm(it) }
+            if (c.unreadOnly) terms += FlagTerm(Flags(Flags.Flag.SEEN), false)
+            c.sinceEpochSec?.let { terms += ReceivedDateTerm(ComparisonTerm.GE, Date(it * 1000)) }
+            c.beforeEpochSec?.let { terms += ReceivedDateTerm(ComparisonTerm.LE, Date(it * 1000)) }
+            return if (terms.size == 1) terms[0] else AndTerm(terms.toTypedArray())
+        }
 
         /**
          * The 1-based IMAP message-number window for the most-recent [limit]
@@ -556,6 +776,16 @@ class ImapMailClient @Inject constructor() : MailClient {
          * space (not a control byte) keeps the id valid as a JSON string on the
          * MCP read path.
          */
+        /**
+         * Map the cross-engine inbox sentinel ([MailFolder.INBOX_ID] = "0", Proton's id) to
+         * IMAP's "INBOX". The MCP/read layer is engine-neutral and may pass "0" (e.g. the
+         * list_mail_messages default), but IMAP has no folder named "0". Normalising here —
+         * before envelope ids are minted from the folder — keeps every read/modify-by-id path
+         * resolving to the real mailbox. Other folder ids (from listFolders) pass through.
+         */
+        internal fun imapFolderId(folderId: String): String =
+            if (folderId == MailFolder.INBOX_ID) "INBOX" else folderId
+
         internal fun encodeId(folderId: String, uid: Long): String = "$folderId $uid"
 
         internal fun decodeId(messageId: String): Pair<String, Long> {

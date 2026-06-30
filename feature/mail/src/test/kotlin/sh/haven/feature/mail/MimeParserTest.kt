@@ -66,6 +66,25 @@ class MimeParserTest {
     }
 
     @Test
+    fun `parses Cc recipients for reply-all`() {
+        val raw = """
+            From: Alice <alice@proton.me>
+            To: Bob <bob@example.com>
+            Cc: Carol <carol@example.com>, dave@example.org
+            Subject: Cc test
+            Date: Wed, 03 Jun 2026 10:00:00 +0000
+            Content-Type: text/plain; charset=utf-8
+
+            Body.
+        """.trimIndent().replace("\n", "\r\n").toByteArray()
+
+        val msg = MimeParser.parse(raw)
+        assertEquals(2, msg.cc.size)
+        assertTrue(msg.cc.any { it.contains("carol@example.com") })
+        assertTrue(msg.cc.any { it.contains("dave@example.org") })
+    }
+
+    @Test
     fun `indexes parts in dfs order, flags inline cid, round-trips exact bytes`() {
         val raw = """
             From: a@example.com

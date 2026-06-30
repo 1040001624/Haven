@@ -56,6 +56,7 @@ object MimeParser {
             subject = message.subject ?: "(no subject)",
             from = message.from?.firstOrNull()?.let { displayMailbox(it) } ?: "",
             to = message.to?.flatten()?.map { displayMailbox(it) } ?: emptyList(),
+            cc = message.cc?.flatten()?.map { displayMailbox(it) } ?: emptyList(),
             dateMillis = message.date?.time,
             bodyText = body,
             bodyWasHtml = wasHtml,

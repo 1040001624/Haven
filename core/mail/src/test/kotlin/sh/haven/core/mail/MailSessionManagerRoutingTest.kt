@@ -36,6 +36,11 @@ class MailSessionManagerRoutingTest {
         override suspend fun setFlagged(sessionId: String, messageId: String, flagged: Boolean) {}
         override suspend fun moveMessage(sessionId: String, messageId: String, destFolderId: String) {}
         override suspend fun deleteMessage(sessionId: String, messageId: String) {}
+        override suspend fun copyMessage(sessionId: String, messageId: String, destFolderId: String) {}
+        override suspend fun search(sessionId: String, folderId: String, criteria: MailSearchCriteria, limit: Int) = emptyList<MailMessage>()
+        override suspend fun saveDraft(sessionId: String, mail: OutgoingMail) = "Drafts"
+        override suspend fun createFolder(sessionId: String, name: String) = name
+        override suspend fun deleteFolder(sessionId: String, folderId: String) {}
         override suspend fun folderUidState(sessionId: String, folderId: String) = MailFolderUidState(1, null, 0)
         override suspend fun listSince(sessionId: String, folderId: String, sinceUid: Long, max: Int) = emptyList<MailNewMessage>()
         override suspend fun logout(sessionId: String) { logouts += sessionId }

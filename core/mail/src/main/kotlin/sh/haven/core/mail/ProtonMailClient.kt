@@ -105,6 +105,25 @@ class ProtonMailClient @Inject constructor() : MailClient {
     override suspend fun deleteMessage(sessionId: String, messageId: String): Unit =
         throw MailException.ProtocolError(501, "Proton delete is not implemented yet")
 
+    override suspend fun copyMessage(sessionId: String, messageId: String, destFolderId: String): Unit =
+        throw MailException.ProtocolError(501, "Proton label/copy is not implemented yet")
+
+    override suspend fun search(
+        sessionId: String,
+        folderId: String,
+        criteria: MailSearchCriteria,
+        limit: Int,
+    ): List<MailMessage> = throw MailException.ProtocolError(501, "Proton search is not implemented yet")
+
+    override suspend fun saveDraft(sessionId: String, mail: OutgoingMail): String =
+        throw MailException.ProtocolError(501, "Proton draft save is not implemented yet")
+
+    override suspend fun createFolder(sessionId: String, name: String): String =
+        throw MailException.ProtocolError(501, "Proton folder create is not implemented yet")
+
+    override suspend fun deleteFolder(sessionId: String, folderId: String): Unit =
+        throw MailException.ProtocolError(501, "Proton folder delete is not implemented yet")
+
     override suspend fun folderUidState(sessionId: String, folderId: String): MailFolderUidState =
         throw MailException.ProtocolError(501, "Proton mail-rules polling is not implemented yet")
 
