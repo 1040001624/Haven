@@ -41,6 +41,8 @@ The broker moves **control and bulk/interrupt** transfers over Android's
   driver** to materialise a kernel object. proot has no kernel, so they can't
   appear in the guest. The **remote USB/IP** path sidesteps this — it attaches
   the device to a *real* Linux kernel, so any non-isochronous class works there.
+  For mass storage specifically, the **on-device VM** route does the same thing
+  locally — see [Reading USB drives](usb-drives.md).
 - **Isochronous transfers.** `UsbDeviceConnection` has no isochronous API, so
   UVC webcams and UAC audio — which live on isochronous endpoints — can't be
   bridged on *either* path, guest or remote.
@@ -84,9 +86,11 @@ works the same on every distro Haven offers.
 
 > **Not block storage.** A USB drive (mass-storage class) can't appear as a disk
 > here, and `fdisk` isn't possible — see [Device-class support](#device-class-support)
-> for why. To use a drive's *files*, let Android mount it (USB-OTG storage) and
-> read/write them under `/storage` (bound into every guest); partitioning is
-> host-side.
+> for why. To use a drive's *files*, either let Android mount it (USB-OTG storage)
+> and read/write them under `/storage` (bound into every guest), or — for a
+> Linux-formatted drive (ext4/GPT) Android can't open — use
+> [Reading USB drives](usb-drives.md), which mounts it in a small on-device VM
+> that *does* have a kernel. Partitioning is still host-side.
 
 ## To a remote host over USB/IP
 
