@@ -1931,7 +1931,7 @@ internal class McpTools(
         ) { _ -> listUsbExports() },
 
         "open_usb_drive" to ToolHandler(
-            description = "Open a phone-attached USB drive (mass storage — flash drive, SSD, SD reader) inside an on-device QEMU Linux VM and surface its files as an ordinary connection (#287). Unlike usb_attach_to_guest (which gives the proot guest a char device), this gives the drive a REAL kernel, so ext4 / GPT / block partitions mount and their files are browseable. Flow: exports the drive over USB/IP, boots a small Alpine VM that imports it, mounts every partition read-only, and runs sshd — then returns a loopback SSH/SFTP `profileId` you browse with list_directory / serve_file (and a terminal tab into the VM). The VM boot is slow (TCG, no KVM unrooted) + the first run installs packages, so this returns {status:\"starting\"} immediately — poll list_usb_drives until phase=ready (profileId set) or error. Gated on the `usb_vm_enabled` preference. One drive at a time; read-only; isochronous (webcam/audio) still can't pass.",
+            description = "Open a phone-attached USB drive (mass storage — flash drive, SSD, SD reader) inside an on-device QEMU Linux VM and surface its files as an ordinary connection (#287). Unlike usb_attach_to_guest (which gives the proot guest a char device), this gives the drive a REAL kernel, so ext4 / GPT / block partitions mount and their files are browseable. Flow: exports the drive over USB/IP, boots a small Alpine VM that imports it, mounts every partition read-only, and runs sshd — then returns a loopback SSH/SFTP `profileId` you browse with list_directory / serve_file (and a terminal tab into the VM). The VM boot is slow (TCG, no KVM unrooted) + the first run installs packages, so this returns {status:\"starting\"} immediately — poll list_usb_drives until phase=ready (profileId set) or error. Consent-gated per session (mounting the user's disk is sensitive). One drive at a time; read-only; isochronous (webcam/audio) still can't pass.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -6094,7 +6094,6 @@ internal class McpTools(
         // Master opt-in for exposing USB devices to the proot guest (gates
         // usb_attach_to_guest). MCP-drivable so integration tests can flip it.
         "usb_guest_exposure_enabled",
-        "usb_vm_enabled",
         // Master switch for inbound-email automation (Mail Rules). MCP-drivable so
         // the engine can be armed without the Settings UI.
         "mail_automation_enabled",
@@ -6146,7 +6145,6 @@ internal class McpTools(
             "mcp_lan_bind_enabled" -> preferencesRepository.mcpLanBindEnabled.first()
             "mcp_wireguard_tunnel_config_id" -> preferencesRepository.mcpWireguardTunnelConfigId.first() ?: ""
             "usb_guest_exposure_enabled" -> preferencesRepository.usbGuestExposureEnabled.first()
-            "usb_vm_enabled" -> preferencesRepository.usbVmEnabled.first()
             "mail_automation_enabled" -> preferencesRepository.mailAutomationEnabled.first()
             "connection_logging_enabled" -> preferencesRepository.connectionLoggingEnabled.first()
             "gpu_use_venus" -> preferencesRepository.gpuUseVenus.first()
@@ -6227,7 +6225,6 @@ internal class McpTools(
             "mcp_wireguard_tunnel_config_id" ->
                 preferencesRepository.setMcpWireguardTunnelConfigId((rawValue as? String)?.ifBlank { null })
             "usb_guest_exposure_enabled" -> preferencesRepository.setUsbGuestExposureEnabled(coerceBool())
-            "usb_vm_enabled" -> preferencesRepository.setUsbVmEnabled(coerceBool())
             "mail_automation_enabled" -> preferencesRepository.setMailAutomationEnabled(coerceBool())
             "connection_logging_enabled" -> preferencesRepository.setConnectionLoggingEnabled(coerceBool())
             "gpu_use_venus" -> preferencesRepository.setGpuUseVenus(coerceBool())

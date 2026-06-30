@@ -65,7 +65,6 @@ class UserPreferencesRepository @Inject constructor(
     private val mailDeleteToBinKey = booleanPreferencesKey("mail_delete_to_bin")
     private val alwaysShowAllTabsKey = booleanPreferencesKey("always_show_all_tabs")
     private val usbGuestExposureEnabledKey = booleanPreferencesKey("usb_guest_exposure_enabled")
-    private val usbVmEnabledKey = booleanPreferencesKey("usb_vm_enabled")
     private val verboseLoggingEnabledKey = booleanPreferencesKey("verbose_logging_enabled")
     private val mouseInputEnabledKey = booleanPreferencesKey("mouse_input_enabled")
     private val terminalRightClickKey = booleanPreferencesKey("terminal_right_click")
@@ -296,21 +295,6 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
-    /**
-     * Open USB drives Linux can't read directly (mass storage / ext4 / block) in
-     * an on-device QEMU VM (#287). Off by default — booting a VM that mounts the
-     * user's disk is heavier and more sensitive than the proot USB shim, so it's
-     * opt-in. Gates `open_usb_drive`.
-     */
-    val usbVmEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[usbVmEnabledKey] ?: false
-    }
-
-    suspend fun setUsbVmEnabled(enabled: Boolean) {
-        dataStore.edit { prefs ->
-            prefs[usbVmEnabledKey] = enabled
-        }
-    }
 
     /** Capture SSH protocol details (key exchange, auth, ciphers). Off by default. */
     val verboseLoggingEnabled: Flow<Boolean> = dataStore.data.map { prefs ->

@@ -7,12 +7,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.SshKey
-import sh.haven.core.data.preferences.UserPreferencesRepository
 import sh.haven.core.data.repository.ConnectionRepository
 import sh.haven.core.data.repository.SshKeyRepository
 import sh.haven.core.local.QemuManager
@@ -41,7 +39,6 @@ class UsbDriveVmManager @Inject constructor(
     private val usbBroker: UsbBroker,
     private val connectionRepository: ConnectionRepository,
     private val sshKeyRepository: SshKeyRepository,
-    private val preferences: UserPreferencesRepository,
 ) {
     enum class Phase { IDLE, OPENING, READY, ERROR }
 
@@ -81,12 +78,6 @@ class UsbDriveVmManager @Inject constructor(
      * still booting — poll [status] until phase READY (profileId set) or ERROR.
      */
     suspend fun open(deviceName: String?): String {
-        if (!preferences.usbVmEnabled.first()) {
-            throw UsbVmException(
-                "Opening USB drives in a VM is disabled. Enable Settings → " +
-                    "\"Open USB drives in a VM\" (or set usb_vm_enabled) first.",
-            )
-        }
         if (_status.value.phase == Phase.OPENING || _status.value.phase == Phase.READY) {
             throw UsbVmException("A USB drive is already open in a VM; close it first.")
         }

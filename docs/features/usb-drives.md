@@ -50,30 +50,29 @@ leaves your phone, and the little Linux is deleted as soon as you eject the driv
 
 ## How to use it
 
-**1. Turn it on once.** Go to **Settings** and switch on **"Open USB drives in a
-VM."** It's off by default because it's heavier than Haven's normal USB handling
-(see [trade-offs](#trade-offs-and-limits)).
+There's nothing to turn on first — just open the drive when you want it.
 
-**2. Plug in the drive.** Connect your USB drive to the phone with a USB-C or OTG
+**1. Plug in the drive.** Connect your USB drive to the phone with a USB-C or OTG
 adapter. (If nothing happens at all, try a different adapter or cable — a flaky
 adapter is the most common reason a drive isn't detected.)
 
-**3. Open it.** Go to the **Desktop** tab → **Manage** → the menu next to the
-distro picker → **"Open USB drive…"**. Haven shows *"Opening the USB drive in a
-Linux VM — this takes a minute…"*
+**2. Open it.** Go to the **Desktop** tab → **Manage** → the menu next to the
+distro picker → **"Open USB drive…"**. (Opening a drive is always a deliberate
+tap like this, so it never happens behind your back.) Haven shows *"Opening the
+USB drive in a Linux VM — this can take a few minutes…"*
 
-**4. Wait.** The first time, this takes a few minutes (it downloads a small Linux
+**3. Wait.** The first time, this takes a few minutes (it downloads a small Linux
 image once and sets things up; later opens are quicker). A **live progress line**
 right there under Manage shows what it's doing — *"Downloading the Linux image…",
 "Booting Linux — the slow step…", "Setting up the VM and mounting your drive…"* —
 so you can see it's working, not stuck. You'll get a notification when it's ready:
 *"USB drive mounted — open 'USB Drive' in Files."*
 
-**5. Browse.** Switch to the **Files** (or **Connections**) tab and open the new
+**4. Browse.** Switch to the **Files** (or **Connections**) tab and open the new
 **"USB: …"** connection. Your drive's partitions are under `/mnt` (e.g.
 `/mnt/sda1`). Copy files off, preview them, or open a terminal into the drive.
 
-**6. Eject when done.** Back in **Desktop → Manage**, the same menu now says
+**5. Eject when done.** Back in **Desktop → Manage**, the same menu now says
 **"Eject USB drive"** — tap it to shut the little Linux down and free the drive.
 (It also closes by itself if you don't.)
 
