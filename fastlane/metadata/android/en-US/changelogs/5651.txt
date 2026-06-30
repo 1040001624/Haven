@@ -1,0 +1,5 @@
+v5.63.0
+- Custom mounts (#301): expose extra Android paths in a distro's guest (per-distro, read-write)
+- Import a custom rootfs (#284): bring your own .tar.gz/.tar.xz — proot-distro image, docker export, or a 2nd copy of a distro
+- Multiple instances of a distro (#302): import under a new id for an isolated 2nd Ubuntu/Debian/…
+- Security keys: ignore a USB audio dongle (or any non-FIDO USB device) and fall through to your NFC key
