@@ -109,15 +109,30 @@ class QemuManager @Inject constructor(
             }
 
             // 1) login — nudge getty until the prompt shows, then send root. This
-            // is the slow part: the emulated CPU (no KVM) boots a real kernel.
+            // is the slow part: the emulated CPU (no KVM) boots a real kernel, and
+            // it varies with phone load — report live elapsed + a milestone so a
+            // slow boot reads as progressing, not stuck.
             onStage("Booting Linux — the slow step (a few minutes)…")
-            if (!awaitSerial("login:", BOOT_TIMEOUT_MS, nudge = true)) fail("VM never reached a login prompt")
+            val bootOk = awaitSerial("login:", BOOT_TIMEOUT_MS, nudge = true) { sec ->
+                val hint = synchronized(serialLock) {
+                    when {
+                        serial.contains("Welcome to Alpine") || serial.contains("Alpine Linux") -> "kernel up, reaching login"
+                        serial.contains("SeaBIOS") || serial.contains("ISOLINUX") -> "loading the kernel"
+                        else -> "starting"
+                    }
+                }
+                onStage("Booting Linux — $hint (${sec}s)…")
+            }
+            if (!bootOk) fail("VM didn't reach a login prompt within ${BOOT_TIMEOUT_MS / 1000}s — the emulated boot is slow and varies with phone load; try again, ideally with less else running.")
             send("root\n")
             Thread.sleep(1500)
             // 2) one-shot setup; wait for the done marker.
             onStage("Setting up the VM and mounting your drive…")
             send(setupScript(busid, authorizedPubKey) + "\n")
-            if (!awaitSerial("HAVEN_SETUP_DONE", SETUP_TIMEOUT_MS)) fail("VM setup (attach/mount/sshd) didn't finish in time")
+            val setupOk = awaitSerial("HAVEN_SETUP_DONE", SETUP_TIMEOUT_MS) { sec ->
+                onStage("Setting up the VM (installing drivers, mounting; ${sec}s)…")
+            }
+            if (!setupOk) fail("VM setup (attach/mount/sshd) didn't finish within ${SETUP_TIMEOUT_MS / 1000}s")
             // 3) confirm sshd actually answers on the forward.
             onStage("Almost ready — connecting…")
             if (!awaitSshBanner(port, SSH_TIMEOUT_MS)) fail("sshd never answered on 127.0.0.1:$port")
@@ -210,12 +225,24 @@ class QemuManager @Inject constructor(
         runCatching { vmProcess?.outputStream?.apply { write(s.toByteArray()); flush() } }
     }
 
-    private fun awaitSerial(marker: String, timeoutMs: Long, nudge: Boolean = false): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
+    private fun awaitSerial(
+        marker: String,
+        timeoutMs: Long,
+        nudge: Boolean = false,
+        onProgress: ((elapsedSec: Long) -> Unit)? = null,
+    ): Boolean {
+        val start = System.currentTimeMillis()
+        val deadline = start + timeoutMs
+        var nextTick = start + PROGRESS_TICK_MS
         while (System.currentTimeMillis() < deadline) {
             if (vmProcess?.isAlive != true) return false
             synchronized(serialLock) { if (serial.contains(marker)) return true }
             if (nudge) send("\n")
+            val now = System.currentTimeMillis()
+            if (onProgress != null && now >= nextTick) {
+                onProgress((now - start) / 1000)
+                nextTick = now + PROGRESS_TICK_MS
+            }
             try { Thread.sleep(1500) } catch (_: InterruptedException) { return false }
         }
         return synchronized(serialLock) { serial.contains(marker) }
@@ -335,9 +362,12 @@ class QemuManager @Inject constructor(
         private const val TAG = "QemuManager"
         private const val VM_MEM_MB = 768
         private const val SERIAL_CAP = 64 * 1024
-        private const val BOOT_TIMEOUT_MS = 240_000L
-        private const val SETUP_TIMEOUT_MS = 240_000L
+        // Generous: TCG boot (no KVM) is slow and varies a lot with phone load —
+        // 4 min was marginal and timed out under load before reaching login.
+        private const val BOOT_TIMEOUT_MS = 420_000L
+        private const val SETUP_TIMEOUT_MS = 360_000L
         private const val SSH_TIMEOUT_MS = 30_000L
+        private const val PROGRESS_TICK_MS = 15_000L
         private const val APPLIANCE_NAME = "alpine-standard-3.21.7-x86_64.iso"
         private const val APPLIANCE_SIZE = 278_921_216L // fallback when no Content-Length
         private const val APPLIANCE_URL =
