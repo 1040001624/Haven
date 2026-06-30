@@ -570,6 +570,32 @@ private fun mirrorRegionLabel(r: MirrorRegion): String = when (r) {
     MirrorRegion.AMERICAS -> stringResource(AppR.string.app_desktop_mirror_americas)
 }
 
+/**
+ * A tappable header that folds [content] away — collapsed by default — so the
+ * accumulating Manage-screen options (mirror region, launch toggles, custom
+ * mounts) don't push the distro picker + desktop list off the bottom.
+ */
+@Composable
+private fun ExpandableSection(title: String, content: @Composable () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+        )
+    }
+    if (expanded) {
+        Column { content() }
+    }
+}
+
 /** Global package-mirror region picker (#263), styled like the distro chip. */
 @Composable
 private fun MirrorRegionRow(region: MirrorRegion, onSelect: (MirrorRegion) -> Unit) {
@@ -939,54 +965,55 @@ private fun DesktopManagerSection(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // Package-mirror region (#263). Global across distros; shown once
-            // any installed distro supports a mirror swap (all current ones do).
-            if (installedDistros.any { MirrorCatalog.hasMirrors(it.id) }) {
-                MirrorRegionRow(region = mirrorRegion, onSelect = onSetMirrorRegion)
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // Proot launch toggles (#300 / #301). Global across distros; shown
-            // whenever a local distro is installed.
+            // Local-Linux options collapsed into one expandable section so they
+            // don't push the distro picker + desktop list off the bottom of the
+            // screen: the package-mirror region (#263) and the proot launch
+            // toggles + custom mounts (#300 / #301). Collapsed by default.
             if (installedDistros.isNotEmpty()) {
-                BindingToggleRow(
-                    title = stringResource(AppR.string.app_desktop_remap_ports_title),
-                    description = stringResource(AppR.string.app_desktop_remap_ports_description),
-                    checked = remapLowPorts,
-                    onCheckedChange = onSetRemapLowPorts,
-                )
-                Spacer(Modifier.height(8.dp))
-                BindingToggleRow(
-                    title = stringResource(AppR.string.app_desktop_share_storage_title),
-                    description = stringResource(AppR.string.app_desktop_share_storage_description),
-                    checked = shareStorageWithGuest,
-                    onCheckedChange = onSetShareStorageWithGuest,
-                )
-                Spacer(Modifier.height(8.dp))
-                // Custom bind mounts for the active distro (#301). Count reads
-                // through customBindsRev so it updates after the dialog saves.
-                val customBindCount = remember(activeDistroId, customBindsRev) {
-                    customBindsFor(activeDistroId).size
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showCustomBindsDialog = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(AppR.string.app_desktop_custom_binds_title, customBindCount),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(AppR.string.app_desktop_custom_binds_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                ExpandableSection(title = stringResource(AppR.string.app_desktop_options_section)) {
+                    if (installedDistros.any { MirrorCatalog.hasMirrors(it.id) }) {
+                        MirrorRegionRow(region = mirrorRegion, onSelect = onSetMirrorRegion)
+                        Spacer(Modifier.height(8.dp))
                     }
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                    BindingToggleRow(
+                        title = stringResource(AppR.string.app_desktop_remap_ports_title),
+                        description = stringResource(AppR.string.app_desktop_remap_ports_description),
+                        checked = remapLowPorts,
+                        onCheckedChange = onSetRemapLowPorts,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    BindingToggleRow(
+                        title = stringResource(AppR.string.app_desktop_share_storage_title),
+                        description = stringResource(AppR.string.app_desktop_share_storage_description),
+                        checked = shareStorageWithGuest,
+                        onCheckedChange = onSetShareStorageWithGuest,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    // Custom bind mounts for the active distro (#301). Count reads
+                    // through customBindsRev so it updates after the dialog saves.
+                    val customBindCount = remember(activeDistroId, customBindsRev) {
+                        customBindsFor(activeDistroId).size
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showCustomBindsDialog = true }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(AppR.string.app_desktop_custom_binds_title, customBindCount),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                stringResource(AppR.string.app_desktop_custom_binds_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
             }
