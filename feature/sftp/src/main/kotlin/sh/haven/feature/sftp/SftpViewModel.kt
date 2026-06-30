@@ -243,9 +243,16 @@ class SftpViewModel @Inject constructor(
                     when (command) {
                     is sh.haven.core.data.agent.AgentUiCommand.NavigateToSftpPath -> {
                         if (_activeProfileId.value != command.profileId) {
-                            selectProfile(command.profileId)
+                            // Pass the target path INTO selectProfile so the
+                            // session-open lands there directly. Calling a
+                            // separate navigateTo() after selectProfile races
+                            // the async home-probe/list and usually loses — the
+                            // tab would open on home (e.g. /root) instead of the
+                            // requested path (e.g. a USB mount's /mnt/sda1).
+                            selectProfile(command.profileId, initialPath = command.path)
+                        } else {
+                            navigateTo(command.path)
                         }
-                        navigateTo(command.path)
                     }
                     is sh.haven.core.data.agent.AgentUiCommand.OpenConvertDialog -> {
                         if (_activeProfileId.value != command.profileId) {
@@ -1226,8 +1233,8 @@ class SftpViewModel @Inject constructor(
         _pendingRcloneProfileId.value = profileId
     }
 
-    fun selectProfile(profileId: String) {
-        Log.d(TAG, "selectProfile: $profileId (prev=${_activeProfileId.value}, clipboard=${_clipboard.value != null})")
+    fun selectProfile(profileId: String, initialPath: String? = null) {
+        Log.d(TAG, "selectProfile: $profileId (prev=${_activeProfileId.value}, clipboard=${_clipboard.value != null}, initialPath=$initialPath)")
 
         // Save current profile's browse state before switching
         _activeProfileId.value?.let { prevId ->
@@ -1252,8 +1259,10 @@ class SftpViewModel @Inject constructor(
         activeRcloneRemote = null
         _remoteCapabilities.value = sh.haven.core.rclone.RemoteCapabilities()
 
-        // Restore cached state if available
-        val cached = profileStateCache[profileId]
+        // Restore cached state if available — but when an explicit initialPath
+        // is requested (NavigateToSftpPath to a specific dir), bypass the cache
+        // so we land on the requested path, not the last-browsed one.
+        val cached = if (initialPath != null) null else profileStateCache[profileId]
         if (cached != null) {
             _currentPath.value = cached.path
             _allEntries.value = cached.allEntries
@@ -1282,15 +1291,16 @@ class SftpViewModel @Inject constructor(
                 }
             }
         } else {
-            _currentPath.value = "/"
+            val landing = initialPath ?: "/"
+            _currentPath.value = landing
             _allEntries.value = emptyList()
             _entries.value = emptyList()
             when {
-                isLocal -> loadDirectoryEntries("/")
+                isLocal -> loadDirectoryEntries(landing)
                 isRclone -> openRcloneAndList(profileId)
                 isSmb -> openSmbAndList(profileId)
-                isReticulum -> loadDirectoryEntries("/")
-                else -> openSftpAndList(profileId, "/")
+                isReticulum -> loadDirectoryEntries(landing)
+                else -> openSftpAndList(profileId, landing)
             }
         }
     }
@@ -4709,9 +4719,15 @@ class SftpViewModel @Inject constructor(
                     }
                 }
 
-                _currentPath.value = home
+                // Land on the requested path when one was supplied (e.g.
+                // NavigateToSftpPath to a USB mount's /mnt/sda1); otherwise the
+                // SFTP/SCP home directory. The `path` arg was previously dead —
+                // this is what lets a freshly-selected profile open directly on
+                // a target dir instead of home.
+                val landing = path.takeIf { it.isNotBlank() && it != "/" } ?: home
+                _currentPath.value = landing
                 val transport = currentSshTransport() ?: throw IllegalStateException("Session not connected")
-                val results = transport.list(home)
+                val results = transport.list(landing)
                 _allEntries.value = sortEntries(results, _sortMode.value)
                 applyFilter()
             } catch (e: Exception) {

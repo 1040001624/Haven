@@ -7,7 +7,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.SshKey
@@ -39,6 +41,8 @@ class UsbDriveVmManager @Inject constructor(
     private val usbBroker: UsbBroker,
     private val connectionRepository: ConnectionRepository,
     private val sshKeyRepository: SshKeyRepository,
+    private val agentUiCommandBus: sh.haven.core.data.agent.AgentUiCommandBus,
+    private val sshSessionManager: sh.haven.core.ssh.SshSessionManager,
 ) {
     enum class Phase { IDLE, OPENING, READY, ERROR }
 
@@ -131,6 +135,41 @@ class UsbDriveVmManager @Inject constructor(
                 mounts = session.mounts, sshPort = session.sshPort,
             )
             Log.i(TAG, "USB drive VM ready: $deviceName → profile ${profile.id}, mounts ${session.mounts}")
+
+            // Surface the drive into the Files browser. Two steps, because the
+            // file browser opens an SFTP *channel* on an already-connected SSH
+            // session — it never dials one (SshSessionManager.openSftpForProfile
+            // only returns a CONNECTED session). So:
+            //  1. ConnectProfile — establish the SSH session via the same path a
+            //     Connections tap uses (route-through/auth all apply). This also
+            //     gives the "terminal into the VM for free".
+            //  2. once CONNECTED, NavigateToSftpPath — switch to Files, open the
+            //     SFTP channel on that session, and land on the mount.
+            // Without (1), NavigateToSftpPath lands on Files but the listing
+            // fails with "Not connected".
+            agentUiCommandBus.emit(
+                sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profile.id),
+            )
+            val target = session.mounts.singleOrNull() ?: "/mnt"
+            val connected = withTimeoutOrNull(25_000) {
+                sshSessionManager.sessions.first { m ->
+                    m.values.any {
+                        it.profileId == profile.id &&
+                            it.status == sh.haven.core.ssh.SshSessionManager.SessionState.Status.CONNECTED
+                    }
+                }
+            }
+            if (connected != null) {
+                // ConnectProfile switches the pager to the new VM terminal tab
+                // as the session connects. Wait a beat so the Files navigation
+                // below lands last and wins, instead of being overridden back
+                // to Terminal. ponytail: a small settle delay beats threading a
+                // "don't-switch-to-terminal" flag through the whole connect path.
+                kotlinx.coroutines.delay(1500)
+                agentUiCommandBus.emit(
+                    sh.haven.core.data.agent.AgentUiCommand.NavigateToSftpPath(profile.id, target),
+                )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "USB drive VM boot failed: ${e.message}")
             runCatching { qemuManager.closeDrive() }
