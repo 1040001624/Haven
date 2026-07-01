@@ -1,0 +1,3 @@
+v5.66.1
+- "USB: …" connections now reopen with a tap: if its VM has stopped (eject, sleep, app restart), tapping the connection reboots it and reconnects automatically instead of failing.
+- Fixed a broken CI check (internal, no user-facing change).

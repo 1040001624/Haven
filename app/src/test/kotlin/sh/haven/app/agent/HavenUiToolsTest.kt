@@ -65,6 +65,7 @@ class HavenUiToolsTest {
         desktopSessionRegistry = mockk<sh.haven.core.data.desktop.DesktopSessionRegistry>(relaxed = true),
         usbBroker = mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
         usbIpServer = mockk<sh.haven.core.usb.UsbIpServer>(relaxed = true),
+            usbDriveVmManager = mockk<sh.haven.app.usb.UsbDriveVmManager>(relaxed = true),
         presentationManager = sh.haven.core.data.agent.AgentPresentationManager(),
         havenUiBridge = bridge,
         standingPolicyRepository = mockk(relaxed = true),

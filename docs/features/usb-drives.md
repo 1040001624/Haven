@@ -71,16 +71,19 @@ working, not stuck.
 
 **4. Browse.** When it's ready, Haven **opens the drive in Files for you**,
 showing its contents (your drive's partitions live under `/mnt`, e.g.
-`/mnt/sda1`). It also stays available as a **"USB: …"** connection you can reopen
-any time from **Files** or **Connections** — copy files off, preview them, or
-open a terminal into the drive.
+`/mnt/sda1`). It also stays saved as a **"USB: …"** connection in **Connections**
+— copy files off, preview them, or open a terminal into the drive.
 
 **5. Eject when done.** Back in **Desktop → Manage**, the same menu now says
 **"Eject USB drive"** — tap it to shut the little Linux down and free the drive.
-(It also closes by itself if you don't.) The helper system stays installed for
-next time; if you'd rather have the ~280 MB back, the same menu has **"Delete
-USB helper Linux"** — it just rebuilds itself, once, the next time you open a
-drive.
+(It also closes by itself if you don't.) The **"USB: …"** connection stays put —
+it's a bookmark to the drive, not a live session. **Tap it again any time** (with
+the drive still plugged in) and Haven reopens the little Linux and reconnects
+automatically — you don't need to go back through "Open USB drive…". If the
+drive isn't plugged in when you tap it, Haven tells you to plug it back in
+first. The helper system itself stays installed between opens; if you'd rather
+have the ~280 MB back, the same Manage menu has **"Delete USB helper Linux"** —
+it just rebuilds itself, once, the next time you open a drive.
 
 ## What works, and what doesn't
 

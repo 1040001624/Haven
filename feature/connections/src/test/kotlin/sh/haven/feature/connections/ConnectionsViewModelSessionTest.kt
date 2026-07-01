@@ -184,6 +184,11 @@ class ConnectionsViewModelSessionTest {
             biometricGate = mockk(relaxed = true),
             pendingAuthPromptHolder = mockk(relaxed = true),
             sessionSelectionHolder = mockk(relaxed = true),
+            connectionPreflight = mockk(relaxed = true) {
+                coEvery { beforeConnect(any()) } answers {
+                    sh.haven.core.data.repository.ConnectionPreflight.Result.Proceed(firstArg())
+                }
+            },
         )
     }
 

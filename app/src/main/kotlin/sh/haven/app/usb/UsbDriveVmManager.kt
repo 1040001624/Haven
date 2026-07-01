@@ -31,8 +31,16 @@ import javax.inject.Singleton
  * the existing file browser, terminal, and MCP file verbs all work unchanged.
  *
  * The VM boot is slow (TCG, no KVM unrooted), so [open] does the fast checks
- * (pref gate, USB permission, mass-storage class) synchronously and then boots
- * in the background; callers poll [status]. One drive at a time.
+ * (USB permission, mass-storage class) synchronously and then boots in the
+ * background; callers poll [status]. One drive at a time.
+ *
+ * The saved "USB: …" connection is a durable **bookmark** (tagged with the
+ * drive's serial via [ConnectionProfile.usbDriveSerial]), not a live session —
+ * the VM behind it stops on [close]/sleep/app-restart, at which point the
+ * profile's host:port goes dead. [reopenForProfile] (driven by
+ * [UsbDriveConnectionPreflight]) reboots the VM and refreshes the profile the
+ * moment the user clicks that bookmark again, instead of leaving a connection
+ * that just fails.
  */
 @Singleton
 class UsbDriveVmManager @Inject constructor(
@@ -96,22 +104,70 @@ class UsbDriveVmManager @Inject constructor(
         }
         val busid = busidOf(target)
         _status.value = Status(Phase.OPENING, target, info.productName, busid, stage = "Preparing…")
-        scope.launch { boot(target, info, busid) }
+        scope.launch {
+            try {
+                val (profile, mounts) = bootAndAttach(target, info, busid, existingProfile = null)
+                autoOpenInFiles(profile, mounts)
+            } catch (e: Exception) {
+                Log.w(TAG, "USB drive VM boot failed: ${e.message}")
+                _status.value = Status(Phase.ERROR, target, info.productName, busid, error = e.message)
+            }
+        }
         return target
     }
 
-    private suspend fun boot(deviceName: String, info: UsbDeviceInfo, busid: String) {
-        var keyId: String? = null
-        var profileId: String? = null
-        try {
-            // Provision the helper appliance FIRST (one-time, slow). Starting the
-            // USB/IP export before this and holding it open across the minutes-long
-            // provision stales the drive — it re-imports at the wrong speed and the
-            // mass-storage device never enumerates (no /dev/sd*, empty mount). After
-            // provisioning, the export→attach gap is just the (fast) appliance boot.
-            qemuManager.ensureProvisionedAppliance(::stage)
+    /**
+     * Re-open the VM for an already-saved "USB: …" bookmark whose VM has
+     * stopped — called by [UsbDriveConnectionPreflight] just before the
+     * profile is dialed. Suspends until the drive is mounted + sshd answers
+     * (or throws); the caller's own connect flow supplies the "connecting…"
+     * UI, so this has no separate progress surface beyond [status] (also
+     * visible via MCP `list_usb_drives`).
+     *
+     * Returns the profile with its `port`/`keyId` refreshed to the new VM
+     * session (the ephemeral key is single-boot-scoped — a fresh one is
+     * minted on every reopen). Caller is responsible for saving nothing
+     * further; [bootAndAttach] already persisted the update.
+     */
+    suspend fun reopenForProfile(profile: ConnectionProfile, deviceName: String): ConnectionProfile {
+        if (_status.value.phase == Phase.OPENING) {
+            throw UsbVmException("A USB drive is already booting; wait for it to finish.")
+        }
+        val info = try {
+            usbBroker.openDevice(deviceName)
+        } catch (e: Exception) {
+            throw UsbVmException("USB open failed: ${e.message}")
+        }
+        val busid = busidOf(deviceName)
+        _status.value = Status(Phase.OPENING, deviceName, info.productName, busid, stage = "Reopening the drive…")
+        return try {
+            bootAndAttach(deviceName, info, busid, existingProfile = profile).first
+        } catch (e: Exception) {
+            _status.value = Status(Phase.ERROR, deviceName, info.productName, busid, error = e.message)
+            throw UsbVmException("Couldn't reopen the USB drive VM: ${e.message}")
+        }
+    }
 
-            stage("Sharing the drive with the VM…")
+    /**
+     * The shared VM-boot core for both a fresh "Open USB drive…" tap
+     * ([existingProfile] null → a new bookmark is created, tagged with the
+     * drive's serial) and reopening a saved bookmark ([existingProfile] set →
+     * its port/key are refreshed in place, preserving the row's id so every
+     * other reference to it — Files tabs, workspaces — keeps working). Only
+     * the freshly-minted ephemeral key is cleaned up on failure; an
+     * [existingProfile]'s prior (still relevant until we succeed) key is left
+     * alone until the new one is confirmed working.
+     */
+    private suspend fun bootAndAttach(
+        deviceName: String,
+        info: UsbDeviceInfo,
+        busid: String,
+        existingProfile: ConnectionProfile?,
+    ): Pair<ConnectionProfile, List<String>> {
+        qemuManager.ensureProvisionedAppliance(::stage)
+        stage("Sharing the drive with the VM…")
+        var keyId: String? = null
+        try {
             usbIpServer.start(deviceName) // export on :3240 (binds all interfaces)
             val key = SshKeyGenerator.generate(SshKeyGenerator.KeyType.ED25519, "Haven USB drive")
             val keyEntity = SshKey(
@@ -125,88 +181,106 @@ class UsbDriveVmManager @Inject constructor(
 
             val session = qemuManager.openDrive(busid, key.publicKeyOpenSsh, onStage = ::stage)
 
-            val profile = ConnectionProfile(
+            val oldKeyId = existingProfile?.keyId
+            val profile = existingProfile?.copy(
+                host = "127.0.0.1", port = session.sshPort, username = "root",
+                authType = ConnectionProfile.AuthType.KEY, keyId = keyEntity.id,
+            ) ?: ConnectionProfile(
                 label = driveLabel(info),
                 host = "127.0.0.1",
                 port = session.sshPort,
                 username = "root",
                 authType = ConnectionProfile.AuthType.KEY,
-                keyId = keyId,
+                keyId = keyEntity.id,
                 connectionType = "SSH",
+                usbDriveSerial = info.serialNumber,
             )
-            connectionRepository.save(profile); profileId = profile.id
+            connectionRepository.save(profile) // upsert — works for both new and existing ids
+            if (oldKeyId != null && oldKeyId != keyEntity.id) {
+                runCatching { sshKeyRepository.delete(oldKeyId) }
+            }
 
             _status.value = Status(
                 phase = Phase.READY, deviceName = deviceName, productName = info.productName,
-                busid = busid, profileId = profile.id, keyId = keyId,
+                busid = busid, profileId = profile.id, keyId = keyEntity.id,
                 mounts = session.mounts, sshPort = session.sshPort,
             )
             Log.i(TAG, "USB drive VM ready: $deviceName → profile ${profile.id}, mounts ${session.mounts}")
-
-            // Surface the drive into the Files browser. Two steps, because the
-            // file browser opens an SFTP *channel* on an already-connected SSH
-            // session — it never dials one (SshSessionManager.openSftpForProfile
-            // only returns a CONNECTED session). So:
-            //  1. ConnectProfile — establish the SSH session via the same path a
-            //     Connections tap uses (route-through/auth all apply). This also
-            //     gives the "terminal into the VM for free".
-            //  2. once CONNECTED, NavigateToSftpPath — switch to Files, open the
-            //     SFTP channel on that session, and land on the mount.
-            // Without (1), NavigateToSftpPath lands on Files but the listing
-            // fails with "Not connected".
-            agentUiCommandBus.emit(
-                sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profile.id),
-            )
-            // Ceiling only — we navigate the instant CONNECTED arrives. Generous
-            // so a slow VM's SSH handshake still lands the auto-open; if it does
-            // time out the drive is still connected + shows in Files (this only
-            // gates the convenience navigation).
-            val connected = withTimeoutOrNull(90_000) {
-                sshSessionManager.sessions.first { m ->
-                    m.values.any {
-                        it.profileId == profile.id &&
-                            it.status == sh.haven.core.ssh.SshSessionManager.SessionState.Status.CONNECTED
-                    }
-                }
-            }
-            if (connected != null) {
-                // ConnectProfile switches the pager to the new VM terminal tab
-                // as the session connects. Wait a beat so the Files navigation
-                // below lands last and wins, instead of being overridden back
-                // to Terminal. ponytail: a small settle delay beats threading a
-                // "don't-switch-to-terminal" flag through the whole connect path.
-                kotlinx.coroutines.delay(1500)
-                // Read the real mounts over the now-connected SSH channel —
-                // robust, unlike scraping the transient serial console (kernel
-                // console noise + slow enumeration made that unreliable). Update
-                // the status and land the auto-open on the actual mount.
-                val liveMounts = queryMountsViaSsh(profile.id)
-                if (liveMounts.isNotEmpty() && liveMounts != session.mounts) {
-                    _status.value = _status.value.copy(mounts = liveMounts)
-                }
-                val target = liveMounts.singleOrNull() ?: session.mounts.singleOrNull() ?: "/mnt"
-                agentUiCommandBus.emit(
-                    sh.haven.core.data.agent.AgentUiCommand.NavigateToSftpPath(profile.id, target),
-                )
-            }
+            return profile to session.mounts
         } catch (e: Exception) {
-            Log.w(TAG, "USB drive VM boot failed: ${e.message}")
             runCatching { qemuManager.closeDrive() }
             runCatching { usbIpServer.stop() }
-            profileId?.let { id -> runCatching { connectionRepository.delete(id) } }
-            keyId?.let { id -> runCatching { sshKeyRepository.delete(id) } }
-            _status.value = Status(Phase.ERROR, deviceName, info.productName, busid, error = e.message)
+            // Only the fresh key we just minted — an existingProfile's prior
+            // key is still whatever it was before this attempt, untouched.
+            keyId?.let { runCatching { sshKeyRepository.delete(it) } }
+            throw e
         }
     }
 
-    /** Tear down: power off the VM, stop the export, drop the transient profile + key. */
+    /**
+     * Surface the drive into the Files browser. Two steps, because the file
+     * browser opens an SFTP *channel* on an already-connected SSH session —
+     * it never dials one (SshSessionManager.openSftpForProfile only returns a
+     * CONNECTED session). So:
+     *  1. ConnectProfile — establish the SSH session via the same path a
+     *     Connections tap uses (route-through/auth all apply). This also
+     *     gives the "terminal into the VM for free".
+     *  2. once CONNECTED, NavigateToSftpPath — switch to Files, open the
+     *     SFTP channel on that session, and land on the mount.
+     * Without (1), NavigateToSftpPath lands on Files but the listing fails
+     * with "Not connected". Only used for the explicit "Open USB drive…" tap
+     * — reopening a bookmark via [reopenForProfile] lets the caller's own
+     * connect flow (a normal Terminal-tab SSH connect) drive the UI instead.
+     */
+    private suspend fun autoOpenInFiles(profile: ConnectionProfile, mounts: List<String>) {
+        agentUiCommandBus.emit(
+            sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profile.id),
+        )
+        // Ceiling only — we navigate the instant CONNECTED arrives. Generous
+        // so a slow VM's SSH handshake still lands the auto-open; if it does
+        // time out the drive is still connected + shows in Files (this only
+        // gates the convenience navigation).
+        val connected = withTimeoutOrNull(90_000) {
+            sshSessionManager.sessions.first { m ->
+                m.values.any {
+                    it.profileId == profile.id &&
+                        it.status == sh.haven.core.ssh.SshSessionManager.SessionState.Status.CONNECTED
+                }
+            }
+        }
+        if (connected != null) {
+            // ConnectProfile switches the pager to the new VM terminal tab
+            // as the session connects. Wait a beat so the Files navigation
+            // below lands last and wins, instead of being overridden back
+            // to Terminal. ponytail: a small settle delay beats threading a
+            // "don't-switch-to-terminal" flag through the whole connect path.
+            kotlinx.coroutines.delay(1500)
+            // Read the real mounts over the now-connected SSH channel —
+            // robust, unlike scraping the transient serial console (kernel
+            // console noise + slow enumeration made that unreliable). Update
+            // the status and land the auto-open on the actual mount.
+            val liveMounts = queryMountsViaSsh(profile.id)
+            if (liveMounts.isNotEmpty() && liveMounts != mounts) {
+                _status.value = _status.value.copy(mounts = liveMounts)
+            }
+            val target = liveMounts.singleOrNull() ?: mounts.singleOrNull() ?: "/mnt"
+            agentUiCommandBus.emit(
+                sh.haven.core.data.agent.AgentUiCommand.NavigateToSftpPath(profile.id, target),
+            )
+        }
+    }
+
+    /**
+     * Tear down: power off the VM, stop the export. The bookmarked "USB: …"
+     * connection (and its now-stale key/port) is kept — clicking it again
+     * re-opens the VM via [reopenForProfile] and refreshes both. A dead
+     * profile between eject and the next click is the point of the bookmark.
+     */
     suspend fun close() {
         val s = _status.value
         if (s.phase == Phase.IDLE) return
         runCatching { qemuManager.closeDrive() }
         runCatching { usbIpServer.stop() }
-        s.profileId?.let { runCatching { connectionRepository.delete(it) } }
-        s.keyId?.let { runCatching { sshKeyRepository.delete(it) } }
         _status.value = Status(Phase.IDLE)
     }
 
@@ -247,6 +321,10 @@ class UsbDriveVmManager @Inject constructor(
         Log.w(TAG, "queryMountsViaSsh: no /mnt mount appeared within ~40s")
         return emptyList()
     }
+
+    /** Attached mass-storage device whose serial matches [serial], if any (bookmark re-open lookup). */
+    fun findAttachedBySerial(serial: String): UsbDeviceInfo? =
+        massStorageDevices().firstOrNull { it.serialNumber == serial }
 
     private fun resolveDrive(deviceName: String?): String {
         if (!deviceName.isNullOrBlank()) return deviceName

@@ -50,7 +50,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         StandingPolicy::class,
         AgeIdentityEntity::class,
     ],
-    version = 72,
+    version = 73,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -1169,6 +1169,13 @@ abstract class HavenDatabase : RoomDatabase() {
                 addColumnIfMissing(db, "connection_profiles", "spicePassword", "TEXT")
                 addColumnIfMissing(db, "connection_profiles", "spiceSshForward", "INTEGER NOT NULL DEFAULT 0")
                 addColumnIfMissing(db, "connection_profiles", "spiceSshProfileId", "TEXT")
+            }
+        }
+
+        /** USB-drive VM bookmark serial (#287 re-open-on-click). */
+        val MIGRATION_72_73 = object : Migration(72, 73) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "connection_profiles", "usbDriveSerial", "TEXT")
             }
         }
 

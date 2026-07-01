@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.66.1
+
+USB-drive connections reopen with a tap, and a CI fix.
+
+🔖 **"USB: …" connections reopen with a tap** — a USB-drive connection used to go dead as soon as its little Linux VM stopped (eject, phone sleep, app restart), leaving a bookmark that just failed. Tap it again (with the drive still plugged in) and Haven now reboots the VM and reconnects automatically — no need to go back through "Open USB drive…" each time. If the drive isn't plugged in, Haven tells you to plug it back in instead of failing silently.
+
+🔧 **Fixed a broken CI check** — a set of unit tests hadn't been updated for a recent internal change and were failing to compile, which had started blocking the automated test run on `main`. Fixed; no user-facing change.
+
 ## v5.66.0
 
 The "Open USB drive" feature (#287), made faster and more reliable from a round of testing.

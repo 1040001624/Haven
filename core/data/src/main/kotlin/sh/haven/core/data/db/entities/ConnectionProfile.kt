@@ -321,6 +321,16 @@ data class ConnectionProfile(
     val spaExplicitIp: String? = null,
     /** Destination UDP port for the SPA packet (fwknopd default 62201). */
     val spaPort: Int = 62201,
+    /**
+     * USB-drive VM bookmark (#287): the serial number of the physical drive
+     * this connection reads (via `UsbDriveVmManager`'s on-device Linux VM),
+     * so the connection survives the VM stopping (sleep, eject, app restart)
+     * instead of pointing at a dead loopback port. Null for every other
+     * profile. On connect, a non-null value means "re-find the drive by this
+     * serial and (re)open its VM first if it isn't already running" — see
+     * `ConnectionPreflight`.
+     */
+    val usbDriveSerial: String? = null,
 ) {
     enum class AuthType {
         PASSWORD,

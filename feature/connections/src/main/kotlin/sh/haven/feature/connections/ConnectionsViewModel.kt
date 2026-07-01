@@ -140,6 +140,7 @@ class ConnectionsViewModel @Inject constructor(
     private val biometricGate: sh.haven.core.data.keystore.BiometricGate,
     private val pendingAuthPromptHolder: sh.haven.core.data.agent.PendingAuthPromptHolder,
     private val sessionSelectionHolder: sh.haven.core.data.agent.SessionSelectionHolder,
+    private val connectionPreflight: sh.haven.core.data.repository.ConnectionPreflight,
 ) : ViewModel() {
 
     /**
@@ -1589,6 +1590,33 @@ class ConnectionsViewModel @Inject constructor(
     }
 
     fun connect(
+        profile: ConnectionProfile,
+        password: String,
+        keyOnly: Boolean = false,
+        rememberPassword: Boolean? = null,
+        usernameOverride: String? = null,
+        sessionName: String? = null,
+    ) {
+        // USB-drive bookmarks (#287): the "USB: …" connection's VM stops on
+        // eject/sleep/app-restart, leaving the profile pointing at a dead
+        // loopback port. connectionPreflight re-opens it (and refreshes the
+        // profile's port/key) before dialing — a no-op for every other
+        // profile, so this only adds a coroutine hop for USB-drive bookmarks.
+        if (profile.usbDriveSerial != null) {
+            viewModelScope.launch {
+                when (val result = connectionPreflight.beforeConnect(profile)) {
+                    is sh.haven.core.data.repository.ConnectionPreflight.Result.Block ->
+                        _error.value = result.message
+                    is sh.haven.core.data.repository.ConnectionPreflight.Result.Proceed ->
+                        connectInner(result.profile, password, keyOnly, rememberPassword, usernameOverride, sessionName)
+                }
+            }
+            return
+        }
+        connectInner(profile, password, keyOnly, rememberPassword, usernameOverride, sessionName)
+    }
+
+    private fun connectInner(
         profile: ConnectionProfile,
         password: String,
         keyOnly: Boolean = false,
