@@ -769,8 +769,9 @@ class DesktopViewModel @Inject constructor(
     private val _userMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
 
-    // --- "Open USB drive" in a VM (#287) ---
-    val usbDriveStatus: StateFlow<sh.haven.app.usb.UsbDriveVmManager.Status> = usbDriveVmManager.status
+    // --- "Open USB drive" in a VM (#287) — keyed by busid, up to
+    // QemuManager.MAX_CONCURRENT_VMS concurrently OPENING/READY.
+    val usbDriveSessions: StateFlow<Map<String, sh.haven.app.usb.UsbDriveVmManager.Status>> = usbDriveVmManager.sessions
 
     // Whether the persistent USB-helper appliance is provisioned (drives the
     // "Delete USB helper Linux" menu item; the appliance is kept across opens).
@@ -778,22 +779,25 @@ class DesktopViewModel @Inject constructor(
     val applianceProvisioned: StateFlow<Boolean> = _applianceProvisioned.asStateFlow()
 
     init {
-        // Announce the slow VM boot's outcome on the snackbar (the drive then
-        // auto-opens in Files at its mount).
+        // Announce each drive's slow VM boot outcome on the snackbar (it then
+        // auto-opens in Files at its mount) — tracked per busid so opening a
+        // second drive doesn't re-fire the first one's message.
         viewModelScope.launch {
-            var last = usbDriveVmManager.status.value.phase
-            usbDriveVmManager.status.collect { s ->
+            var last = usbDriveVmManager.sessions.value.mapValues { it.value.phase }
+            usbDriveVmManager.sessions.collect { byBusid ->
                 _applianceProvisioned.value = usbDriveVmManager.applianceProvisioned
-                if (s.phase != last) {
-                    when (s.phase) {
-                        sh.haven.app.usb.UsbDriveVmManager.Phase.READY ->
-                            _userMessages.emit("USB drive mounted — opening it in Files.")
-                        sh.haven.app.usb.UsbDriveVmManager.Phase.ERROR ->
-                            _userMessages.emit("Couldn't open USB drive: ${s.error ?: "VM failed to start"}")
-                        else -> {}
+                byBusid.forEach { (busid, s) ->
+                    if (s.phase != last[busid]) {
+                        when (s.phase) {
+                            sh.haven.app.usb.UsbDriveVmManager.Phase.READY ->
+                                _userMessages.emit("USB drive mounted — opening it in Files.")
+                            sh.haven.app.usb.UsbDriveVmManager.Phase.ERROR ->
+                                _userMessages.emit("Couldn't open USB drive: ${s.error ?: "VM failed to start"}")
+                            else -> {}
+                        }
                     }
-                    last = s.phase
                 }
+                last = byBusid.mapValues { it.value.phase }
             }
         }
     }
@@ -808,10 +812,10 @@ class DesktopViewModel @Inject constructor(
     }
 
     /** Boot a VM that mounts the attached USB drive; its files appear as a connection. */
-    fun openUsbDrive(deviceName: String? = null) {
+    fun openUsbDrive(deviceName: String? = null, writable: Boolean = false) {
         viewModelScope.launch {
             try {
-                usbDriveVmManager.open(deviceName)
+                usbDriveVmManager.open(deviceName, writable)
                 _userMessages.emit("Opening the USB drive in a Linux VM — this can take a few minutes; progress is shown below.")
             } catch (e: sh.haven.app.usb.UsbDriveVmManager.UsbVmException) {
                 _userMessages.emit(e.message ?: "Couldn't open USB drive")
@@ -819,10 +823,22 @@ class DesktopViewModel @Inject constructor(
         }
     }
 
-    fun closeUsbDrive() {
+    fun closeUsbDrive(busid: String) {
         viewModelScope.launch {
-            usbDriveVmManager.close()
+            usbDriveVmManager.close(busid)
             _userMessages.emit("USB drive VM closed.")
+        }
+    }
+
+    /** Unlock a LUKS-encrypted partition on an open USB-drive VM. */
+    fun unlockUsbDrivePartition(busid: String, devicePath: String, passphrase: String) {
+        viewModelScope.launch {
+            try {
+                usbDriveVmManager.unlockPartition(busid, devicePath, passphrase)
+                _userMessages.emit("Partition unlocked.")
+            } catch (e: sh.haven.app.usb.UsbDriveVmManager.UsbVmException) {
+                _userMessages.emit(e.message ?: "Couldn't unlock the partition")
+            }
         }
     }
 

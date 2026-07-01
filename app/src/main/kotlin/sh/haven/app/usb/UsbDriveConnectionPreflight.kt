@@ -26,8 +26,8 @@ class UsbDriveConnectionPreflight @Inject constructor(
         // after bootAndAttach succeeds, which routes back through this same
         // preflight — without this check it would try to reopen a VM that's
         // already open (and fail, since QemuManager refuses a second boot).
-        val vmStatus = usbDriveVmManager.status.value
-        if (vmStatus.profileId == profile.id &&
+        val vmStatus = usbDriveVmManager.sessionForProfile(profile.id)
+        if (vmStatus != null &&
             (vmStatus.phase == UsbDriveVmManager.Phase.READY || vmStatus.phase == UsbDriveVmManager.Phase.OPENING)
         ) {
             return ConnectionPreflight.Result.Proceed(profile)

@@ -32,7 +32,8 @@ import javax.inject.Singleton
  *
  * The VM boot is slow (TCG, no KVM unrooted), so [open] does the fast checks
  * (USB permission, mass-storage class) synchronously and then boots in the
- * background; callers poll [status]. One drive at a time.
+ * background; callers poll [sessions]. Up to [QemuManager.MAX_CONCURRENT_VMS]
+ * drives can be open at once, each its own VM keyed by busid.
  *
  * The saved "USB: …" connection is a durable **bookmark** (tagged with the
  * drive's serial via [ConnectionProfile.usbDriveSerial]), not a live session —
@@ -66,16 +67,26 @@ class UsbDriveVmManager @Inject constructor(
         /** Human-readable progress while [phase] is OPENING (the boot is slow). */
         val stage: String = "",
         val error: String? = null,
+        val readOnly: Boolean = true,
+        /** LUKS-encrypted partitions found but not yet unlocked (mount-dir name, e.g. "sdb2"). */
+        val locked: List<String> = emptyList(),
     )
 
-    private val _status = MutableStateFlow(Status())
-    val status: StateFlow<Status> = _status.asStateFlow()
+    // Keyed by busid — one entry per drive that's ever been opened this app
+    // session (removed on [close]). Up to QemuManager.MAX_CONCURRENT_VMS can
+    // be OPENING/READY at once.
+    private val _sessions = MutableStateFlow<Map<String, Status>>(emptyMap())
+    val sessions: StateFlow<Map<String, Status>> = _sessions.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private fun updateStatus(busid: String, transform: (Status) -> Status) {
+        _sessions.update { it + (busid to transform(it[busid] ?: Status())) }
+    }
+
     /** Update the progress line, but only while still opening (ignore late callbacks). */
-    private fun stage(text: String) {
-        _status.update { if (it.phase == Phase.OPENING) it.copy(stage = text) else it }
+    private fun stage(busid: String, text: String) {
+        updateStatus(busid) { if (it.phase == Phase.OPENING) it.copy(stage = text) else it }
     }
 
     class UsbVmException(message: String) : Exception(message)
@@ -84,14 +95,16 @@ class UsbDriveVmManager @Inject constructor(
     fun massStorageDevices(): List<UsbDeviceInfo> =
         usbBroker.listDevices().filter { it.interfaces.any { i -> i.interfaceClass == USB_CLASS_MASS_STORAGE } }
 
+    private fun activeCount(): Int = _sessions.value.values.count { it.phase == Phase.OPENING || it.phase == Phase.READY }
+
     /**
      * Validate + open the device + start the VM boot in the background. Returns
      * the resolved deviceName immediately once the (fast) checks pass; the VM is
-     * still booting — poll [status] until phase READY (profileId set) or ERROR.
+     * still booting — poll [sessions] until phase READY (profileId set) or ERROR.
      */
-    suspend fun open(deviceName: String?): String {
-        if (_status.value.phase == Phase.OPENING || _status.value.phase == Phase.READY) {
-            throw UsbVmException("A USB drive is already open in a VM; close it first.")
+    suspend fun open(deviceName: String?, writable: Boolean = false): String {
+        if (activeCount() >= QemuManager.MAX_CONCURRENT_VMS) {
+            throw UsbVmException("Already have ${QemuManager.MAX_CONCURRENT_VMS} USB drive(s) open in a VM — that's the phone-resource limit. Close one first.")
         }
         val target = resolveDrive(deviceName)
         val info = try {
@@ -103,17 +116,36 @@ class UsbDriveVmManager @Inject constructor(
             throw UsbVmException("$target is not a USB mass-storage device (class 8). Use usb_attach_to_guest for HID/serial devices.")
         }
         val busid = busidOf(target)
-        _status.value = Status(Phase.OPENING, target, info.productName, busid, stage = "Preparing…")
+        if (_sessions.value[busid]?.phase.let { it == Phase.OPENING || it == Phase.READY }) {
+            throw UsbVmException("$target is already open in a VM; close it first.")
+        }
+        _sessions.update { it + (busid to Status(Phase.OPENING, target, info.productName, busid, stage = "Preparing…", readOnly = !writable)) }
         scope.launch {
             try {
-                val (profile, mounts) = bootAndAttach(target, info, busid, existingProfile = null)
-                autoOpenInFiles(profile, mounts)
+                val (profile, mounts) = bootAndAttach(target, info, busid, existingProfile = null, readOnly = !writable)
+                autoOpenInFiles(profile, mounts, busid)
             } catch (e: Exception) {
                 Log.w(TAG, "USB drive VM boot failed: ${e.message}")
-                _status.value = Status(Phase.ERROR, target, info.productName, busid, error = e.message)
+                updateStatus(busid) { Status(Phase.ERROR, target, info.productName, busid, error = e.message, readOnly = !writable) }
             }
         }
         return target
+    }
+
+    /**
+     * Unlock a LUKS-encrypted partition reported in a session's [Status.locked]
+     * (against the still-running VM from [open]) and refresh its status. Throws
+     * on a wrong passphrase or if that drive isn't open.
+     */
+    suspend fun unlockPartition(busid: String, devicePath: String, passphrase: String) {
+        val s = _sessions.value[busid]
+        if (s == null || s.phase != Phase.READY) throw UsbVmException("No USB-drive VM is ready to unlock a partition on for $busid.")
+        try {
+            val session = qemuManager.unlockPartition(busid, devicePath, passphrase)
+            updateStatus(busid) { it.copy(mounts = session.mounts, locked = session.locked) }
+        } catch (e: Exception) {
+            throw UsbVmException(e.message ?: "Unlock failed")
+        }
     }
 
     /**
@@ -121,7 +153,7 @@ class UsbDriveVmManager @Inject constructor(
      * stopped — called by [UsbDriveConnectionPreflight] just before the
      * profile is dialed. Suspends until the drive is mounted + sshd answers
      * (or throws); the caller's own connect flow supplies the "connecting…"
-     * UI, so this has no separate progress surface beyond [status] (also
+     * UI, so this has no separate progress surface beyond [sessions] (also
      * visible via MCP `list_usb_drives`).
      *
      * Returns the profile with its `port`/`keyId` refreshed to the new VM
@@ -130,20 +162,23 @@ class UsbDriveVmManager @Inject constructor(
      * further; [bootAndAttach] already persisted the update.
      */
     suspend fun reopenForProfile(profile: ConnectionProfile, deviceName: String): ConnectionProfile {
-        if (_status.value.phase == Phase.OPENING) {
-            throw UsbVmException("A USB drive is already booting; wait for it to finish.")
+        val busid = busidOf(deviceName)
+        if (_sessions.value[busid]?.phase == Phase.OPENING) {
+            throw UsbVmException("This USB drive is already booting; wait for it to finish.")
         }
         val info = try {
             usbBroker.openDevice(deviceName)
         } catch (e: Exception) {
             throw UsbVmException("USB open failed: ${e.message}")
         }
-        val busid = busidOf(deviceName)
-        _status.value = Status(Phase.OPENING, deviceName, info.productName, busid, stage = "Reopening the drive…")
+        // Reopening a bookmark always comes back read-only — writable is an
+        // explicit per-open choice (the "Open USB drive (writable)" action),
+        // not something remembered on the bookmark.
+        _sessions.update { it + (busid to Status(Phase.OPENING, deviceName, info.productName, busid, stage = "Reopening the drive…")) }
         return try {
-            bootAndAttach(deviceName, info, busid, existingProfile = profile).first
+            bootAndAttach(deviceName, info, busid, existingProfile = profile, readOnly = true).first
         } catch (e: Exception) {
-            _status.value = Status(Phase.ERROR, deviceName, info.productName, busid, error = e.message)
+            updateStatus(busid) { Status(Phase.ERROR, deviceName, info.productName, busid, error = e.message) }
             throw UsbVmException("Couldn't reopen the USB drive VM: ${e.message}")
         }
     }
@@ -163,12 +198,15 @@ class UsbDriveVmManager @Inject constructor(
         info: UsbDeviceInfo,
         busid: String,
         existingProfile: ConnectionProfile?,
+        readOnly: Boolean,
     ): Pair<ConnectionProfile, List<String>> {
-        qemuManager.ensureProvisionedAppliance(::stage)
-        stage("Sharing the drive with the VM…")
+        qemuManager.ensureProvisionedAppliance { stage(busid, it) }
+        stage(busid, "Sharing the drive with the VM…")
         var keyId: String? = null
         try {
-            usbIpServer.start(deviceName) // export on :3240 (binds all interfaces)
+            // Export alongside any other open drive's export on the same
+            // shared UsbIpServer (#287 multi-drive) rather than replacing it.
+            usbIpServer.export(deviceName)
             val key = SshKeyGenerator.generate(SshKeyGenerator.KeyType.ED25519, "Haven USB drive")
             val keyEntity = SshKey(
                 label = "USB drive VM (ephemeral)",
@@ -179,14 +217,14 @@ class UsbDriveVmManager @Inject constructor(
             )
             sshKeyRepository.save(keyEntity); keyId = keyEntity.id
 
-            val session = qemuManager.openDrive(busid, key.publicKeyOpenSsh, onStage = ::stage)
+            val session = qemuManager.openDrive(busid, key.publicKeyOpenSsh, readOnly = readOnly, onStage = { stage(busid, it) })
 
             val oldKeyId = existingProfile?.keyId
             val profile = existingProfile?.copy(
                 host = "127.0.0.1", port = session.sshPort, username = "root",
                 authType = ConnectionProfile.AuthType.KEY, keyId = keyEntity.id,
             ) ?: ConnectionProfile(
-                label = driveLabel(info),
+                label = driveLabel(info, readOnly),
                 host = "127.0.0.1",
                 port = session.sshPort,
                 username = "root",
@@ -200,16 +238,19 @@ class UsbDriveVmManager @Inject constructor(
                 runCatching { sshKeyRepository.delete(oldKeyId) }
             }
 
-            _status.value = Status(
-                phase = Phase.READY, deviceName = deviceName, productName = info.productName,
-                busid = busid, profileId = profile.id, keyId = keyEntity.id,
-                mounts = session.mounts, sshPort = session.sshPort,
-            )
+            updateStatus(busid) {
+                Status(
+                    phase = Phase.READY, deviceName = deviceName, productName = info.productName,
+                    busid = busid, profileId = profile.id, keyId = keyEntity.id,
+                    mounts = session.mounts, sshPort = session.sshPort,
+                    readOnly = session.readOnly, locked = session.locked,
+                )
+            }
             Log.i(TAG, "USB drive VM ready: $deviceName → profile ${profile.id}, mounts ${session.mounts}")
             return profile to session.mounts
         } catch (e: Exception) {
-            runCatching { qemuManager.closeDrive() }
-            runCatching { usbIpServer.stop() }
+            runCatching { qemuManager.closeDrive(busid) }
+            runCatching { usbIpServer.unexport(busid) }
             // Only the fresh key we just minted — an existingProfile's prior
             // key is still whatever it was before this attempt, untouched.
             keyId?.let { runCatching { sshKeyRepository.delete(it) } }
@@ -232,7 +273,7 @@ class UsbDriveVmManager @Inject constructor(
      * — reopening a bookmark via [reopenForProfile] lets the caller's own
      * connect flow (a normal Terminal-tab SSH connect) drive the UI instead.
      */
-    private suspend fun autoOpenInFiles(profile: ConnectionProfile, mounts: List<String>) {
+    private suspend fun autoOpenInFiles(profile: ConnectionProfile, mounts: List<String>, busid: String) {
         agentUiCommandBus.emit(
             sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profile.id),
         )
@@ -261,7 +302,7 @@ class UsbDriveVmManager @Inject constructor(
             // the status and land the auto-open on the actual mount.
             val liveMounts = queryMountsViaSsh(profile.id)
             if (liveMounts.isNotEmpty() && liveMounts != mounts) {
-                _status.value = _status.value.copy(mounts = liveMounts)
+                updateStatus(busid) { it.copy(mounts = liveMounts) }
             }
             val target = liveMounts.singleOrNull() ?: mounts.singleOrNull() ?: "/mnt"
             agentUiCommandBus.emit(
@@ -271,17 +312,23 @@ class UsbDriveVmManager @Inject constructor(
     }
 
     /**
-     * Tear down: power off the VM, stop the export. The bookmarked "USB: …"
-     * connection (and its now-stale key/port) is kept — clicking it again
-     * re-opens the VM via [reopenForProfile] and refreshes both. A dead
-     * profile between eject and the next click is the point of the bookmark.
+     * Tear down [busid]'s drive: power off its VM, stop its export. The
+     * bookmarked "USB: …" connection (and its now-stale key/port) is kept —
+     * clicking it again re-opens the VM via [reopenForProfile] and refreshes
+     * both. A dead profile between eject and the next click is the point of
+     * the bookmark.
      */
-    suspend fun close() {
-        val s = _status.value
+    suspend fun close(busid: String) {
+        val s = _sessions.value[busid] ?: return
         if (s.phase == Phase.IDLE) return
-        runCatching { qemuManager.closeDrive() }
-        runCatching { usbIpServer.stop() }
-        _status.value = Status(Phase.IDLE)
+        runCatching { qemuManager.closeDrive(busid) }
+        runCatching { usbIpServer.unexport(busid) }
+        _sessions.update { it - busid }
+    }
+
+    /** Close every open drive (used before [deleteAppliance], which all of them depend on). */
+    suspend fun closeAll() {
+        _sessions.value.keys.toList().forEach { close(it) }
     }
 
     /** True once the persistent USB-helper appliance has been provisioned. */
@@ -290,10 +337,10 @@ class UsbDriveVmManager @Inject constructor(
     /**
      * Delete the persistent USB-helper appliance (the installed Alpine that
      * mounts drives). The next [open] re-provisions it (one-time, slow again).
-     * Closes any live VM first.
+     * Closes every live VM first (they all depend on this one disk).
      */
     suspend fun deleteAppliance() {
-        runCatching { close() }
+        runCatching { closeAll() }
         qemuManager.deleteAppliance()
     }
 
@@ -326,6 +373,9 @@ class UsbDriveVmManager @Inject constructor(
     fun findAttachedBySerial(serial: String): UsbDeviceInfo? =
         massStorageDevices().firstOrNull { it.serialNumber == serial }
 
+    /** The session (if any) currently tied to [profileId] — used by [UsbDriveConnectionPreflight]. */
+    fun sessionForProfile(profileId: String): Status? = _sessions.value.values.firstOrNull { it.profileId == profileId }
+
     private fun resolveDrive(deviceName: String?): String {
         if (!deviceName.isNullOrBlank()) return deviceName
         val drives = massStorageDevices()
@@ -338,8 +388,10 @@ class UsbDriveVmManager @Inject constructor(
         }
     }
 
-    private fun driveLabel(info: UsbDeviceInfo): String =
-        info.productName?.takeIf { it.isNotBlank() }?.let { "USB: $it" } ?: "USB drive"
+    private fun driveLabel(info: UsbDeviceInfo, readOnly: Boolean): String {
+        val base = info.productName?.takeIf { it.isNotBlank() }?.let { "USB: $it" } ?: "USB drive"
+        return if (readOnly) base else "$base (writable)"
+    }
 
     // /dev/bus/usb/BBB/DDD → "B-D" (matches usbip + start_usbip_export).
     private fun busidOf(deviceName: String): String {

@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -112,7 +113,7 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     val remapLowPorts by viewModel.remapLowPorts.collectAsState()
     val shareStorageWithGuest by viewModel.shareStorageWithGuest.collectAsState()
     val customBindsRev by viewModel.customBindsRev.collectAsState()
-    val usbDriveStatus by viewModel.usbDriveStatus.collectAsState()
+    val usbDriveSessions by viewModel.usbDriveSessions.collectAsState()
     val applianceProvisioned by viewModel.applianceProvisioned.collectAsState()
 
     var setupDesktopDe by remember {
@@ -153,11 +154,11 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
             customBindsFor = { viewModel.customBinds(it) },
             onSetCustomBinds = { id, binds -> viewModel.setCustomBinds(id, binds) },
             onImportRootfs = { id, label, family, source -> viewModel.importRootfs(id, label, family, source) },
-            usbDriveActive = usbDriveStatus.phase != sh.haven.app.usb.UsbDriveVmManager.Phase.IDLE &&
-                usbDriveStatus.phase != sh.haven.app.usb.UsbDriveVmManager.Phase.ERROR,
-            usbDriveStage = if (usbDriveStatus.phase == sh.haven.app.usb.UsbDriveVmManager.Phase.OPENING) usbDriveStatus.stage else "",
+            usbDriveSessions = usbDriveSessions,
             onOpenUsbDrive = { viewModel.openUsbDrive() },
-            onCloseUsbDrive = { viewModel.closeUsbDrive() },
+            onOpenUsbDriveWritable = { viewModel.openUsbDrive(writable = true) },
+            onCloseUsbDrive = { busid -> viewModel.closeUsbDrive(busid) },
+            onUnlockUsbDrivePartition = { busid, devicePath, passphrase -> viewModel.unlockUsbDrivePartition(busid, devicePath, passphrase) },
             applianceProvisioned = applianceProvisioned,
             onDeleteUsbAppliance = { viewModel.deleteUsbAppliance() },
             storedVncPortFor = { viewModel.storedVncPortFor(it) },
@@ -699,10 +700,11 @@ private fun DesktopManagerSection(
     customBindsFor: (String) -> List<sh.haven.core.local.proot.CustomBind>,
     onSetCustomBinds: (String, List<sh.haven.core.local.proot.CustomBind>) -> Unit,
     onImportRootfs: (String, String, sh.haven.core.local.proot.PackageFamily, String) -> Unit,
-    usbDriveActive: Boolean,
-    usbDriveStage: String,
+    usbDriveSessions: Map<String, sh.haven.app.usb.UsbDriveVmManager.Status>,
     onOpenUsbDrive: () -> Unit,
-    onCloseUsbDrive: () -> Unit,
+    onOpenUsbDriveWritable: () -> Unit,
+    onCloseUsbDrive: (busid: String) -> Unit,
+    onUnlockUsbDrivePartition: (busid: String, devicePath: String, passphrase: String) -> Unit,
     applianceProvisioned: Boolean,
     onDeleteUsbAppliance: () -> Unit,
     storedVncPortFor: (ProotManager.DesktopEnvironment) -> Int?,
@@ -720,6 +722,14 @@ private fun DesktopManagerSection(
     var distroMenuOpen by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showCustomBindsDialog by remember { mutableStateOf(false) }
+    var showWritableConfirm by remember { mutableStateOf(false) }
+    // Which locked partition's unlock dialog is open (null = none) — the
+    // owning session's busid + the mount-dir name (e.g. "sdb2").
+    var unlockingPartition by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val usbDriveActiveCount = usbDriveSessions.values.count {
+        it.phase == sh.haven.app.usb.UsbDriveVmManager.Phase.OPENING || it.phase == sh.haven.app.usb.UsbDriveVmManager.Phase.READY
+    }
+    val usbDriveAtCapacity = usbDriveActiveCount >= sh.haven.core.local.QemuManager.MAX_CONCURRENT_VMS
 
     val activeDistroLabel = installedDistros.firstOrNull { it.id == activeDistroId }?.label
         ?: DistroCatalog.lookup(activeDistroId)?.label
@@ -854,26 +864,31 @@ private fun DesktopManagerSection(
                             },
                         )
                         // #287: open a USB mass-storage drive in a VM so its
-                        // ext4/GPT/block files are reachable (proot can't).
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(
-                                        if (usbDriveActive) AppR.string.app_desktop_eject_usb_drive
-                                        else AppR.string.app_desktop_open_usb_drive,
-                                    ),
-                                )
-                            },
-                            leadingIcon = { Icon(Icons.Filled.Usb, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                            onClick = {
-                                distroMenuOpen = false
-                                if (usbDriveActive) onCloseUsbDrive() else onOpenUsbDrive()
-                            },
-                        )
+                        // ext4/GPT/block files are reachable (proot can't). Up
+                        // to MAX_CONCURRENT_VMS at once — each is its own row
+                        // below the picker, with its own Eject.
+                        if (!usbDriveAtCapacity) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(AppR.string.app_desktop_open_usb_drive)) },
+                                leadingIcon = { Icon(Icons.Filled.Usb, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                onClick = {
+                                    distroMenuOpen = false
+                                    onOpenUsbDrive()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(AppR.string.app_desktop_open_usb_drive_writable)) },
+                                leadingIcon = { Icon(Icons.Filled.Usb, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                onClick = {
+                                    distroMenuOpen = false
+                                    showWritableConfirm = true
+                                },
+                            )
+                        }
                         // The helper Linux is provisioned once + kept; offer to
                         // delete it (reclaims ~280 MB, re-provisions next open).
-                        if (applianceProvisioned && !usbDriveActive) {
+                        if (applianceProvisioned && usbDriveActiveCount == 0) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(AppR.string.app_desktop_delete_usb_appliance)) },
                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(20.dp)) },
@@ -885,17 +900,58 @@ private fun DesktopManagerSection(
                         }
                     }
                 }
-                // #287: live progress while the USB-drive VM boots (it's slow,
-                // so make it clear what's happening rather than just spinning).
-                if (usbDriveStage.isNotBlank()) {
+                // #287: one row per open (or opening/errored) USB-drive VM —
+                // live progress while it boots (slow, so make it clear what's
+                // happening rather than just spinning), mounts once ready, an
+                // Unlock action per locked (LUKS) partition, and Eject.
+                usbDriveSessions.entries.sortedBy { it.key }.forEach { (busid, s) ->
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            stringResource(AppR.string.app_desktop_usb_drive_progress, usbDriveStage),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                s.productName ?: s.deviceName ?: busid,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            when (s.phase) {
+                                sh.haven.app.usb.UsbDriveVmManager.Phase.OPENING -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(AppR.string.app_desktop_usb_drive_progress, s.stage),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                sh.haven.app.usb.UsbDriveVmManager.Phase.READY -> Text(
+                                    s.mounts.joinToString(", ").ifBlank { "—" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                sh.haven.app.usb.UsbDriveVmManager.Phase.ERROR -> Text(
+                                    s.error ?: "Failed",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                sh.haven.app.usb.UsbDriveVmManager.Phase.IDLE -> {}
+                            }
+                        }
+                        TextButton(onClick = { onCloseUsbDrive(busid) }) {
+                            Text(stringResource(AppR.string.app_desktop_eject_usb_drive))
+                        }
+                    }
+                    // A LUKS-encrypted partition mounts locked — offer to unlock
+                    // each one against the still-running VM (no reboot).
+                    s.locked.forEach { name ->
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(AppR.string.app_desktop_usb_drive_locked, name),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { unlockingPartition = busid to name }) {
+                                Text(stringResource(AppR.string.app_desktop_usb_drive_unlock))
+                            }
+                        }
                     }
                 }
                 when (val s = rootfsSetupState) {
@@ -1136,6 +1192,63 @@ private fun DesktopManagerSection(
             },
         )
     }
+    if (showWritableConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWritableConfirm = false },
+            title = { Text(stringResource(AppR.string.app_desktop_open_usb_drive_writable_confirm_title)) },
+            text = { Text(stringResource(AppR.string.app_desktop_open_usb_drive_writable_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWritableConfirm = false
+                    onOpenUsbDriveWritable()
+                }) { Text(stringResource(AppR.string.app_desktop_open_usb_drive_writable)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWritableConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+    unlockingPartition?.let { (busid, name) ->
+        UsbLuksUnlockDialog(
+            partitionName = name,
+            onDismiss = { unlockingPartition = null },
+            onUnlock = { passphrase ->
+                onUnlockUsbDrivePartition(busid, "/dev/$name", passphrase)
+                unlockingPartition = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun UsbLuksUnlockDialog(
+    partitionName: String,
+    onDismiss: () -> Unit,
+    onUnlock: (passphrase: String) -> Unit,
+) {
+    var passphrase by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(AppR.string.app_desktop_usb_drive_unlock_title, partitionName)) },
+        text = {
+            sh.haven.core.ui.PasswordField(
+                value = passphrase,
+                onValueChange = { passphrase = it },
+                label = stringResource(AppR.string.app_desktop_usb_drive_unlock_passphrase),
+                imeAction = ImeAction.Go,
+                onImeAction = { if (passphrase.isNotEmpty()) onUnlock(passphrase) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onUnlock(passphrase) }, enabled = passphrase.isNotEmpty()) {
+                Text(stringResource(AppR.string.app_desktop_usb_drive_unlock))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }
 
 @Composable

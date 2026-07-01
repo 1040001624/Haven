@@ -94,12 +94,29 @@ it just rebuilds itself, once, the next time you open a drive.
   usually read those directly without this feature).
 - A full **terminal into the drive**, if you want to poke around with Linux
   commands — it comes free with the connection.
+- **Recovery and forensics tooling, pre-installed** — the VM ships `testdisk`
+  (partition-table + deleted-file recovery, bundles `photorec`), `gdisk`/
+  `sgdisk` (GPT repair), `parted` (MBR/GPT editing), `smartctl` (drive
+  health), `ddrescue` (imaging a failing drive), and `fsck.ext4`/`ntfsfix`/
+  `fsck.vfat` — because this is a *real* Linux kernel with real block-device
+  access, not proot. Run them from the terminal like you would on any Linux
+  box; open the drive **writable** first if a repair needs to write.
+
+**Also works:**
+
+- **Encrypted drives (LUKS)** — a locked partition mounts read-only-locked
+  alongside any plain ones; the Desktop → Manage card shows an "Unlock…"
+  action per locked partition (or the `unlock_usb_drive_partition` MCP verb)
+  once you enter its passphrase. Runs against the already-booted VM, no reboot.
+- **Writing to the drive** — "Open USB drive (writable)" mounts read-write
+  instead of the default read-only, with a confirmation first. Writes are
+  flushed immediately (mounted with `sync`) rather than cached, and ejecting
+  explicitly syncs + unmounts before the VM powers off — both specifically to
+  limit what an unexpected kill (app backgrounded under memory pressure,
+  crash, battery pull) can corrupt. Read-only stays the safer default.
 
 **Doesn't work (yet, or ever):**
 
-- **Encrypted drives (LUKS)** — not supported yet; planned.
-- **Writing to the drive** — it's read-only for now, so you can't accidentally
-  corrupt it. (Writable access is planned as an explicit opt-in.)
 - **Webcams and USB microphones** — these can *never* work through any of Haven's
   USB features, due to a hard limit in Android's USB support (see
   [USB device forwarding](usb.md) for the details).

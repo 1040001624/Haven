@@ -1931,7 +1931,7 @@ internal class McpTools(
         ) { _ -> listUsbExports() },
 
         "open_usb_drive" to ToolHandler(
-            description = "Open a phone-attached USB drive (mass storage — flash drive, SSD, SD reader) inside an on-device QEMU Linux VM and surface its files as an ordinary connection (#287). Unlike usb_attach_to_guest (which gives the proot guest a char device), this gives the drive a REAL kernel, so ext4 / GPT / block partitions mount and their files are browseable. Flow: exports the drive over USB/IP, boots a small Alpine VM that imports it, mounts every partition read-only, and runs sshd — then returns a loopback SSH/SFTP `profileId` you browse with list_directory / serve_file (and a terminal tab into the VM). The VM boot is slow (TCG, no KVM unrooted) + the first run installs packages, so this returns {status:\"starting\"} immediately — poll list_usb_drives until phase=ready (profileId set) or error. Consent-gated per session (mounting the user's disk is sensitive). One drive at a time; read-only; isochronous (webcam/audio) still can't pass.",
+            description = "Open a phone-attached USB drive (mass storage — flash drive, SSD, SD reader) inside an on-device QEMU Linux VM and surface its files as an ordinary connection (#287). Unlike usb_attach_to_guest (which gives the proot guest a char device), this gives the drive a REAL kernel, so ext4 / GPT / block partitions mount and their files are browseable. Flow: exports the drive over USB/IP, boots a small Alpine VM that imports it, mounts every partition (read-only unless `writable`), and runs sshd — then returns a loopback SSH/SFTP `profileId` you browse with list_directory / serve_file (and a terminal tab into the VM). A LUKS-encrypted partition mounts locked (reported in list_usb_drives' vm.locked) — call unlock_usb_drive_partition with its passphrase to mount it. The VM boot is slow (TCG, no KVM unrooted) + the first run installs packages, so this returns {status:\"starting\"} immediately — poll list_usb_drives until phase=ready (profileId set) or error. Consent-gated per session (mounting the user's disk is sensitive). One drive at a time; isochronous (webcam/audio) still can't pass.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -1939,17 +1939,29 @@ internal class McpTools(
                         put("type", "string")
                         put("description", "deviceName from list_usb_devices / list_usb_drives; optional if exactly one USB drive is attached.")
                     })
+                    put("writable", JSONObject().apply {
+                        put("type", "boolean")
+                        put(
+                            "description",
+                            "Mount read-write instead of the default read-only. An interrupted write (VM killed, app backgrounded under memory pressure) can corrupt the drive's filesystem — only set this when the caller genuinely needs to write.",
+                        )
+                    })
                 })
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
                 val n = args.optString("deviceName").ifBlank { "the attached USB drive" }
-                "Open ${if (n.startsWith("/dev")) usbLabel(n) else n} in a Linux VM and mount its files?"
+                val label = if (n.startsWith("/dev")) usbLabel(n) else n
+                if (args.optBoolean("writable", false)) {
+                    "Open $label in a Linux VM READ-WRITE? An interrupted write can corrupt the drive."
+                } else {
+                    "Open $label in a Linux VM and mount its files?"
+                }
             },
         ) { args -> openUsbDrive(args) },
 
         "list_usb_drives" to ToolHandler(
-            description = "List phone-attached USB mass-storage drives (the candidates for open_usb_drive) and the state of any USB-drive VM: phase (idle/opening/ready/error), the exported busid, the loopback SSH `profileId`, and the mounted paths once ready. Read-only — poll this after open_usb_drive until phase=ready.",
+            description = "List phone-attached USB mass-storage drives (the candidates for open_usb_drive) and every currently-open USB-drive VM in `vms` (up to a phone-resource concurrency limit): busid, phase (idle/opening/ready/error), the loopback SSH `profileId`, whether it's mounted read-only, any locked (LUKS) partitions awaiting unlock_usb_drive_partition, and the mounted paths once ready. Read-only — poll this after open_usb_drive until the matching vms[] entry has phase=ready.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -1957,14 +1969,43 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> listUsbDrives() },
 
-        "close_usb_drive" to ToolHandler(
-            description = "Close the USB-drive VM opened by open_usb_drive: power off the VM, stop the USB/IP export, and remove the transient SSH profile + ephemeral key. Idempotent.",
+        "unlock_usb_drive_partition" to ToolHandler(
+            description = "Unlock a LUKS-encrypted partition on an open USB-drive VM (see list_usb_drives' vms[].locked for candidates, e.g. \"sdb2\" → devicePath \"/dev/sdb2\") and mount it. Runs against the already-booted VM — no reboot. Returns the updated mount/locked lists; throws on a wrong passphrase.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
-                put("properties", JSONObject())
+                put("properties", JSONObject().apply {
+                    put("busid", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Which open drive's VM (see list_usb_drives' vms[].busid); optional if exactly one is open.")
+                    })
+                    put("devicePath", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "e.g. /dev/sdb2 — the locked partition's device path inside the VM.")
+                    })
+                    put("passphrase", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The LUKS passphrase.")
+                    })
+                })
+                put("required", JSONArray().put("devicePath").put("passphrase"))
+            },
+            consentLevel = ConsentLevel.ONCE_PER_SESSION,
+            summarise = { args -> "Unlock ${args.optString("devicePath")} with the supplied passphrase?" },
+        ) { args -> unlockUsbDrivePartition(args) },
+
+        "close_usb_drive" to ToolHandler(
+            description = "Close a USB-drive VM opened by open_usb_drive: power off the VM, stop its USB/IP export, and remove the transient SSH profile + ephemeral key. Idempotent.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("busid", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Which open drive to close (see list_usb_drives' vms[].busid); optional if exactly one is open.")
+                    })
+                })
             },
             consentLevel = ConsentLevel.NEVER,
-        ) { _ -> closeUsbDrive() },
+        ) { args -> closeUsbDrive(args) },
 
         "delete_usb_appliance" to ToolHandler(
             description = "Delete the persistent USB-helper Linux appliance — the small installed Alpine VM (with usbip+ssh baked in) that open_usb_drive boots to mount drives. It's provisioned once and kept so repeat opens are fast; deleting it frees the disk (~280 MB) and forces a one-time re-provision (re-download + install) on the next open_usb_drive. Closes any live USB-drive VM first. Idempotent.",
@@ -7719,38 +7760,90 @@ internal class McpTools(
         }
     }
 
+    /**
+     * Resolve which open drive's busid a call means: the explicit [argName] arg
+     * if given, else the single currently-open session, else an McpError
+     * listing the ambiguity (mirrors UsbDriveVmManager.resolveDrive's shape for
+     * deviceName). Up to QemuManager.MAX_CONCURRENT_VMS can be open at once.
+     */
+    private fun resolveUsbDriveBusid(args: JSONObject, argName: String = "busid"): String {
+        args.optString(argName).takeIf { it.isNotBlank() }?.let { return it }
+        val sessions = usbDriveVmManager.sessions.value
+        return when (sessions.size) {
+            0 -> throw McpError(-32602, "No USB drive is open.")
+            1 -> sessions.keys.single()
+            else -> throw McpError(
+                -32602,
+                "Multiple USB drives open — pass $argName. Open: ${sessions.keys.joinToString()}",
+            )
+        }
+    }
+
     private suspend fun openUsbDrive(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val requested = args.optString("deviceName").takeIf { it.isNotBlank() }
+        val writable = args.optBoolean("writable", false)
         val deviceName = try {
-            usbDriveVmManager.open(requested)
+            usbDriveVmManager.open(requested, writable)
         } catch (e: sh.haven.app.usb.UsbDriveVmManager.UsbVmException) {
             throw McpError(-32603, e.message ?: "Failed to open USB drive")
         }
         JSONObject().apply {
             put("status", "starting")
             put("deviceName", deviceName)
+            put("readOnly", !writable)
             put(
                 "note",
                 "Booting a Linux VM and mounting the drive (slow under TCG; the first run installs packages). " +
-                    "Poll list_usb_drives until vm.phase=ready, then browse vm.mounts with list_directory(profileId, path).",
+                    "Poll list_usb_drives until the matching vms[] entry has phase=ready (profileId set), then browse " +
+                    "its mounts with list_directory(profileId, path). A LUKS-encrypted partition mounts locked (see " +
+                    "locked) — call unlock_usb_drive_partition (with busid, since more than one drive can be open) " +
+                    "with its passphrase. Up to a phone-resource limit of concurrent drives; open_usb_drive errors if " +
+                    "already at that limit.",
             )
+        }
+    }
+
+    private suspend fun unlockUsbDrivePartition(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val busid = resolveUsbDriveBusid(args)
+        val devicePath = args.optString("devicePath").takeIf { it.isNotBlank() }
+            ?: throw McpError(-32602, "devicePath is required (see the locked list from list_usb_drives, e.g. /dev/sdb2)")
+        val passphrase = args.optString("passphrase").takeIf { it.isNotBlank() }
+            ?: throw McpError(-32602, "passphrase is required")
+        try {
+            usbDriveVmManager.unlockPartition(busid, devicePath, passphrase)
+        } catch (e: sh.haven.app.usb.UsbDriveVmManager.UsbVmException) {
+            throw McpError(-32603, e.message ?: "Failed to unlock partition")
+        }
+        val st = usbDriveVmManager.sessions.value[busid]
+        JSONObject().apply {
+            put("unlocked", true)
+            put("mounts", JSONArray().apply { st?.mounts?.forEach { put(it) } })
+            put("locked", JSONArray().apply { st?.locked?.forEach { put(it) } })
         }
     }
 
     private suspend fun listUsbDrives(): JSONObject = withContext(Dispatchers.IO) {
         val drives = usbDriveVmManager.massStorageDevices()
-        val st = usbDriveVmManager.status.value
+        val sessions = usbDriveVmManager.sessions.value
         JSONObject().apply {
             put("drives", JSONArray().apply { drives.forEach { put(usbDeviceJson(it)) } })
-            put("vm", JSONObject().apply {
-                put("phase", st.phase.name.lowercase())
-                put("stage", st.stage)
-                put("deviceName", st.deviceName ?: JSONObject.NULL)
-                put("busid", st.busid ?: JSONObject.NULL)
-                put("profileId", st.profileId ?: JSONObject.NULL)
-                put("sshPort", st.sshPort)
-                put("mounts", JSONArray().apply { st.mounts.forEach { put(it) } })
-                put("error", st.error ?: JSONObject.NULL)
+            put("vms", JSONArray().apply {
+                sessions.forEach { (busid, st) ->
+                    put(
+                        JSONObject().apply {
+                            put("busid", busid)
+                            put("phase", st.phase.name.lowercase())
+                            put("stage", st.stage)
+                            put("deviceName", st.deviceName ?: JSONObject.NULL)
+                            put("profileId", st.profileId ?: JSONObject.NULL)
+                            put("sshPort", st.sshPort)
+                            put("mounts", JSONArray().apply { st.mounts.forEach { put(it) } })
+                            put("readOnly", st.readOnly)
+                            put("locked", JSONArray().apply { st.locked.forEach { put(it) } })
+                            put("error", st.error ?: JSONObject.NULL)
+                        },
+                    )
+                }
             })
             // Whether the persistent helper appliance is provisioned (first open
             // provisions it once; subsequent opens are fast). delete_usb_appliance
@@ -7759,8 +7852,9 @@ internal class McpTools(
         }
     }
 
-    private suspend fun closeUsbDrive(): JSONObject = withContext(Dispatchers.IO) {
-        usbDriveVmManager.close()
+    private suspend fun closeUsbDrive(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val busid = resolveUsbDriveBusid(args)
+        usbDriveVmManager.close(busid)
         JSONObject().apply { put("closed", true) }
     }
 
@@ -7813,9 +7907,8 @@ internal class McpTools(
                 put("socket", usbProxyServer.socketName)
             }
         }
-        // USB drive → local VM (#287)
-        val vm = usbDriveVmManager.status.value
-        if (vm.phase != sh.haven.app.usb.UsbDriveVmManager.Phase.IDLE) {
+        // USB drive(s) → local VM (#287) — one bridge entry per open drive.
+        usbDriveVmManager.sessions.value.values.forEach { vm ->
             add(usbSource(vm.deviceName), "usb", "local-vm", "qemu+usbip", vm.phase.name.lowercase()) {
                 if (vm.busid != null) put("busid", vm.busid)
                 put("profileId", vm.profileId ?: JSONObject.NULL)

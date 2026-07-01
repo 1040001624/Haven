@@ -22,7 +22,11 @@ import kotlin.concurrent.thread
  * because the Android kernel ships no `vhci-hcd`, so usbip is the over-the-wire
  * path and the bespoke proxy stays the local-guest path.
  *
- * One server instance exports one device. URBs are serialized **per (endpoint,
+ * One shared server (one port) can export multiple devices at once, each
+ * client's IMPORT request selecting one by busid ([export]/[unexport]) —
+ * e.g. two concurrent on-device USB-drive VMs (#287). [start]/[stop] keep
+ * the older single-device replace-everything behaviour for the remote-host
+ * export MCP verbs. URBs are serialized **per (endpoint,
  * direction)** lane: same endpoint runs in submission order (a multi-frame
  * CTAPHID write — init + continuation frames on interrupt-OUT — must reach the
  * device in order or it rejects the whole message as INVALID_LENGTH), while
@@ -43,13 +47,21 @@ class UsbIpServer @Inject constructor(
     private val broker: UsbBroker,
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
-    @Volatile private var deviceName: String? = null
+
+    // busid -> exported deviceName. One shared ServerSocket serves every export;
+    // each client's IMPORT request picks a device by busid (the wire protocol
+    // already carries it — describeForImport looks it up below). This is what
+    // makes concurrent exports (e.g. two on-device USB-drive VMs) possible on
+    // one port instead of one device monopolising the whole server (#287
+    // multi-drive). [start]/[stop] (used by the single-device remote-host export
+    // MCP verbs) keep their old replace-everything semantics on top of this map.
+    private val exported = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     val isRunning: Boolean get() = serverSocket != null
     val boundPort: Int? get() = serverSocket?.localPort
 
-    /** The exported device's `/dev/bus/usb/...` name, or null when stopped. */
-    val exportedDeviceName: String? get() = deviceName
+    /** The exported device's `/dev/bus/usb/...` name, when exactly one export is active. */
+    val exportedDeviceName: String? get() = exported.values.singleOrNull()
 
     private val clients = java.util.concurrent.atomic.AtomicInteger(0)
 
@@ -61,45 +73,72 @@ class UsbIpServer @Inject constructor(
 
     /**
      * Bind the usbip server for [deviceName] (already opened via
-     * [UsbBroker.openDevice]). [bindAddress] null binds all interfaces (LAN +
-     * loopback); pass "127.0.0.1" to keep it loopback-only behind a tunnel.
-     * Returns the bound port.
+     * [UsbBroker.openDevice]), replacing whatever else was exported. [bindAddress]
+     * null binds all interfaces (LAN + loopback); pass "127.0.0.1" to keep it
+     * loopback-only behind a tunnel. Returns the bound port. For the
+     * single-device remote-host export path (MCP `start_usbip_export`); a
+     * concurrent multi-device export ([export]/[unexport]) collides with this
+     * on the shared socket exactly like it did before this class supported
+     * more than one device — not a new limitation.
      */
     @Synchronized
     fun start(deviceName: String, port: Int = USBIP_PORT, bindAddress: String? = null): Int {
-        if (serverSocket != null && this.deviceName == deviceName) return serverSocket!!.localPort
+        if (serverSocket != null && exported.values.singleOrNull() == deviceName) return serverSocket!!.localPort
         stop()
-        val addr = bindAddress?.let { InetAddress.getByName(it) }
-        // Build unbound so SO_REUSEADDR is set *before* bind: the immediate-bind
-        // ServerSocket(port, backlog, addr) ctor binds with REUSEADDR off, so a
-        // re-export within one app session (after stop(), while the prior port is
-        // in TIME_WAIT) fails with EADDRINUSE. Enabling it lets the rebind succeed.
-        val socket = ServerSocket().apply {
-            reuseAddress = true
-            bind(java.net.InetSocketAddress(addr, port), BACKLOG)
-        }
-        serverSocket = socket
-        this.deviceName = deviceName
-        thread(name = "haven-usbip-accept", isDaemon = true) {
-            Log.i(TAG, "usbip server listening on ${addr ?: "0.0.0.0"}:${socket.localPort} for $deviceName")
-            while (serverSocket === socket) {
-                val client = try {
-                    socket.accept()
-                } catch (e: Exception) {
-                    if (serverSocket === socket) Log.w(TAG, "accept failed: ${e.message}")
-                    break
+        export(deviceName, port, bindAddress)
+        return serverSocket!!.localPort
+    }
+
+    /**
+     * Export [deviceName] (already opened via [UsbBroker.openDevice]) over
+     * USB/IP alongside any other current exports, starting the shared server if
+     * this is the first one. Returns the busid a `usbip attach -b <busid>`
+     * client should use to reach it.
+     */
+    @Synchronized
+    fun export(deviceName: String, port: Int = USBIP_PORT, bindAddress: String? = null): String {
+        val busid = busidOf(deviceName)
+        exported[busid] = deviceName
+        if (serverSocket == null) {
+            val addr = bindAddress?.let { InetAddress.getByName(it) }
+            // Build unbound so SO_REUSEADDR is set *before* bind: the immediate-bind
+            // ServerSocket(port, backlog, addr) ctor binds with REUSEADDR off, so a
+            // re-export within one app session (after stop(), while the prior port is
+            // in TIME_WAIT) fails with EADDRINUSE. Enabling it lets the rebind succeed.
+            val socket = ServerSocket().apply {
+                reuseAddress = true
+                bind(java.net.InetSocketAddress(addr, port), BACKLOG)
+            }
+            serverSocket = socket
+            thread(name = "haven-usbip-accept", isDaemon = true) {
+                Log.i(TAG, "usbip server listening on ${addr ?: "0.0.0.0"}:${socket.localPort}")
+                while (serverSocket === socket) {
+                    val client = try {
+                        socket.accept()
+                    } catch (e: Exception) {
+                        if (serverSocket === socket) Log.w(TAG, "accept failed: ${e.message}")
+                        break
+                    }
+                    thread(name = "haven-usbip-conn", isDaemon = true) { serve(client) }
                 }
-                thread(name = "haven-usbip-conn", isDaemon = true) { serve(client, deviceName) }
             }
         }
-        return socket.localPort
+        Log.i(TAG, "exporting $deviceName as $busid (${exported.size} device(s) total)")
+        return busid
+    }
+
+    /** Stop exporting just [busid]; stops the whole server once nothing is left exported. */
+    @Synchronized
+    fun unexport(busid: String) {
+        exported.remove(busid)
+        if (exported.isEmpty()) stop()
     }
 
     @Synchronized
     fun stop() {
         serverSocket?.let { runCatching { it.close() } }
         serverSocket = null
-        deviceName = null
+        exported.clear()
         // Closing the server socket doesn't close already-accepted client sockets,
         // so without this their serve() threads stay blocked on read/write and
         // clientCount lingers >0 until the remote's TCP errors. Close them now so
@@ -108,18 +147,26 @@ class UsbIpServer @Inject constructor(
         clientSockets.clear()
     }
 
-    private fun serve(client: Socket, device: String) {
+    // "/dev/bus/usb/BBB/DDD" -> "B-D", matching describeForImport's own busid.
+    private fun busidOf(deviceName: String): String {
+        val parts = deviceName.trimEnd('/').split('/')
+        val bus = parts.getOrNull(parts.size - 2)?.toIntOrNull() ?: 1
+        val dev = parts.lastOrNull()?.toIntOrNull() ?: 1
+        return "$bus-$dev"
+    }
+
+    private fun serve(client: Socket) {
         clients.incrementAndGet()
         clientSockets.add(client)
         try {
-            serveConnection(client, device)
+            serveConnection(client)
         } finally {
             clientSockets.remove(client)
             clients.decrementAndGet()
         }
     }
 
-    private fun serveConnection(client: Socket, device: String) {
+    private fun serveConnection(client: Socket) {
         // One single-thread lane per (endpoint, direction): in-order within a lane,
         // concurrent across lanes. Keyed by ep<<1|direction (DIR_IN=1, DIR_OUT=0).
         val lanes = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.ExecutorService>()
@@ -139,8 +186,16 @@ class UsbIpServer @Inject constructor(
             } catch (e: Exception) {
                 Log.w(TAG, "op handshake failed: ${e.message}"); return
             } ?: return
+            val device: String
             when (op) {
                 is UsbIpProtocol.OpRequest.Import -> {
+                    device = exported[op.busid] ?: run {
+                        Log.w(TAG, "IMPORT of busid ${op.busid} failed — not currently exported")
+                        synchronized(writeLock) {
+                            output.write(UsbIpProtocol.encodeImportReply(null)); output.flush()
+                        }
+                        return
+                    }
                     val dev = runCatching { describeForImport(device) }.getOrNull()
                     synchronized(writeLock) {
                         output.write(UsbIpProtocol.encodeImportReply(dev)); output.flush()
