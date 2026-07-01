@@ -1,0 +1,4 @@
+v5.67.0
+- Encrypted (LUKS) drives now unlock, writable mounts, and multiple USB drives at once (#287), plus a recovery/forensics toolset (testdisk, gdisk, parted, smartmontools, ddrescue).
+- MCP now rides your interactive SSH session, so it reconnects reliably without a force-stop.
+- Five reliability fixes found during testing: OTG-suspend keep-alive + de-duplicated bookmarks, a mount-fallback gate, synchronized/chunked USB transfers to stop device resets, and a LUKS-unlock check that now verifies the real mount state instead of trusting an echoed command.

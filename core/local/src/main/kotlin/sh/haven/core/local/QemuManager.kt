@@ -139,6 +139,14 @@ class QemuManager @Inject constructor(
             if (!bootOk) fail("VM didn't reach a login prompt within ${BOOT_TIMEOUT_MS / 1000}s — the emulated boot is slow and varies with phone load; try again, ideally with less else running.")
             instance.send("root\n")
             Thread.sleep(1500)
+            // The tty echoes typed input back into the same stream awaitMarker/
+            // sendAndAwaitRegex scan — since every script we send literally
+            // contains its own marker text (e.g. "echo HAVEN_SETUP_DONE"), the
+            // echo alone can satisfy the marker wait before the command has
+            // even run. Kill echo once, right after login, for every script
+            // sent for the rest of this session (setup, unlock, close).
+            instance.send("stty -echo\n")
+            Thread.sleep(300)
             // 2) one-shot setup; wait for the done marker.
             onStage("Setting up the VM and mounting your drive…")
             instance.send(runtimeSetupScript(busid, authorizedPubKey, readOnly) + "\n")
@@ -196,14 +204,27 @@ class QemuManager @Inject constructor(
         } else {
             "mount -o rw,sync \"/dev/mapper/crypt_$name\" \"/mnt/$name\" 2>/dev/null"
         }
+        // Same report format runtimeSetupScript ends with — a full fresh
+        // re-scan (not scoped to just this partition), so the mounts/locked
+        // lists below stay accurate for every partition on the drive, not
+        // just the one just unlocked.
+        val reportScript = "for p in /dev/sd[a-z][0-9]*; do [ -b \"\$p\" ] || continue; l=\$(basename \"\$p\"); " +
+            "t=\$(blkid -o value -s TYPE \"\$p\" 2>/dev/null); " +
+            "[ \"\$t\" = crypto_LUKS ] && [ ! -e \"/dev/mapper/crypt_\$l\" ] && echo \"HVNLOCKED:\$l\"; done; " +
+            "while read d m r; do case \"\$m\" in /mnt/*) echo \"HVNMOUNT:\$m\";; esac; done < /proc/mounts; "
         val script = "modprobe dm_crypt 2>/dev/null; " +
-            "printf '%s' " + shellSingleQuote(passphrase) + " | cryptsetup luksOpen \"$devicePath\" \"crypt_$name\" -d - 2>/dev/null && " +
-            "mkdir -p \"/mnt/$name\" && { $mapperMount; } && " +
-            "echo HAVEN_UNLOCK_OK || echo HAVEN_UNLOCK_FAIL"
+            "printf '%s' " + shellSingleQuote(passphrase) + " | cryptsetup luksOpen \"$devicePath\" \"crypt_$name\" -d - 2>/dev/null; " +
+            "mkdir -p \"/mnt/$name\"; { $mapperMount; }; " +
+            reportScript +
+            // The real, final check — not the `&&` chain's short-circuit state,
+            // which a stale/echoed marker match could otherwise satisfy without
+            // ever confirming the mount actually happened (see sendAndAwaitRegex).
+            "mountpoint -q \"/mnt/$name\" 2>/dev/null && echo HAVEN_UNLOCK_OK || echo HAVEN_UNLOCK_FAIL"
+        val since = instance.bufferSnapshot().length
         val marker = instance.sendAndAwaitRegex(script, "HAVEN_UNLOCK_OK|HAVEN_UNLOCK_FAIL", UNLOCK_TIMEOUT_MS)
+        val mounts = instance.parseMounts(since)
+        val locked = instance.parseLocked(since)
         if (marker == null || marker == "HAVEN_UNLOCK_FAIL") fail("Wrong passphrase, or the partition failed to mount.")
-        val mounts = instance.parseMounts()
-        val locked = instance.parseLocked()
         current.copy(mounts = mounts, locked = locked).also { session -> updateSession(busid) { session } }
     }
 
@@ -372,6 +393,7 @@ class QemuManager @Inject constructor(
             }
             if (!bootOk) fail("appliance provisioning: VM didn't reach a login prompt in ${BOOT_TIMEOUT_MS / 1000}s")
             provisioning.send("root\n"); Thread.sleep(1500)
+            provisioning.send("stty -echo\n"); Thread.sleep(300) // see openDrive's comment
             onStage("Building the USB helper Linux — installing (one-time)…")
             provisioning.send(provisionScript + "\n")
             val ok = provisioning.awaitMarker("HAVEN_PROVISION_DONE", PROVISION_TIMEOUT_MS) { sec ->
@@ -415,6 +437,7 @@ class QemuManager @Inject constructor(
             }
             if (!bootOk) fail("appliance upgrade: VM didn't reach a login prompt in ${BOOT_TIMEOUT_MS / 1000}s")
             provisioning.send("root\n"); Thread.sleep(1500)
+            provisioning.send("stty -echo\n"); Thread.sleep(300) // see openDrive's comment
             onStage("Updating the USB helper Linux (one-time)…")
             // Re-installs the FULL extra-package set (not just what's new since
             // the caller's prior version) — simpler than tracking per-version
@@ -577,17 +600,25 @@ private class VmInstance {
 
     fun bufferSnapshot(): String = synchronized(serialLock) { serial.toString() }
 
-    fun parseMounts(): List<String> {
+    /**
+     * [since] restricts parsing to bytes at/after that buffer offset — the
+     * report is a fresh, complete re-scan of every partition each time it's
+     * emitted (see [runtimeSetupScript]/[QemuManager.unlockPartition]'s
+     * scripts), so scanning the whole VM-lifetime buffer would resurrect a
+     * partition's now-stale earlier state (e.g. a partition unlocked since
+     * the initial setup report would still show up as locked forever).
+     */
+    fun parseMounts(since: Int = 0): List<String> {
         val re = Regex("^HVNMOUNT:(/mnt/\\S+)$")
-        return bufferSnapshot().lineSequence()
+        return bufferSnapshot().drop(since).lineSequence()
             .map { it.trim().trimEnd('\r') }
             .mapNotNull { re.find(it)?.groupValues?.get(1) }
             .distinct().toList()
     }
 
-    fun parseLocked(): List<String> {
+    fun parseLocked(since: Int = 0): List<String> {
         val re = Regex("^HVNLOCKED:(\\S+)$")
-        return bufferSnapshot().lineSequence()
+        return bufferSnapshot().drop(since).lineSequence()
             .map { it.trim().trimEnd('\r') }
             .mapNotNull { re.find(it)?.groupValues?.get(1) }
             .distinct().toList()
@@ -619,20 +650,25 @@ private class VmInstance {
     /**
      * Send [script] and wait for [markerRegex] (an alternation like `"A|B"`)
      * to appear in the serial buffer, returning which alternative matched (or
-     * null on timeout/VM death). Markers are assumed unique to the command
-     * just sent (as with [awaitMarker], no position-tracking — the buffer can
-     * trim/shift, so matching the whole live buffer is the robust option here).
+     * null on timeout/VM death). Only bytes written *after* this call's own
+     * [send] count — a VM instance is long-lived (open, unlock, close all
+     * share it), and a repeat command with the same marker text (e.g. a
+     * second unlock attempt) would otherwise match a stale occurrence left
+     * over from an earlier command instead of its own real output.
      */
     fun sendAndAwaitRegex(script: String, markerRegex: String, timeoutMs: Long): String? {
+        val since = synchronized(serialLock) { serial.length }
         send(script + "\n")
         val re = Regex(markerRegex)
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (!isAlive) return null
-            synchronized(serialLock) { re.find(serial)?.let { return it.value } }
+            synchronized(serialLock) {
+                re.find(serial, since.coerceAtMost(serial.length))?.let { return it.value }
+            }
             try { Thread.sleep(1000) } catch (_: InterruptedException) { return null }
         }
-        return synchronized(serialLock) { re.find(serial)?.value }
+        return synchronized(serialLock) { re.find(serial, since.coerceAtMost(serial.length))?.value }
     }
 
     /** Blocks up to [seconds] for the process to exit; true if it did (or there's none to wait for). */

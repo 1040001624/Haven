@@ -5,6 +5,24 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.67.0
+
+Encrypted (LUKS), writable, and multi-drive USB support (#287); MCP reconnects reliably; five reliability fixes found along the way.
+
+🔐 **Encrypted (LUKS) drives now unlock** — a locked partition (previously reported read-only-locked with no way in) can be unlocked with its passphrase and mounted, against the drive's already-running helper VM — no reboot needed.
+
+✏️ **Writable mounts** — "Open USB drive (writable)" mounts read-write instead of read-only, for edits and repairs. Every write flushes immediately (no write-back cache to lose to an unexpected kill), and closing a drive explicitly syncs and unmounts before the VM shuts down.
+
+🗄️ **Multiple drives at once** — open more than one USB drive concurrently (up to a phone-resource limit), each in its own helper VM.
+
+🧰 **Recovery/forensics toolset** — the helper Linux now bundles `testdisk`/`photorec`, `gdisk`/`sgdisk`, `parted`, `smartmontools`, and `ddrescue`, usable from a terminal into the drive's VM.
+
+🔌 **MCP reconnects reliably without a force-stop** — MCP used to carry its tunnel over its own separately-authenticated background SSH session, whose headless auth can't use FIDO2 keys and would retry a doomed login forever once its other keys stopped working. MCP now rides your already-connected interactive SSH session instead — a Settings status row and `get_app_info`'s new `mcpCarriers` field show which route is actually carrying it.
+
+🔧 **Five reliability fixes found during testing**: a keep-alive against Android suspending an idle USB device mid-session (which used to block all further enumeration until a physical replug), de-duplicated "USB: …" bookmarks by the drive's serial number instead of piling up a new one on every replug, a mount fallback that only exists for ext4/xfs was being tried on every filesystem (wasting the one fallback a non-ext4/xfs stick gets), raw USB transfers weren't synchronized against each other and could silently truncate above ~16KB — surfacing as the device resetting mid-write, most visibly formatting a LUKS header — and unlocking a LUKS partition could report success even when the mount had actually failed, because the guest's terminal echoes a command back as it's typed and that echo alone could satisfy the "done" check before the command had run; unlocking now verifies the real mount state before reporting back.
+
+Drivable over MCP (`unlock_usb_drive_partition`, `open_usb_drive`'s `writable` param, `list_usb_drives`' `vms[]` array). Updated guide: [Reading USB drives](https://github.com/GlassHaven/Haven/blob/main/docs/features/usb-drives.md).
+
 ## v5.66.3
 
 Hardens the custom rootfs importer against malformed tarballs (#324).
