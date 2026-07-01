@@ -157,7 +157,6 @@ class UsbDriveVmManager @Inject constructor(
             agentUiCommandBus.emit(
                 sh.haven.core.data.agent.AgentUiCommand.ConnectProfile(profile.id),
             )
-            val target = session.mounts.singleOrNull() ?: "/mnt"
             // Ceiling only — we navigate the instant CONNECTED arrives. Generous
             // so a slow VM's SSH handshake still lands the auto-open; if it does
             // time out the drive is still connected + shows in Files (this only
@@ -177,6 +176,15 @@ class UsbDriveVmManager @Inject constructor(
                 // to Terminal. ponytail: a small settle delay beats threading a
                 // "don't-switch-to-terminal" flag through the whole connect path.
                 kotlinx.coroutines.delay(1500)
+                // Read the real mounts over the now-connected SSH channel —
+                // robust, unlike scraping the transient serial console (kernel
+                // console noise + slow enumeration made that unreliable). Update
+                // the status and land the auto-open on the actual mount.
+                val liveMounts = queryMountsViaSsh(profile.id)
+                if (liveMounts.isNotEmpty() && liveMounts != session.mounts) {
+                    _status.value = _status.value.copy(mounts = liveMounts)
+                }
+                val target = liveMounts.singleOrNull() ?: session.mounts.singleOrNull() ?: "/mnt"
                 agentUiCommandBus.emit(
                     sh.haven.core.data.agent.AgentUiCommand.NavigateToSftpPath(profile.id, target),
                 )
@@ -213,6 +221,31 @@ class UsbDriveVmManager @Inject constructor(
     suspend fun deleteAppliance() {
         runCatching { close() }
         qemuManager.deleteAppliance()
+    }
+
+    /**
+     * Read the drive's mount points from /proc/mounts over the VM's SSH session
+     * — the same reliable channel the file browser uses. Preferred over scraping
+     * QemuManager's transient serial console (kernel console noise + slow, retried
+     * enumeration made that miss the report). Returns [] if the client isn't up.
+     */
+    private suspend fun queryMountsViaSsh(profileId: String): List<String> {
+        val client = sshSessionManager.getSshClientForProfile(profileId)
+        if (client == null) { Log.w(TAG, "queryMountsViaSsh: no connected client for $profileId"); return emptyList() }
+        // The mount can land a little AFTER the session connects (slow, retried
+        // enumeration), so poll /proc/mounts for a short window rather than
+        // reading once. Reliable (SSH channel), unlike serial scraping.
+        repeat(20) { attempt ->
+            val mounts = runCatching {
+                client.execCommand("cat /proc/mounts").stdout.lineSequence()
+                    .mapNotNull { line -> line.split(' ').getOrNull(1)?.takeIf { it.startsWith("/mnt/") } }
+                    .distinct().toList()
+            }.getOrElse { Log.w(TAG, "queryMountsViaSsh exec failed: ${it.message}"); emptyList() }
+            if (mounts.isNotEmpty()) { Log.i(TAG, "queryMountsViaSsh: $mounts (attempt $attempt)"); return mounts }
+            kotlinx.coroutines.delay(2000)
+        }
+        Log.w(TAG, "queryMountsViaSsh: no /mnt mount appeared within ~40s")
+        return emptyList()
     }
 
     private fun resolveDrive(deviceName: String?): String {
