@@ -1311,7 +1311,7 @@
     },
     {
      "name": "app_desktop_manager_title",
-     "en": "Local Linux desktop",
+     "en": "Local Linux",
      "comment": "Desktop manager: header / intro",
      "args": [],
      "t": {
@@ -1327,6 +1327,13 @@
       "ru": "Локальный рабочий стол Linux",
       "zh": "本地 Linux 桌面"
      }
+    },
+    {
+     "name": "app_desktop_compositor_title",
+     "en": "Compositor",
+     "comment": "Desktop manager: header / intro",
+     "args": [],
+     "t": {}
     },
     {
      "name": "app_desktop_manager_description",
@@ -1386,6 +1393,208 @@
      "name": "app_desktop_mirror_americas",
      "en": "Americas",
      "comment": "Desktop manager: package mirror (#263)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_remap_ports_title",
+     "en": "Remap low ports",
+     "comment": "Desktop manager: package mirror (#263)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_remap_ports_description",
+     "en": "Lets guest services listen on privileged ports (&lt;1024): a service on port N becomes reachable at N+2000 (e.g. 80 → 2080). Android blocks the app from binding low ports directly. Off by default; affects every privileged port, including a guest sshd.",
+     "comment": "Desktop manager: package mirror (#263)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_share_storage_title",
+     "en": "Share device storage with guest",
+     "comment": "Desktop manager: package mirror (#263)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_share_storage_description",
+     "en": "Mounts your shared storage into the guest at /storage and /sdcard so it can reach your files. Turn off to keep your photos and downloads hidden from the local Linux environment.",
+     "comment": "Desktop manager: package mirror (#263)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_title",
+     "en": "Custom mounts (%1$d)",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [
+      "%1$d"
+     ],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_description",
+     "en": "Expose extra Android paths inside this distro\\'s guest, on top of the system mounts. Mounts are read-write.",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_dialog_title",
+     "en": "Custom mounts — %1$s",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [
+      "%1$s"
+     ],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_host_hint",
+     "en": "Android path (e.g. /storage/emulated/0/Sync)",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_guest_hint",
+     "en": "Guest path (optional — defaults to the same path)",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_add",
+     "en": "Add mount",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_empty",
+     "en": "No custom mounts. Add one to expose an Android path in the guest.",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_remove_cd",
+     "en": "Remove mount",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_custom_binds_takes_effect",
+     "en": "Applies on the next shell, command, or desktop start for this distro.",
+     "comment": "Desktop manager: custom bind mounts (#301)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_rootfs",
+     "en": "Import rootfs…",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_options_section",
+     "en": "Options &amp; mounts",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_open_usb_drive",
+     "en": "Open USB drive…",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_eject_usb_drive",
+     "en": "Eject USB drive",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_delete_usb_appliance",
+     "en": "Delete USB helper Linux",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_usb_drive_progress",
+     "en": "USB drive: %1$s",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [
+      "%1$s"
+     ],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_dialog_title",
+     "en": "Import a rootfs",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_description",
+     "en": "Bring your own rootfs tarball (.tar.gz or .tar.xz) — a proot-distro image, a Docker export, or a second copy of a distro you already have. It is used as-is (no packages installed).",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_id_hint",
+     "en": "Distro id (slug, e.g. ubuntu-test)",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_label_hint",
+     "en": "Label (e.g. Ubuntu 26.04 imported)",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_source_hint",
+     "en": "Tarball URL (https://…)",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_family",
+     "en": "Package family",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_import_confirm",
+     "en": "Import",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_cancel",
+     "en": "Cancel",
+     "comment": "Desktop manager: import custom rootfs (#284)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "app_desktop_save",
+     "en": "Save",
+     "comment": "Desktop manager: import custom rootfs (#284)",
      "args": [],
      "t": {}
     },
@@ -13250,6 +13459,39 @@
       "ru": "Когда выключено, инструменты ИИ-агента (MCP), нацеленные на это подключение, отклоняются. Подключение продолжает работать для вас как обычно.",
       "zh": "关闭时，针对此连接的 AI 代理（MCP）工具将被拒绝。该连接对您仍可正常使用。"
      }
+    },
+    {
+     "name": "connections_deeplink_confirm_title",
+     "en": "Connect?",
+     "comment": "#210 i18n sweep: VM-setup copy toasts and code-block copy action.",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_deeplink_confirm_message",
+     "en": "A link wants to connect to %1$s.",
+     "comment": "#210 i18n sweep: VM-setup copy toasts and code-block copy action.",
+     "args": [
+      "%1$s"
+     ],
+     "t": {}
+    },
+    {
+     "name": "connections_deeplink_confirm_session",
+     "en": "A link wants to connect to %1$s and attach session “%2$s”.",
+     "comment": "#210 i18n sweep: VM-setup copy toasts and code-block copy action.",
+     "args": [
+      "%1$s",
+      "%2$s"
+     ],
+     "t": {}
+    },
+    {
+     "name": "connections_deeplink_confirm_connect",
+     "en": "Connect",
+     "comment": "#210 i18n sweep: VM-setup copy toasts and code-block copy action.",
+     "args": [],
+     "t": {}
     }
    ]
   },
@@ -30042,6 +30284,13 @@
       "ru": "Подключитесь к серверу для просмотра файлов",
       "zh": "连接到服务器以浏览文件"
      }
+    },
+    {
+     "name": "sftp_open_usb_drive",
+     "en": "Open a USB drive…",
+     "comment": "EmptyState",
+     "args": [],
+     "t": {}
     },
     {
      "name": "sftp_new_folder_title",
