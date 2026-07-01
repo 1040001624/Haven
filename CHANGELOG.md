@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.66.2
+
+Fixes importing a rootfs from a plain-HTTP LAN mirror (#284).
+
+🌐 **Import a custom rootfs from a self-hosted HTTP mirror** — importing from an `http://` URL on your local network (a home-lab package/rootfs mirror without TLS) failed with "Cleartext HTTP traffic ... not permitted". Android blocks plain HTTP by default, and the declarative allowlist can only name specific domains, not an arbitrary LAN IP. Haven now falls back to a direct download for this one explicit, user-typed URL when that happens — every other network request in the app is unaffected. Verified against a real local HTTP mirror serving a real Alpine rootfs, end to end (download → extract → a working guest shell).
+
 ## v5.66.1
 
 USB-drive connections reopen with a tap, and a CI fix.

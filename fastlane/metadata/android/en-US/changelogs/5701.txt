@@ -1,0 +1,2 @@
+v5.66.2
+- Fixed importing a custom rootfs (#284) from a plain-HTTP self-hosted LAN mirror — was blocked by Android's cleartext-traffic policy, now falls back to a direct download for that one explicit URL.

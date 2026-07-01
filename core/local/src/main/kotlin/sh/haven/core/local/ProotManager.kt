@@ -12,6 +12,8 @@ import sh.haven.core.data.repository.ProotInstallLogRepository
 import sh.haven.core.local.proot.Arch
 import sh.haven.core.local.proot.CustomBind
 import sh.haven.core.local.proot.DesktopCatalog
+import sh.haven.core.local.proot.downloadCleartextFallback
+import sh.haven.core.local.proot.downloadViaPlatform
 import sh.haven.core.local.proot.DesktopEnvironmentSpec
 import sh.haven.core.local.proot.Distro
 import sh.haven.core.local.proot.DistroCatalog
@@ -825,20 +827,25 @@ class ProotManager @Inject constructor(
             if (isUrl) {
                 tarball = File(context.cacheDir, "$slug-import.tar")
                 withContext(Dispatchers.IO) {
-                    val conn = URL(source).openConnection()
-                    val totalSize = conn.contentLength
-                    BufferedInputStream(conn.getInputStream()).use { input ->
-                        FileOutputStream(tarball).use { output ->
-                            val buf = ByteArray(8192)
-                            var downloaded = 0L
-                            var n: Int
-                            while (input.read(buf).also { n = it } != -1) {
-                                output.write(buf, 0, n)
-                                downloaded += n
-                                if (totalSize > 0) {
-                                    _state.value = SetupState.Downloading((downloaded * 100 / totalSize).toInt())
-                                }
-                            }
+                    try {
+                        downloadViaPlatform(source, tarball) { pct -> _state.value = SetupState.Downloading(pct) }
+                    } catch (e: java.io.IOException) {
+                        // A user-typed http:// mirror (e.g. a self-hosted LAN
+                        // rootfs server) is blocked by Haven's app-wide
+                        // cleartext policy (#284) — the declarative
+                        // network-security-config can only allowlist literal
+                        // domains, not arbitrary private-network IPs. This
+                        // ONE explicit, user-typed URL is the informed
+                        // consent; fall back to a raw-socket GET, which isn't
+                        // intercepted by the platform's cleartext check
+                        // (that check lives in HttpURLConnection/OkHttp, not
+                        // java.net.Socket). Never used for https:// — those
+                        // don't hit this exception.
+                        if (source.startsWith("http://") && e.message?.contains("Cleartext", ignoreCase = true) == true) {
+                            Log.i(TAG, "[import $slug] cleartext blocked by platform policy, retrying via raw socket")
+                            downloadCleartextFallback(source, tarball) { pct -> _state.value = SetupState.Downloading(pct) }
+                        } else {
+                            throw e
                         }
                     }
                 }
