@@ -1,0 +1,2 @@
+v5.68.3
+- Fixes duplicated terminal input with the default (Secure) keyboard on IMEs that compose words (swipe typing, Samsung Keyboard, some third-party keyboards): typing "ls" no longer reaches the shell as "lsls", and Ctrl+D exits again (#298).

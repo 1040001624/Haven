@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.3
+
+Fixes duplicated terminal input on the default keyboard for some IMEs (#298).
+
+⌨️ **Typed input no longer doubles in the terminal (Secure keyboard mode)** — with the default (Secure) keyboard, a keyboard that *composes* words as you type — swipe/gesture typing, Samsung Keyboard, and some third-party IMEs — could send each word to the shell twice: you'd type `ls` and the shell would receive `lsls`. The duplicated characters also left the prompt non-empty, so Ctrl+D wouldn't exit the shell. The word is now sent once, reconciling only autocorrect/trailing-space differences. The earlier #298 fix covered only Standard keyboard mode; Secure — the default — had a separate gap. Verified with new regression tests; on-device confirmation for specific keyboards is still welcome.
+
 ## v5.68.2
 
 Build-only fix so Haven builds from source on F-Droid (#327). No app-facing change from v5.68.1.
