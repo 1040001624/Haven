@@ -65,11 +65,22 @@ case "$ABI" in
         ARCH="aarch64"
         TARGET="aarch64-linux-android"
         CPU_FLAG="--cpu=armv8-a"
+        # NDK sysroot lib dir for libc++_shared.so (== TARGET here)
+        SYSROOT_LIB="aarch64-linux-android"
         ;;
     x86_64)
         ARCH="x86_64"
         TARGET="x86_64-linux-android"
         CPU_FLAG=""
+        SYSROOT_LIB="x86_64-linux-android"
+        ;;
+    armeabi-v7a)
+        ARCH="arm"
+        # Compiler triple is armv7a-linux-androideabi, but the NDK sysroot
+        # lib dir for 32-bit ARM is arm-linux-androideabi (no "v7a").
+        TARGET="armv7a-linux-androideabi"
+        CPU_FLAG="--cpu=armv7-a"
+        SYSROOT_LIB="arm-linux-androideabi"
         ;;
     *)
         echo "ERROR: unsupported ABI: $ABI" >&2
@@ -87,6 +98,14 @@ NM="$TOOLCHAIN/bin/llvm-nm"
 for tool in "$CC" "$CXX" "$AR" "$RANLIB" "$STRIP" "$NM"; do
     [ -x "$tool" ] || { echo "ERROR: toolchain tool missing: $tool" >&2; exit 1; }
 done
+
+# x265 4.1 and mbedtls's CMakeLists call cmake_policy(SET CMP00xx OLD) /
+# cmake_minimum_required < 3.5, which CMake 4.x refuses. Prefer the SDK's
+# bundled 3.x cmake (which still accepts those) over a host cmake 4.x.
+SDK_ROOT="$(cd "$ANDROID_NDK_HOME/../.." && pwd)"
+CMAKE_BIN="$(ls -d "$SDK_ROOT"/cmake/3.31.*/bin/cmake "$SDK_ROOT"/cmake/3.22.*/bin/cmake 2>/dev/null | head -1)"
+CMAKE_BIN="${CMAKE_BIN:-cmake}"
+echo "CMake:      $CMAKE_BIN ($("$CMAKE_BIN" --version 2>/dev/null | head -1))"
 
 # --- Paths + shared env for dep builds -----------------------------------
 # All external libs (libx264, libx265, libvpx, opus, vorbis, lame, libass,
@@ -271,7 +290,16 @@ build_vpx() {
             # (fails with `clang: error: unknown argument: '-f'`).
             VPX_AS="nasm"
             ;;
+        armeabi-v7a)
+            VPX_TARGET=armv7-android-gcc
+            # clang assembles NEON/inline-asm directly for ARM
+            VPX_AS="$CC"
+            ;;
     esac
+    # armv7's hand-written NEON .asm (RVCT syntax) can't be assembled by clang;
+    # disable just the asm and keep the NEON *intrinsics* so it still builds.
+    local VPX_EXTRA=""
+    [ "$ABI" = armeabi-v7a ] && VPX_EXTRA="--disable-neon_asm"
     (
         cd "$SRC"
         make distclean >/dev/null 2>&1 || true
@@ -290,6 +318,7 @@ build_vpx() {
             --enable-pic \
             --enable-static --disable-shared \
             --enable-vp8 --enable-vp9 \
+            $VPX_EXTRA \
             --extra-cflags="--target=${TARGET}${API} --sysroot=$TOOLCHAIN/sysroot" \
             --extra-cxxflags="--target=${TARGET}${API} --sysroot=$TOOLCHAIN/sysroot" \
             > "$LOG" 2>&1
@@ -345,7 +374,8 @@ build_mbedtls() {
     mkdir -p "$BUILD"
     (
         cd "$BUILD"
-        cmake "$SRC" \
+        "$CMAKE_BIN" "$SRC" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI="$ABI" \
             -DANDROID_PLATFORM="android-$API" \
@@ -384,7 +414,8 @@ build_x265() {
     mkdir -p "$BUILD"
     (
         cd "$BUILD"
-        cmake "$SRC/source" \
+        "$CMAKE_BIN" "$SRC/source" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI="$ABI" \
             -DANDROID_PLATFORM="android-$API" \
@@ -393,7 +424,7 @@ build_x265() {
             -DENABLE_CLI=OFF \
             -DENABLE_LIBNUMA=OFF \
             -DENABLE_ASSEMBLY=OFF \
-            -DCROSS_COMPILE_ARM64=ON \
+            -DCROSS_COMPILE_ARM64="$([ "$ABI" = arm64-v8a ] && echo ON || echo OFF)" \
             > "$LOG" 2>&1
         make -j"$(nproc)" >> "$LOG" 2>&1
         make install >> "$LOG" 2>&1
@@ -579,7 +610,7 @@ fi
 # libffmpeg.so and libffprobe.so link against libc++_shared.so because
 # libx265 and a few other deps use C++. We rely on -Wl,-rpath,$ORIGIN so
 # the binary finds it in its own directory at runtime — ship it alongside.
-LIBCXX_SRC="$TOOLCHAIN/sysroot/usr/lib/${TARGET}/libc++_shared.so"
+LIBCXX_SRC="$TOOLCHAIN/sysroot/usr/lib/${SYSROOT_LIB}/libc++_shared.so"
 if [ ! -f "$LIBCXX_SRC" ]; then
     echo "ERROR: libc++_shared.so not found at $LIBCXX_SRC" >&2
     exit 1
