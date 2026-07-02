@@ -150,6 +150,7 @@ build_for_arch() {
 
 build_for_arch "aarch64" "aarch64-linux-android" "arm64-v8a"
 build_for_arch "x86_64" "x86_64-linux-android" "x86_64"
+build_for_arch "armv7a" "armv7a-linux-androideabi" "armeabi-v7a"
 
 echo ""
 echo "Done. PRoot binaries installed to $PROOT_OUTPUT/"

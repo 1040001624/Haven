@@ -20,13 +20,17 @@ import android.os.Build
 /** Device ABI the rootfs tarballs are pinned against. */
 enum class Arch(val abi: String) {
     AARCH64("arm64-v8a"),
-    X86_64("x86_64");
+    X86_64("x86_64"),
+    ARM("armeabi-v7a");
 
     companion object {
         /** Detect the current device arch, or null if unsupported. */
         fun current(): Arch? = when {
+            // 64-bit ABIs first: a 64-bit device also lists the 32-bit ABI in
+            // SUPPORTED_ABIS, so ARM must be the last-resort match.
             Build.SUPPORTED_ABIS.contains("arm64-v8a") -> AARCH64
             Build.SUPPORTED_ABIS.contains("x86_64") -> X86_64
+            Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> ARM
             else -> null
         }
     }
@@ -239,6 +243,10 @@ object DistroCatalog {
                 url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz",
                 sha256 = "1a694899e406ce55d32334c47ac0b2efb6c06d7e878102d1840892ad44cd5239",
             ),
+            Arch.ARM to RootfsSource(
+                url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/armv7/alpine-minirootfs-3.21.3-armv7.tar.gz",
+                sha256 = "28b2a97374cccd96646e32ab2ebcbd52fa507f1e456620e86a7b227bc2ab3bd3",
+            ),
         ),
         baselinePackages = listOf("bash", "curl", "ca-certificates", "openssh-client", "tmux"),
         sizeEstimateMb = 6,
@@ -266,6 +274,12 @@ object DistroCatalog {
             Arch.X86_64 to RootfsSource(
                 url = "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-x86_64-pd-v4.17.3.tar.xz",
                 sha256 = "675e534333adcbf369e97abda3088927651e5d91612ae5727c52ff2284f4b8c8",
+                format = RootfsFormat.TAR_XZ,
+                stripComponents = 1,
+            ),
+            Arch.ARM to RootfsSource(
+                url = "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-arm-pd-v4.17.3.tar.xz",
+                sha256 = "85861ab139d4042302796cf46a93a9efbcb4808c06f7a1ae5fb71812f4564424",
                 format = RootfsFormat.TAR_XZ,
                 stripComponents = 1,
             ),
@@ -303,6 +317,12 @@ object DistroCatalog {
             Arch.AARCH64 to RootfsSource(
                 url = "https://github.com/termux/proot-distro/releases/download/v4.11.0/ubuntu-noble-aarch64-pd-v4.11.0.tar.xz",
                 sha256 = "a8883244a7031559a2bd8dc16b7d8afc947930b611819d8a28a09545097a6ba5",
+                format = RootfsFormat.TAR_XZ,
+                stripComponents = 1,
+            ),
+            Arch.ARM to RootfsSource(
+                url = "https://github.com/termux/proot-distro/releases/download/v4.11.0/ubuntu-noble-arm-pd-v4.11.0.tar.xz",
+                sha256 = "dc5478e96f648e868d68c15c400338460088255d5d964bdfa33e5456ceea54ae",
                 format = RootfsFormat.TAR_XZ,
                 stripComponents = 1,
             ),
@@ -347,6 +367,14 @@ object DistroCatalog {
                 format = RootfsFormat.TAR_XZ,
                 stripComponents = 1,
             ),
+            // Arch Linux ARM (32-bit) — a separate project from x86 Arch,
+            // shipped by proot-distro as the `-arm-` tarball.
+            Arch.ARM to RootfsSource(
+                url = "https://github.com/termux/proot-distro/releases/download/v4.34.2/archlinux-arm-pd-v4.34.2.tar.xz",
+                sha256 = "811bc341419c08b68f3c9ee68af546f8195f82660d9a11c54d916c1c353b8d90",
+                format = RootfsFormat.TAR_XZ,
+                stripComponents = 1,
+            ),
         ),
         baselinePackages = listOf("bash", "curl", "ca-certificates", "openssh", "tmux"),
         postExtractHooks = listOf(
@@ -384,6 +412,12 @@ object DistroCatalog {
         label = "Void Linux",
         family = PackageFamily.XBPS,
         rootfsSources = mapOf(
+            Arch.ARM to RootfsSource(
+                url = "https://github.com/termux/proot-distro/releases/download/v4.29.0/void-arm-pd-v4.29.0.tar.xz",
+                sha256 = "5cb87c0ca8ee91047f3634789314920be6d914ce4f196157cb3949706ce18d03",
+                format = RootfsFormat.TAR_XZ,
+                stripComponents = 1,
+            ),
             Arch.AARCH64 to RootfsSource(
                 url = "https://github.com/termux/proot-distro/releases/download/v4.29.0/void-aarch64-pd-v4.29.0.tar.xz",
                 sha256 = "7a7c449b3efe504749e40f556d13812010bccc930a820a56973a0f5fc2f16997",

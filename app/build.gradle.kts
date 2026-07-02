@@ -14,8 +14,8 @@ android {
         applicationId = "sh.haven.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 574
-        versionName = "5.67.2"
+        versionCode = 580
+        versionName = "5.68.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +29,10 @@ android {
         create("x64") {
             dimension = "abi"
             ndk { abiFilters += "x86_64" }
+        }
+        create("armv7") {
+            dimension = "abi"
+            ndk { abiFilters += "armeabi-v7a" }
         }
     }
 
@@ -67,7 +71,7 @@ android {
     }
 
     // Version code scheme: base * 10 + abiOffset
-    val abiCodes = mapOf("arm64" to 1, "x64" to 2)
+    val abiCodes = mapOf("arm64" to 1, "x64" to 2, "armv7" to 3)
 
     applicationVariants.all {
         val variant = this

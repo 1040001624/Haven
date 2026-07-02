@@ -7,4 +7,4 @@
 # (E0658, rust-lang/rust#125882). Keep CI's `rustup default` (setup-toolchain)
 # on the same version; raise this when a cargo bump needs a newer compiler.
 channel = "1.89.0"
-targets = ["aarch64-linux-android", "x86_64-linux-android"]
+targets = ["aarch64-linux-android", "x86_64-linux-android", "armv7-linux-androideabi"]

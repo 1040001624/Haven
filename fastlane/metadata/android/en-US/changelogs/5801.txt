@@ -1,0 +1,2 @@
+v5.68.0
+- New 32-bit ARM (armv7 / armeabi-v7a) build for older devices (#327): full native stack (proot, Go bridge, RDP/SPICE, terminal, OCR). All five distros have armv7 rootfs. Excludes the local desktop/GPU and ffmpeg stack (arm64-only), like the x86_64 build. Untested on real 32-bit hardware.

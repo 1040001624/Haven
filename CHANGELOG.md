@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.0
+
+Adds a 32-bit ARM (armv7) build so Haven runs on older / 32-bit-only Android devices (#327).
+
+📱 **New `armeabi-v7a` (armv7) flavor** — Haven previously shipped only `arm64-v8a` and `x86_64`, so 32-bit-only devices couldn't install it. There's now an `armv7` build with the full 32-bit native stack: PRoot + loader, the Go bridge (`libgojni` — WireGuard/MCP, rclone, mail), the Rust RDP and SPICE transports, the terminal (`termlib`), and the OCR/scan libs (tesseract/leptonica). All five proot distros (Alpine, Debian, Ubuntu, Arch Linux ARM, Void) have armv7 rootfs images wired in. **Not included on armv7** (arm64-only, as with the x86_64 build): the local Linux desktop stack (VNC/Wayland compositor, virgl GPU, Xwayland) and ffmpeg media conversion — remote desktops (RDP/VNC/SPICE) and everything else work. Not yet tested on real 32-bit hardware.
+
 ## v5.67.2
 
 Fixes undeletable files inside proot distros (#329).

@@ -61,7 +61,7 @@ mkdir -p "$AAR_DIR"
 cd "$GO_DIR"
 
 gomobile bind \
-    -target=android/arm64,android/amd64 \
+    -target=android/arm64,android/amd64,android/arm \
     -javapkg=sh.haven.rclone.binding \
     -androidapi=26 \
     -o "$AAR_DIR/rcbridge.aar" \
@@ -75,9 +75,10 @@ cd "$AAR_DIR"
 unzip -o rcbridge.aar "jni/*" -d extracted
 
 # Map Android ABI names
-mkdir -p "$JNI_DIR/arm64-v8a" "$JNI_DIR/x86_64"
+mkdir -p "$JNI_DIR/arm64-v8a" "$JNI_DIR/x86_64" "$JNI_DIR/armeabi-v7a"
 cp extracted/jni/arm64-v8a/libgojni.so "$JNI_DIR/arm64-v8a/"
 cp extracted/jni/x86_64/libgojni.so    "$JNI_DIR/x86_64/"
+cp extracted/jni/armeabi-v7a/libgojni.so "$JNI_DIR/armeabi-v7a/"
 
 # Also extract the Java/Kotlin bindings JAR from the AAR
 unzip -o rcbridge.aar "classes.jar" -d extracted
