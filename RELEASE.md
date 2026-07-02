@@ -115,6 +115,10 @@ F-Droid auto-detects new tags via `AutoUpdateMode: Version` + `UpdateCheckMode: 
 
 F-Droid's buildserver is the authoritative build environment — failing there blocks the public release. The recipe at [fdroiddata/metadata/sh.haven.app.yml](https://gitlab.com/fdroid/fdroiddata/-/blob/master/metadata/sh.haven.app.yml) pins specific tool versions, and our CI mirrors them in `.github/actions/setup-toolchain/action.yml`. When you bump a pin in one place, bump it in the other — otherwise CI passes on a version F-Droid doesn't have and vice-versa.
 
+> **Cross-compiler apt deps (`sudo:` block ↔ setup-toolchain):** the wayvnc-shim (`buildWayvncShim`) cross-builds a glibc `.so` for **every** ABI on any build, so the buildserver needs each target's cross-gcc + multiarch libc headers. x86_64 is native on the buildserver (no package). The recipe's `sudo:` install line must carry:
+> `gcc-aarch64-linux-gnu libc6-dev-arm64-cross gcc-arm-linux-gnueabihf libc6-dev-armhf-cross`
+> The **armhf** pair (`gcc-arm-linux-gnueabihf libc6-dev-armhf-cross`) is **new in v5.68.1** (the armv7 wayvnc shim, #327) — every existing recipe entry only has the arm64 pair, so the v5.68.x build entry must add armhf or the whole build fails at `buildWayvncShim`.
+
 The buildserver no longer pre-installs NDKs in its Docker image — `fdroidserver.common.auto_install_ndk` fetches whatever the build entry's `ndk:` field requests via `sdkmanager` on demand. So the NDK pin lives in our gradle modules; the F-Droid manifest's `ndk:` line just tells the buildserver to install the same one.
 
 | Tool | F-Droid pin | Our CI |
