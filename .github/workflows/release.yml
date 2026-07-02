@@ -101,7 +101,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        abi: [arm64, x64]
+        include:
+          - { abi: arm64, variant: Arm64 }
+          - { abi: x64,   variant: X64 }
+          - { abi: armv7, variant: Armv7 }
     permissions:
       contents: read
     steps:
@@ -113,7 +116,7 @@ jobs:
       - name: Decode release keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > haven-release.jks
       - name: Build signed APK + AAB (${{ matrix.abi }})
-        run: ./gradlew :app:assemble${{ matrix.abi == 'arm64' && 'Arm64' || 'X64' }}Release :app:bundle${{ matrix.abi == 'arm64' && 'Arm64' || 'X64' }}Release
+        run: ./gradlew :app:assemble${{ matrix.variant }}Release :app:bundle${{ matrix.variant }}Release
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -163,6 +166,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: haven-x64-release
+          path: release/
+      - name: Download armv7 artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: haven-armv7-release
           path: release/
       # Cryptographically tie each binary to this repo + commit + workflow so
       # downstreams (F-Droid, users) can verify provenance with `gh attestation
