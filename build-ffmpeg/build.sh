@@ -103,7 +103,13 @@ done
 # cmake_minimum_required < 3.5, which CMake 4.x refuses. Prefer the SDK's
 # bundled 3.x cmake (which still accepts those) over a host cmake 4.x.
 SDK_ROOT="$(cd "$ANDROID_NDK_HOME/../.." && pwd)"
-CMAKE_BIN="$(ls -d "$SDK_ROOT"/cmake/3.31.*/bin/cmake "$SDK_ROOT"/cmake/3.22.*/bin/cmake 2>/dev/null | head -1)"
+# `ls A B` where only one glob matches still exits non-zero (the unmatched
+# glob is a "not found" arg), which under `set -euo pipefail` kills the
+# script — the F-Droid build installs only cmake 3.31.x, so the 3.22.* glob
+# never matches and the build died silently right here. `|| true` keeps the
+# happy path (ls prints the found cmake) while tolerating the partial miss;
+# the ${...:-cmake} fallback below covers the "neither found" case.
+CMAKE_BIN="$(ls -d "$SDK_ROOT"/cmake/3.31.*/bin/cmake "$SDK_ROOT"/cmake/3.22.*/bin/cmake 2>/dev/null | head -1 || true)"
 CMAKE_BIN="${CMAKE_BIN:-cmake}"
 echo "CMake:      $CMAKE_BIN ($("$CMAKE_BIN" --version 2>/dev/null | head -1))"
 
