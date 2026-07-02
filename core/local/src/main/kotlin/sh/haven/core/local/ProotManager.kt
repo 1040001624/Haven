@@ -2221,7 +2221,9 @@ chmod +x /root/.vnc/xstartup""")
      */
     private fun stageWayvncShim(de: DesktopEnvironment) {
         if (de.spec.launch !is LaunchSpec.NestedWayland) return
-        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" }
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull {
+            it == "arm64-v8a" || it == "x86_64" || it == "armeabi-v7a"
+        }
         if (abi == null) {
             Log.w(TAG, "[de-config ${de.spec.id}] no wayvnc shim asset for ABI ${android.os.Build.SUPPORTED_ABIS.toList()}")
             return
@@ -2253,7 +2255,9 @@ chmod +x /root/.vnc/xstartup""")
      * process can run them.
      */
     fun stageHavenUsbArtifacts(): String? {
-        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" }
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull {
+            it == "arm64-v8a" || it == "x86_64" || it == "armeabi-v7a"
+        }
             ?: run { Log.w(TAG, "[haven-usb] no artifact for ABI ${android.os.Build.SUPPORTED_ABIS.toList()}"); return null }
 
         fun copy(assetRel: String, target: File, executable: Boolean): Boolean = try {

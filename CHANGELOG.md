@@ -5,11 +5,17 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.1
+
+Brings the nested-Wayland desktops to 32-bit ARM (#327).
+
+🖥️ **Nested-Wayland desktops (Sway, Cage, Hyprland, niri) now work on armv7** — the `libhaven_wayvnc_shim.so` capture-fallback shim (which runs inside the distro alongside `wayvnc`) is now cross-built for `armeabi-v7a` too, so those compositors render instead of grey-screening on the 32-bit build. Combined with the already-working VNC desktops (Openbox, Xfce4), the only local desktop still arm64-only on armv7 is the on-device GPU compositor (*Native X11 (GPU)*, which needs `liblabwc_android.so`). Not yet tested on real 32-bit hardware.
+
 ## v5.68.0
 
 Adds a 32-bit ARM (armv7) build so Haven runs on older / 32-bit-only Android devices (#327).
 
-📱 **New `armeabi-v7a` (armv7) flavor** — Haven previously shipped only `arm64-v8a` and `x86_64`, so 32-bit-only devices couldn't install it. There's now an `armv7` build with the full 32-bit native stack: PRoot + loader, the Go bridge (`libgojni` — WireGuard/MCP, rclone, mail), the Rust RDP and SPICE transports, the terminal (`termlib`), the OCR/scan libs (tesseract/leptonica), and FFmpeg (media conversion — now built for `x86_64` too, not just arm64). All five proot distros (Alpine, Debian, Ubuntu, Arch Linux ARM, Void) have armv7 rootfs images wired in. The only thing still **arm64-only** (same as the x86_64 build) is the local Linux **desktop** stack — the Wayland/VNC compositor, virgl GPU, and Xwayland; remote desktops (RDP/VNC/SPICE) and everything else work. The x86_64 and app-level paths are verified in an emulator (app launches, proot/`apt` run, FFmpeg encodes H.264); not yet tested on real 32-bit hardware.
+📱 **New `armeabi-v7a` (armv7) flavor** — Haven previously shipped only `arm64-v8a` and `x86_64`, so 32-bit-only devices couldn't install it. There's now an `armv7` build with the full 32-bit native stack: PRoot + loader, the Go bridge (`libgojni` — WireGuard/MCP, rclone, mail), the Rust RDP and SPICE transports, the terminal (`termlib`), the OCR/scan libs (tesseract/leptonica), and FFmpeg (media conversion — now built for `x86_64` too, not just arm64). All five proot distros (Alpine, Debian, Ubuntu, Arch Linux ARM, Void) have armv7 rootfs images wired in. Local Linux desktops **over VNC (Openbox, Xfce4)** work on armv7 too — the X server and desktop run inside the distro, so they need no arm64-only libs. What's **arm64-only** on armv7 (same as the x86_64 build) is the on-device GPU compositor (the *Native X11 (GPU)* desktop — `liblabwc_android.so` + virgl + Xwayland) and the nested-Wayland compositors (Sway, Cage — their VNC shim isn't built for 32-bit in this release); remote desktops (RDP/VNC/SPICE) and everything else work. The x86_64 and app-level paths are verified in an emulator (app launches, proot/`apt` run, FFmpeg encodes H.264); not yet tested on real 32-bit hardware.
 
 ## v5.67.2
 

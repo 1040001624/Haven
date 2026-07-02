@@ -1,0 +1,2 @@
+v5.68.1
+- Nested-Wayland desktops (Sway, Cage, Hyprland, niri) now work on the 32-bit ARM (armv7) build — the wayvnc capture-fallback shim is now cross-built for armeabi-v7a, so they render instead of grey-screening (#327). VNC desktops (Openbox, Xfce4) already worked; only the on-device GPU compositor (Native X11 GPU) stays arm64-only.
