@@ -1,0 +1,2 @@
+v5.68.2
+- Build-only fix so Haven builds from source on F-Droid (#327): build-ffmpeg/build.sh's CMake auto-detection aborted under set -euo pipefail when only one CMake version was installed, silently killing the from-source FFmpeg build. No app-facing change from v5.68.1 — the release APKs ship the committed .so and were unaffected.

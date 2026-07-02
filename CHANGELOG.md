@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.2
+
+Build-only fix so Haven builds from source on F-Droid (#327). No app-facing change from v5.68.1.
+
+🔧 **Fixes the from-source FFmpeg build on F-Droid** — `build-ffmpeg/build.sh`'s SDK-CMake auto-detection ran `ls .../cmake/3.31.* .../cmake/3.22.*` and, when only one version is installed (as on F-Droid's buildserver, which installs just CMake 3.31.x), `ls` exits non-zero and `set -euo pipefail` silently aborted the whole FFmpeg build. This only affected builds that compile FFmpeg from source (F-Droid / reproducible builds); the GitHub release APKs ship the committed `.so` and were never affected, so v5.68.2's binaries are equivalent to v5.68.1's.
+
 ## v5.68.1
 
 Brings the nested-Wayland desktops to 32-bit ARM (#327).
