@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.67.2
+
+Fixes undeletable files inside proot distros (#329).
+
+🧹 **A broken `link2symlink` stub no longer becomes un-removable** — PRoot's `--link2symlink` extension represents hard links as hidden `.l2s.` symlink chains. If those hidden backing files went missing (an interrupted `dpkg` run, or a rootfs copied/tarred without the `.l2s.*` files), the leftover stub could no longer be `stat`'d — so `ls`, `rm`, and `find` all failed on it with `Operation not permitted`, and `rm -rf` of any directory containing one aborted with "Directory not empty". PRoot now fails soft on a broken chain: the stub behaves like an ordinary dangling symlink and can be removed normally. Verified on host and on-device (arm64): a stub whose `.l2s.` files were deleted now `lstat`s cleanly (was EPERM) and `rm` removes it.
+
 ## v5.67.1
 
 Candidate fix for `apt`/`dpkg` failing inside proot distros with a backup-file permission error (#328, #324) — pending confirmation from the reporter.

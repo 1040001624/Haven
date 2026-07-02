@@ -1,0 +1,2 @@
+v5.67.2
+- Fixed undeletable files inside proot distros (#329): a broken link2symlink stub (its hidden .l2s. backing files gone) could no longer be stat'd, so ls/rm/find failed on it with "Operation not permitted". PRoot now fails soft so the stub can be removed normally.
