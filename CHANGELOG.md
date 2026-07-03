@@ -5,6 +5,16 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.12
+
+Keyboard fixes for SwiftKey and the compose overlay, plus a usable prompt on Void (#298, #253).
+
+⌨️ **SwiftKey: lines no longer concatenate with the previous command** — SwiftKey keeps its internal composition context across Enter, so after one executed command the next word could reach the shell prefixed with the dead line (`nasls`, `naslsls` — with the old text visibly still in SwiftKey's suggestion bar). Haven now restarts the IME session at the Enter line boundary in Standard keyboard mode, the canonical signal for the keyboard to drop its prediction context. Regression-checked on-device with SwiftKey, Gboard and HeliBoard (no flicker or lost keystrokes); the failing configuration itself is reporter-specific, so confirmation on #298 is still open.
+
+📝 **Compose (中) overlay no longer hides earlier words while you type the next** — the accumulated buffer and the keyboard's in-flight word were drawn at the same spot, so keyboards that compose every word (HeliBoard) appeared to erase the previous word until Enter. Both now render as one run. Device-verified with HeliBoard.
+
+🐧 **Void Linux: usable shell prompt out of the box** — the seeded `/root/.profile` used bash-only prompt syntax, which Void's dash shell printed literally (`\[\033[32m\]\u@proot…`) with no line editing (arrow keys echoing `^[[H`). New installs/imports get a shell-aware prompt, and if bash is installed (`xbps-install -S bash`) the login shell hands over to it automatically (#253).
+
 ## v5.68.11
 
 Mosh startup failures now show their real error instead of the install guide (#297).

@@ -1,0 +1,4 @@
+v5.68.12
+- SwiftKey: commands no longer concatenate with the previous line — the IME session restarts at each Enter so SwiftKey drops its stale composition context (#298).
+- Compose (中) overlay: earlier words stay visible while the keyboard composes the next one (HeliBoard).
+- Void Linux: usable prompt out of the box — shell-aware PS1 instead of literal escape codes under dash, and automatic handover to bash when present (#253).
