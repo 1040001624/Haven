@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.10
+
+Two fixes: compose (中) mode swallowed Enter, and imported rootfs lost hard-linked files.
+
+⌨️ **Compose (中) mode: Enter now executes the line** — with the compose overlay active, Enter committed the buffered text but silently dropped the newline (and with an empty buffer, dropped the keypress entirely), so composed lines echoed concatenated on one prompt and never ran. Enter now submits the committed text like a normal keystroke. Device-verified with Gboard and HeliBoard: `ls` ⏎ executes every time. (Same #298 symptom family as v5.68.8's Standard-mode fix, different layer.)
+
+📦 **Imported rootfs tarballs: hard-linked files no longer vanish** — in a wrapped tarball (the shape of every proot-distro-style import), hard-link entries pointed at an unstripped archive path, so the linked file was silently missing from the extracted rootfs; hard links that did extract came out with the app's umask instead of the archive's mode (losing exec bits on linked binaries). Both fixed (#328); the v5.68.5 mode restore itself was also verified exact on-device. If a previously imported rootfs behaves oddly, re-import it.
+
 ## v5.68.9
 
 Agent-driven APK installs no longer time out on slow links (#331).

@@ -1,0 +1,3 @@
+v5.68.10
+- Compose (中) mode: Enter now executes the committed line instead of silently dropping the newline — composed lines no longer concatenate unexecuted on one prompt. Device-verified with Gboard and HeliBoard (#298 family).
+- Imported rootfs tarballs: hard-linked files in wrapped (proot-distro-style) tarballs were silently missing, and extracted hard links lost their permissions (exec bits). Both fixed; re-import an affected rootfs (#328).
