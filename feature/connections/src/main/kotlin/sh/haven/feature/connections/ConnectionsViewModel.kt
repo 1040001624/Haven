@@ -3711,12 +3711,7 @@ class ConnectionsViewModel @Inject constructor(
                     // locale in the non-interactive SSH exec environment, which
                     // mosh-server refuses to run under). Misreporting the latter
                     // as "not installed" hid the real cause (#297).
-                    val looksMissing = result.exitStatus == 127 ||
-                        stderr.contains("command not found", ignoreCase = true) ||
-                        stderr.contains("No such file", ignoreCase = true) ||
-                        (stderr.contains("mosh-server", ignoreCase = true) &&
-                            stderr.contains("not found", ignoreCase = true))
-                    if (looksMissing) {
+                    if (moshServerLooksMissing(result.exitStatus, stderr)) {
                         throw Exception(
                             "mosh-server not found. Install it on the remote host " +
                                 "(e.g. apt install mosh)."
@@ -4906,6 +4901,37 @@ class ConnectionsViewModel @Inject constructor(
             etSessionManager.removeSession(sessionId)
             throw e
         }
+    }
+}
+
+/**
+ * Is this mosh-server exec failure a genuinely-missing binary (→ show the
+ * install guide) rather than an installed-but-failed start (→ surface the
+ * real stderr)? (#297)
+ *
+ * The not-found phrases are matched only on stderr LINES that also mention
+ * mosh-server. A bare `contains("No such file")` misclassified the most
+ * common startup failure — the locale error `"locale: Cannot set LC_CTYPE to
+ * default locale: No such file or directory"` — as "not installed", which
+ * re-masked exactly the stderr the v5.60.7 fix was meant to surface (the
+ * reporter kept seeing the setup guide on v5.61.0 and v5.68.7).
+ *
+ * Covered shell wordings, all naming the binary on the same line:
+ *   bash: `bash: mosh-server: command not found`
+ *   zsh:  `zsh: command not found: mosh-server`
+ *   dash: `sh: 1: mosh-server: not found`
+ *   exec: `sh: /usr/bin/mosh-server: No such file or directory`
+ * plus exit 127, the shell's canonical command-not-found status.
+ */
+internal fun moshServerLooksMissing(exitStatus: Int, stderr: String): Boolean {
+    if (exitStatus == 127) return true
+    return stderr.lineSequence().any { line ->
+        line.contains("mosh-server", ignoreCase = true) &&
+            (
+                line.contains("command not found", ignoreCase = true) ||
+                    line.contains("No such file", ignoreCase = true) ||
+                    line.contains("not found", ignoreCase = true)
+                )
     }
 }
 
