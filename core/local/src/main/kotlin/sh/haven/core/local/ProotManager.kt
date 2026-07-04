@@ -1519,6 +1519,7 @@ class ProotManager @Inject constructor(
         decompressed.use { gzIn ->
             val header = ByteArray(512)
             var pendingLongName: String? = null
+            var pendingLongLink: String? = null
 
             while (true) {
                 val headerRead = readFully(gzIn, header)
@@ -1531,7 +1532,6 @@ class ProotManager @Inject constructor(
                 val modeStr = extractString(header, 100, 8)
                 val sizeStr = extractString(header, 124, 12)
                 val typeFlag = header[156]
-                val linkTarget = extractString(header, 157, 100)
 
                 val size = try {
                     sizeStr.trim().toLong(8)
@@ -1546,6 +1546,22 @@ class ProotManager @Inject constructor(
                     pendingLongName = String(nameBytes).trimEnd('\u0000')
                     continue // next header is the actual entry
                 }
+                // GNU long LINK target: type 'K' — same shape as 'L' but for
+                // the next entry's symlink/hardlink target. Without this a
+                // >100-char target is silently TRUNCATED to the 100-byte
+                // header field — e.g. every Termux proot-distro absolute link
+                // path (/data/data/com.termux/.../installed-rootfs/...),
+                // which is how #328's l2s chains dodged the import flattening.
+                if (typeFlag == 'K'.code.toByte()) {
+                    val linkBytes = ByteArray(size.toInt())
+                    readFully(gzIn, linkBytes)
+                    skipToBlock(gzIn, size)
+                    pendingLongLink = String(linkBytes).trimEnd('\u0000')
+                    continue // next header is the actual entry
+                }
+
+                val linkTarget = pendingLongLink ?: extractString(header, 157, 100)
+                pendingLongLink = null
 
                 // Resolve final name
                 val rawEntryName = pendingLongName ?: run {
