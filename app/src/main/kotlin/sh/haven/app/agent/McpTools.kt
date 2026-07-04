@@ -1714,7 +1714,7 @@ internal class McpTools(
         ) { _ -> openDeveloperSettings() },
 
         "install_apk_from_url" to ToolHandler(
-            description = "Download an APK from a URL and install it on the device. Validates the URL synchronously, then downloads + installs in the BACKGROUND and returns {pending:true, staging:true} immediately — a large APK on a slow link would otherwise outlast the request timeout (#331). Poll get_app_info: `activeInstall` carries the live phase (connecting/downloading/installing) and bytes/totalBytes while in flight; `lastInstall` carries the terminal outcome. With Shizuku running and granted, install is silent via `pm install`; without it a 'tap to install' prompt/notification appears on-device. Useful for agent-driven self-update or sideloading over VPN where wireless ADB isn't reachable. NOTE: Android's network-security policy blocks cleartext http:// to anything but localhost, so an http:// URL on the LAN (e.g. a workstation IP) is rejected — use https://, or install_apk_from_backend (SFTP/rclone/Reticulum) which carries no cleartext.",
+            description = "Download an APK from a URL and install it on the device. Validates the URL synchronously, then downloads + installs in the BACKGROUND and returns {pending:true, staging:true} immediately — a large APK on a slow link would otherwise outlast the request timeout (#331). Poll get_app_info: `activeInstall` carries the live phase (connecting/downloading/installing) and bytes/totalBytes while in flight; `lastInstall` carries the terminal outcome. With Shizuku running and granted, install is silent via `pm install`; without it a 'tap to install' prompt/notification appears on-device. A truncated transfer (dropped connection) is rejected against the advertised Content-Length rather than staged — a partial APK still passes the zip-magic check and would fail on-device with 'problem parsing the package', so `lastInstall` reports the short read instead. Useful for agent-driven self-update or sideloading over VPN where wireless ADB isn't reachable. NOTE: Android's network-security policy blocks cleartext http:// to anything but localhost, so an http:// URL on the LAN (e.g. a workstation IP) is rejected — use https://, or install_apk_from_backend (SFTP/rclone/Reticulum) which carries no cleartext.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
@@ -7000,6 +7000,7 @@ internal class McpTools(
     private suspend fun streamToStagedApk(
         openInput: suspend () -> java.io.InputStream,
         onProgress: (Long) -> Unit = {},
+        expectedBytes: Long = -1,
         onFailure: (Exception) -> String,
     ): Pair<File, Long> {
         val target = stageApkFile()
@@ -7035,6 +7036,20 @@ internal class McpTools(
         } catch (e: Exception) {
             target.delete()
             throw McpError(-32603, onFailure(e))
+        }
+        // Truncated-transfer guard: a dropped connection / short backend read
+        // yields a partial APK that still starts with the PK zip magic (the
+        // header is at the front), so assertApkMagic passes and the installer
+        // fails on-device with "problem parsing the package". When the source
+        // advertised a length, require we got all of it. (-1 = unknown, e.g.
+        // chunked encoding — can't verify, so don't.)
+        if (expectedBytes >= 0 && written != expectedBytes) {
+            target.delete()
+            throw McpError(
+                -32603,
+                "Truncated download: got $written of $expectedBytes bytes " +
+                    "(connection dropped mid-transfer?) — retry the install",
+            )
         }
         return target to written
     }
@@ -7087,6 +7102,7 @@ internal class McpTools(
                     val (target, written) = streamToStagedApk(
                         openInput = { conn.inputStream },
                         onProgress = { reportInstallPhase(urlString, "downloading", it, totalBytes) },
+                        expectedBytes = totalBytes,
                     ) { "Download failed: ${it.message}" }
                     // Sanity check — APK is a zip, magic bytes 0x50 0x4B ("PK").
                     // Rejects HTML / plain-text bodies that 200'd anyway — the
@@ -7291,6 +7307,7 @@ internal class McpTools(
                 val (target, written) = streamToStagedApk(
                     openInput = { backend.openInputStream(path, 0) },
                     onProgress = { reportInstallPhase(path, "downloading", it, sizeBytes) },
+                    expectedBytes = sizeBytes,
                 ) {
                     "Read from $backendLabel failed: ${it.message}"
                 }
