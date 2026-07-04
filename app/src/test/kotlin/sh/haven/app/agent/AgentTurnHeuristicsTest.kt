@@ -95,6 +95,37 @@ class AgentTurnHeuristicsTest {
     }
 
     @Test
+    fun promptPresent_promptAtTopOfBlankScreen() {
+        // Fresh plain busybox shell: "# " on row 0, 23 blank rows below
+        // (device-verified failure of the first cut).
+        val screen = listOf("#" + " ".repeat(79)) + List(23) { " ".repeat(80) }
+        assertTrue(promptPresent(screen))
+    }
+
+    @Test
+    fun promptPresent_nulPaddedScreen() {
+        // What the emulator ACTUALLY returns for a fresh shell: never-painted
+        // cells are NUL, not space — and NUL is neither isBlank() nor trim()able
+        // in Kotlin (device-verified failure of the second cut).
+        val nulRow = "\u0000".repeat(80)
+        val screen = listOf("~ #" + "\u0000".repeat(77)) + List(23) { nulRow }
+        assertTrue(promptPresent(screen))
+    }
+
+    @Test
+    fun agentRepl_nulPaddedScreen() {
+        val nulRow = "\u0000".repeat(80)
+        val screen = listOf("? for shortcuts" + "\u0000".repeat(65)) + List(20) { nulRow }
+        assertTrue(looksLikeAgentRepl(screen))
+    }
+
+    @Test
+    fun agentRepl_chromeAboveTrailingBlanks() {
+        val screen = listOf("● hi", "│ ❯          │") + List(20) { "" }
+        assertTrue(looksLikeAgentRepl(screen))
+    }
+
+    @Test
     fun agentRepl_detectedByChrome() {
         assertTrue(looksLikeAgentRepl(listOf("some output", "? for shortcuts")))
         assertTrue(looksLikeAgentRepl(listOf("✶ Thinking… (esc to interrupt)")))

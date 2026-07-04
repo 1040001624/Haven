@@ -43,9 +43,22 @@ internal fun looksLikePromptLine(trimmed: String): Boolean =
         trimmed.startsWith("│ ❯") || trimmed.startsWith("│❯") ||
         Regex("([\\$#>]|\\s%)\\s?$").containsMatchIn(trimmed)
 
-/** True when any of the last [window] lines looks like a waiting prompt. */
+/**
+ * The emulator returns never-painted cells as NUL, which Kotlin's
+ * isBlank()/trim() do NOT treat as whitespace — every blank-drop and
+ * end-anchored regex here breaks on raw screen rows without this.
+ */
+private fun scrub(lines: List<String>): List<String> =
+    lines.map { it.replace('\u0000', ' ') }
+
+/**
+ * True when any of the last [window] CONTENT lines looks like a waiting
+ * prompt. Trailing blank rows are dropped first — a fresh shell's prompt
+ * sits at the TOP of an otherwise-empty screen (device-verified: a plain
+ * busybox "# " on row 0 of 24, NUL-padded).
+ */
 internal fun promptPresent(lines: List<String>, window: Int = 8): Boolean =
-    lines.takeLast(window).any { looksLikePromptLine(it.trim()) }
+    scrub(lines).dropLastWhile { it.isBlank() }.takeLast(window).any { looksLikePromptLine(it.trim()) }
 
 internal fun looksBusy(lines: List<String>): Boolean =
     lines.any { AGENT_BUSY.containsMatchIn(it) }
@@ -57,7 +70,7 @@ internal fun looksBusy(lines: List<String>): Boolean =
  * with all chrome hidden false-negatives.
  */
 internal fun looksLikeAgentRepl(lines: List<String>, window: Int = 15): Boolean =
-    lines.takeLast(window).any {
+    scrub(lines).dropLastWhile { it.isBlank() }.takeLast(window).any {
         AGENT_REPL_MARKERS.containsMatchIn(it) || it.trim().let { t ->
             t.startsWith("│ ❯") || t.startsWith("│❯")
         }
@@ -90,7 +103,7 @@ private val BOX_OR_RULE = Regex("^[─╌═━╭╮╰╯│┌┐└┘\\s]+$
  * ●/⏺-bulleted block. Null when nothing scrapeable.
  */
 internal fun scrapeLastAgentBlock(rawLines: List<String>): String? {
-    val lines = rawLines.map { it.trimEnd() }.dropLastWhile { it.isEmpty() }
+    val lines = scrub(rawLines).map { it.trimEnd() }.dropLastWhile { it.isEmpty() }
     if (lines.isEmpty()) return null
     // Walk the trailing chrome REGION off the bottom (input box borders,
     // prompt line, status bar, blanks) — it's several lines, not one.
