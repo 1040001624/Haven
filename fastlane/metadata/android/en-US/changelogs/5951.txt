@@ -1,0 +1,4 @@
+v5.68.15
+- Terminal: pinch-zoom no longer breaks touch-to-text mapping — selection, copy and tmux mouse clicks land on the right cell after a zoom.
+- 110 previously-untranslated strings localised across all 11 languages (desktop options, rclone import, age encryption, and more).
+- Dependency updates: jsch, JavaMail, tink, Compose BOM, navigation, biometric, ironrdp-cliprdr, tailscale.

@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.15
+
+🎯 **Pinch-zoom no longer breaks touch→text mapping in the terminal** — the gesture handler kept the pre-zoom character metrics captured in its closure (its `pointerInput` never restarts on a font change), so after any pinch-zoom every tap, long-press selection, handle drag and forwarded mouse click mapped through the old cell size while the screen drew at the new one: selecting a line grabbed the wrong text, worsening away from the top-left. Metrics are now read through `State` inside the handler, so touch mapping always matches what's rendered. Reported live while trying to copy a command after zooming out. (A crash reported around the same interaction is still under investigation — a stack trace is needed; if you hit it, logcat output on the issue tracker helps.)
+
+🌍 **110 untranslated strings localised in all 11 languages** — everything added since the last i18n pass had shipped English-only: the desktop options/custom mounts/rootfs-import/USB-drive screens, rclone config import, deeplink connect confirmations, age encrypt/decrypt actions and identities, audio bridge and prompt-character settings, and the two-finger gesture accessibility descriptions.
+
+📦 **Dependency refresh** — jsch 2.28.3, JavaMail 1.6.8, Navigation 2.9.8, tink 1.22.0, Compose BOM 2026.06, biometric alpha07, ironrdp-cliprdr 0.6 + ironrdp-tls 0.2.1, tailscale 1.100.0, and the GitHub Actions pins (checkout v7, artifact v7/v8, gh-release v3).
+
 ## v5.68.14
 
 Follow-ups to the v5.68.13 rootfs-import work (#328) and the self-update path (#331), both found while verifying on-device.
