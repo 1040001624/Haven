@@ -121,6 +121,14 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      # R8 reflective-class survival check — moved here from CI's per-push
+      # release-r8-smoke job (which now runs on PRs only). This release build
+      # already ran R8 (minify), so the assert is free here and guarantees
+      # every published release is checked even on direct-to-main pushes.
+      # ABI-agnostic (inspects the R8 mapping), so run it once on arm64.
+      - name: Assert reflectively-loaded classes survived R8
+        if: matrix.abi == 'arm64'
+        run: ./scripts/check-r8-kept-classes.sh
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:

@@ -135,7 +135,14 @@ jobs:
   # NoSuchProviderException in release builds only (fixed in v5.59.45). Here we
   # run R8 on the release variant and assert the by-name-loaded classes survive.
   # No keystore needed — minify runs before packaging/signing.
+  # R8 only affects release builds, and every release is R8-checked in
+  # release.yml (the assert moved there). So this is pure early-feedback:
+  # run it on PRs (catch an R8-breaking -keep regression before merge) and
+  # skip it on direct main pushes, where it was pacing every run at ~16 min
+  # for a release-only concern. github.event_name is 'pull_request' for PRs,
+  # 'push' for main pushes.
   release-r8-smoke:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

@@ -133,6 +133,21 @@ runs:
         key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
         restore-keys: gradle-${{ runner.os }}-
 
+    # Gradle build cache (org.gradle.caching) — the task-output store that lets
+    # test/lint/build/r8 stop each recompiling the whole tree. It MUST have a
+    # rolling key: the dependency cache above is keyed on hashFiles, which is
+    # stable across the many commits that don't touch build files, so its
+    # snapshot of build-cache-1 freezes at first-populate and never picks up
+    # later Kotlin changes. A run_id-suffixed key saves a fresh entry every run
+    # and restore-keys falls back to the newest prior one — so it accumulates.
+    # Restored after (and so wins over) the frozen copy inside the dep cache.
+    - name: Cache Gradle build cache (task outputs)
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+      with:
+        path: ~/.gradle/caches/build-cache-1
+        key: gradle-buildcache-${{ runner.os }}-${{ github.run_id }}
+        restore-keys: gradle-buildcache-${{ runner.os }}-
+
     - name: Cache Cargo registry + rdp-kotlin target
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       with:
