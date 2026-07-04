@@ -5,9 +5,18 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # Nightly broad net: full lint, the R8 smoke, and an all-ABI build — the
+  # slow/low-per-commit-signal work pulled off every main push (below) still
+  # runs within 24h, so a lint regression or an x64/armv7-specific breakage
+  # the arm64-only per-push build would miss is caught daily.
+  schedule:
+    - cron: '0 3 * * *'  # 03:00 UTC daily
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Event-scoped so a main push doesn't cancel an in-flight nightly (both
+  # resolve github.ref to refs/heads/main and would otherwise collide).
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 # Least-privilege floor. Every job here only reads the repo and uploads
@@ -69,20 +78,19 @@ jobs:
           path: '**/build/reports/tests/'
           retention-days: 14
 
-  lint:
+  # Fast source-level gates — no Android toolchain, no submodules, ~30s. Split
+  # out of the lint job so they keep running on EVERY push (a version bump
+  # without CHANGELOG notes, a hardcoded string, or stale i18n export must fail
+  # fast) even though the slow lintDebug moved to PR + nightly.
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           submodules: false
-      # Fail fast (before the toolchain/submodule setup) if the current
-      # versionName has no CHANGELOG.md section — a release can't ship without
-      # human-written notes.
       - name: Check CHANGELOG has notes for the current version
         run: ./scripts/check-changelog.sh
-      - uses: ./.github/actions/init-submodules-with-retry
-      - uses: ./.github/actions/setup-toolchain
       - name: Check for hardcoded UI strings (#210)
         run: ./scripts/check-i18n-hardcoded.sh
       - name: Check translation export is current
@@ -92,6 +100,21 @@ jobs:
         run: |
           python3 scripts/i18n_export.py
           git diff --exit-code docs/i18n/strings.json
+
+  # Full Android lint is slow (~13 min) and rarely catches a per-commit
+  # regression the tests don't — so it runs on PRs and the nightly schedule,
+  # not on every direct main push. The fast source gates above still run
+  # per-push. github.event_name is 'push' only for direct main pushes.
+  lint:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: false
+      - uses: ./.github/actions/init-submodules-with-retry
+      - uses: ./.github/actions/setup-toolchain
       - name: Run lint
         run: ./gradlew lintDebug
       - name: Upload lint results
@@ -127,22 +150,43 @@ jobs:
           path: app/build/outputs/apk/arm64/debug/haven-*-arm64-debug.apk
           retention-days: 7
 
-  # Release-only safety net. The build/test/lint jobs above all run *debug*,
-  # which doesn't run R8 — so an R8 rename of a reflectively-loaded class ships
-  # a feature 100% broken in release while every check stays green. That is
-  # exactly how the email feature shipped briefly broken: R8 renamed
-  # com.sun.mail.imap.IMAPSSLStore, so getStore("imaps") threw
-  # NoSuchProviderException in release builds only (fixed in v5.59.45). Here we
-  # run R8 on the release variant and assert the by-name-loaded classes survive.
-  # No keystore needed — minify runs before packaging/signing.
-  # R8 only affects release builds, and every release is R8-checked in
-  # release.yml (the assert moved there). So this is pure early-feedback:
-  # run it on PRs (catch an R8-breaking -keep regression before merge) and
-  # skip it on direct main pushes, where it was pacing every run at ~16 min
-  # for a release-only concern. github.event_name is 'pull_request' for PRs,
-  # 'push' for main pushes.
+  # Nightly-only: build the ABIs the per-push `build` job skips (x64, armv7)
+  # so an x64/armv7-specific compile or native-cross break surfaces within 24h
+  # instead of only at release. arm64 is already covered per-push by `build`
+  # (which also runs on the schedule), so it's not repeated here.
+  nightly-abi:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { abi: x64,   variant: X64 }
+          - { abi: armv7, variant: Armv7 }
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: false
+      - uses: ./.github/actions/init-submodules-with-retry
+      - uses: ./.github/actions/setup-toolchain
+      - name: Build ${{ matrix.abi }} debug APK
+        run: ./gradlew :app:assemble${{ matrix.variant }}Debug
+
+  # Debug builds don't run R8, so an R8 rename of a reflectively-loaded class
+  # can ship a feature 100% broken in release while every debug check stays
+  # green — exactly how the email feature broke once (R8 renamed
+  # com.sun.mail.imap.IMAPSSLStore → getStore("imaps") threw, fixed v5.59.45).
+  # This runs R8 on the release variant and asserts the by-name-loaded classes
+  # survive (no keystore — minify precedes signing).
+  #
+  # Every published release is already R8-checked in release.yml (the assert
+  # moved there), so this job is early-feedback only: PRs (catch a -keep
+  # regression before merge) + the nightly schedule (the direct-main-push
+  # safety net), skipping direct main pushes where it paced every run ~16 min.
+  # github.event_name is 'push' only for direct main pushes.
   release-r8-smoke:
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
