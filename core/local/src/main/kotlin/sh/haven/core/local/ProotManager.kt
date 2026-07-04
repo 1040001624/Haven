@@ -140,6 +140,72 @@ internal fun resolveTarLinkTarget(linkTarget: String, stripComponents: Int): Str
     }
 
 /**
+ * Flatten proot link2symlink artifacts in an extracted rootfs (#328).
+ *
+ * A rootfs BUILT under a proot (Termux proot-distro, or a Haven guest) has
+ * every hard link dpkg ever made rewritten by `--link2symlink` into
+ * `name -> .l2s.nameNNNN [-> chain] -> payload`, where the symlink target is
+ * an ABSOLUTE path of the build system (e.g. `/data/data/com.termux/...`).
+ * Tar that tree and import it here and those links resolve to nothing — or
+ * to another app's private storage. The payload always sits in the same
+ * directory as the link (l2s construction), so: resolve by target basename,
+ * follow `.l2s.` chains, and materialize a real copy in place of the link.
+ * Dangling links (payload never made it into the archive) are left as-is —
+ * dpkg unlinks and rewrites its `-old` backups, device-verified harmless.
+ * Returns the number of links materialized. Pure-JVM so it unit-tests next
+ * to [clearPathIfWrongType].
+ */
+internal fun flattenL2sLinks(root: File): Int {
+    var fixed = 0
+    val links = mutableListOf<File>()
+    root.walkTopDown()
+        .onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+        .forEach { f ->
+            val p = f.toPath()
+            if (!java.nio.file.Files.isSymbolicLink(p)) return@forEach
+            val targetName = try {
+                java.nio.file.Files.readSymbolicLink(p).fileName?.toString()
+            } catch (_: Exception) {
+                null
+            }
+            if (targetName?.startsWith(".l2s.") == true) links.add(f)
+        }
+    for (link in links) {
+        val targetName = try {
+            java.nio.file.Files.readSymbolicLink(link.toPath()).fileName?.toString()
+        } catch (_: Exception) {
+            null
+        } ?: continue
+        var payload = File(link.parentFile, targetName)
+        var hops = 0
+        while (java.nio.file.Files.isSymbolicLink(payload.toPath()) && hops++ < 8) {
+            val next = try {
+                java.nio.file.Files.readSymbolicLink(payload.toPath()).fileName?.toString()
+            } catch (_: Exception) {
+                null
+            } ?: break
+            payload = File(payload.parentFile, next)
+        }
+        if (payload.isFile && !java.nio.file.Files.isSymbolicLink(payload.toPath())) {
+            val perms = try {
+                java.nio.file.Files.getPosixFilePermissions(payload.toPath())
+            } catch (_: Exception) {
+                null
+            }
+            link.delete()
+            payload.copyTo(link)
+            perms?.let {
+                try {
+                    java.nio.file.Files.setPosixFilePermissions(link.toPath(), it)
+                } catch (_: Exception) {}
+            }
+            fixed++
+        }
+    }
+    return fixed
+}
+
+/**
  * Return the subset of [binaries] (rootfs-relative paths like
  * `usr/bin/xfwm4`) that are missing under [rootfs].
  *
@@ -1627,6 +1693,11 @@ class ProotManager @Inject constructor(
         }
 
         Log.d(TAG, "Extracted $fileCount files, $symlinkCount symlinks to ${destDir.absolutePath}")
+
+        val l2sFixed = flattenL2sLinks(destDir)
+        if (l2sFixed > 0) {
+            Log.i(TAG, "Flattened $l2sFixed link2symlink artifacts from a proot-built rootfs (#328)")
+        }
 
         // Check bin/sh exists — it's a symlink to /bin/busybox so we must
         // not follow the link (the target is inside the rootfs, not the host)
