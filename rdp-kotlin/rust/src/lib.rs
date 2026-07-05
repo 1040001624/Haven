@@ -735,10 +735,28 @@ fn run_rdp_session(
     use ironrdp_graphics::image_processing::PixelFormat;
 
     let rdp_config = build_config(config);
+    // DisplayControl must be registered even though we never resize: xrdp
+    // opens the channel unconditionally and aborts ALL channel processing
+    // (dynamic_monitor_open_response: error) if the client refuses it —
+    // EGFX then never delivers a single frame (blank desktop against
+    // EGFX-capable xrdp). Reply to the server caps with a one-monitor
+    // layout matching the session size, as MS-RDPEDISP expects.
+    let (dc_width, dc_height) = (config.width as u32 & !1, config.height as u32);
+    let display_control =
+        ironrdp_displaycontrol::client::DisplayControlClient::new(move |_caps| {
+            let layout =
+                ironrdp_displaycontrol::pdu::DisplayControlMonitorLayout::new_single_primary_monitor(
+                    dc_width, dc_height, None, None,
+                )
+                .map_err(|e| ironrdp_pdu::encode_err!(e))?;
+            let pdu: ironrdp_displaycontrol::pdu::DisplayControlPdu = layout.into();
+            Ok(vec![Box::new(pdu)])
+        });
     let mut connector = ironrdp_connector::ClientConnector::new(rdp_config, server_addr)
         .with_static_channel(
             ironrdp_dvc::DrdynvcClient::new()
-                .with_dynamic_channel(crate::egfx::EgfxProcessor::new(state.clone())),
+                .with_dynamic_channel(crate::egfx::EgfxProcessor::new(state.clone()))
+                .with_dynamic_channel(display_control),
         );
 
     // Keep a clone of the underlying TCP stream so we can adjust the read

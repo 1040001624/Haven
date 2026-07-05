@@ -71,6 +71,9 @@ pub struct EgfxProcessor {
     /// RemoteFxProgressive context (sync state, context flags, IDWT
     /// scratch buffers). Per-channel, survives across PDUs.
     progressive_decoder: ProgressiveDecoder,
+    /// RDP 6.0 planar bitmap decoder (xrdp encodes greeter/session tiles
+    /// as Codec1Type::Planar). Holds a reusable planes buffer.
+    planar_decoder: ironrdp_graphics::rdp6::BitmapStreamDecoder,
 }
 
 impl EgfxProcessor {
@@ -84,6 +87,7 @@ impl EgfxProcessor {
             surfaces: SurfaceManager::new(),
             clear_decoder: ClearDecoder::new(),
             progressive_decoder: ProgressiveDecoder::new(),
+            planar_decoder: ironrdp_graphics::rdp6::BitmapStreamDecoder::default(),
         }
     }
 }
@@ -461,6 +465,36 @@ impl EgfxProcessor {
                         return;
                     }
                 };
+                let Some(surface) = self.surfaces.surface_mut(p.surface_id) else {
+                    warn!("EGFX[{n}]: WireToSurface1 unknown surface {}", p.surface_id);
+                    return;
+                };
+                surface.blit_rgba(u32::from(r.left), u32::from(r.top), w, h, &tile);
+                self.surfaces.dirty.push((p.surface_id, r.clone()));
+            }
+            Codec1Type::Planar => {
+                let mut rgb = Vec::new();
+                if let Err(e) = self.planar_decoder.decode_bitmap_stream_to_rgb24(
+                    &p.bitmap_data,
+                    &mut rgb,
+                    w as usize,
+                    h as usize,
+                ) {
+                    warn!(
+                        "EGFX[{n}]: Planar decode failed: {e} ({w}x{h}, {} bytes)",
+                        p.bitmap_data.len()
+                    );
+                    if let Ok(dir) = std::env::var("EGFX_DUMP_DIR") {
+                        let path = format!("{dir}/planar_fail_{n}_{w}x{h}.bin");
+                        let _ = std::fs::write(&path, &p.bitmap_data);
+                    }
+                    return;
+                }
+                // rgb24 -> rgba for the surface blit
+                let mut tile = Vec::with_capacity((w * h * 4) as usize);
+                for px in rgb.chunks_exact(3) {
+                    tile.extend_from_slice(&[px[0], px[1], px[2], 0xFF]);
+                }
                 let Some(surface) = self.surfaces.surface_mut(p.surface_id) else {
                     warn!("EGFX[{n}]: WireToSurface1 unknown surface {}", p.surface_id);
                     return;
