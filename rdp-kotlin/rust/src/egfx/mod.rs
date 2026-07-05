@@ -11,9 +11,8 @@ use std::sync::{Arc, RwLock};
 use ironrdp_core::{impl_as_any, Encode, EncodeResult, ReadCursor, WriteCursor};
 use ironrdp_dvc::{DvcClientProcessor, DvcEncode, DvcMessage, DvcProcessor};
 use ironrdp_graphics::zgfx::Decompressor;
-use ironrdp_pdu::rdp::vc::dvc::gfx::{
-    CapabilitiesAdvertisePdu, CapabilitiesV10Flags, CapabilitySet, ClientPdu, Codec1Type,
-    Codec2Type, FrameAcknowledgePdu, QueueDepth, ServerPdu, WireToSurface1Pdu, WireToSurface2Pdu,
+use ironrdp_egfx::pdu::{
+    CapabilitiesAdvertisePdu, CapabilitiesV10Flags, CapabilitySet, GfxPdu, Codec1Type, Codec2Type, FrameAcknowledgePdu, QueueDepth, WireToSurface1Pdu, WireToSurface2Pdu,
 };
 use ironrdp_pdu::PduResult;
 use log::{debug, info, warn};
@@ -30,8 +29,8 @@ use crate::SessionState;
 
 const CHANNEL_NAME: &str = "Microsoft::Windows::RDS::Graphics";
 
-/// Wrapper so we can implement [`DvcEncode`] for upstream's [`ClientPdu`].
-struct GfxClientMessage(ClientPdu);
+/// Wrapper so we can implement [`DvcEncode`] for upstream's [`GfxPdu`].
+struct GfxClientMessage(GfxPdu);
 
 impl Encode for GfxClientMessage {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
@@ -103,11 +102,11 @@ impl DvcProcessor for EgfxProcessor {
     /// codec selection is per-tile by content type, independent of cap
     /// version, so Windows still emits ClearCodec for desktop UI either way.
     fn start(&mut self, _channel_id: u32) -> PduResult<Vec<DvcMessage>> {
-        let caps = CapabilitiesAdvertisePdu(vec![CapabilitySet::V10 {
+        let caps = CapabilitiesAdvertisePdu::from_typed(&[CapabilitySet::V10 {
             flags: CapabilitiesV10Flags::AVC_DISABLED,
         }]);
         info!("EGFX: sending CapabilitiesAdvertise(V10, AVC_DISABLED)");
-        let msg: DvcMessage = Box::new(GfxClientMessage(ClientPdu::CapabilitiesAdvertise(caps)));
+        let msg: DvcMessage = Box::new(GfxClientMessage(GfxPdu::CapabilitiesAdvertise(caps)));
         Ok(vec![msg])
     }
 
@@ -127,7 +126,7 @@ impl DvcProcessor for EgfxProcessor {
             decompressed.len(),
             decompressed.len() as f32 / payload.len().max(1) as f32
         );
-        // Step 2: decode every concatenated ServerPdu in the buffer. A single
+        // Step 2: decode every concatenated GfxPdu in the buffer. A single
         // DVC message often carries StartFrame / WireToSurface* / EndFrame
         // back-to-back for one surface update.
         let mut out_messages: Vec<DvcMessage> = Vec::new();
@@ -136,7 +135,7 @@ impl DvcProcessor for EgfxProcessor {
             self.server_pdu_count = self.server_pdu_count.saturating_add(1);
             let n = self.server_pdu_count;
             let pdu_start = cur.pos();
-            let pdu = match <ServerPdu as ironrdp_core::Decode>::decode(&mut cur) {
+            let pdu = match <GfxPdu as ironrdp_core::Decode>::decode(&mut cur) {
                 Ok(p) => p,
                 Err(e) => {
                     warn!(
@@ -157,13 +156,13 @@ impl DvcProcessor for EgfxProcessor {
 impl EgfxProcessor {
     /// Inspect a single decoded server PDU. Push any client-side reply
     /// (frame ack, etc.) into `out`.
-    fn dispatch(&mut self, n: u64, pdu: &ServerPdu, out: &mut Vec<DvcMessage>) {
+    fn dispatch(&mut self, n: u64, pdu: &GfxPdu, out: &mut Vec<DvcMessage>) {
         match pdu {
-            ServerPdu::CapabilitiesConfirm(c) => {
+            GfxPdu::CapabilitiesConfirm(c) => {
                 self.capabilities_received = true;
                 info!("EGFX[{n}]: CapabilitiesConfirm {:?}", c.0);
             }
-            ServerPdu::ResetGraphics(p) => {
+            GfxPdu::ResetGraphics(p) => {
                 info!(
                     "EGFX[{n}]: ResetGraphics width={} height={} monitors={}",
                     p.width,
@@ -172,18 +171,18 @@ impl EgfxProcessor {
                 );
                 self.surfaces.reset();
             }
-            ServerPdu::CreateSurface(p) => {
+            GfxPdu::CreateSurface(p) => {
                 debug!(
                     "EGFX[{n}]: CreateSurface id={} {}x{} pixfmt={:?}",
                     p.surface_id, p.width, p.height, p.pixel_format
                 );
                 self.surfaces.create_surface(p);
             }
-            ServerPdu::DeleteSurface(p) => {
+            GfxPdu::DeleteSurface(p) => {
                 debug!("EGFX[{n}]: DeleteSurface id={}", p.surface_id);
                 self.surfaces.delete_surface(p);
             }
-            ServerPdu::MapSurfaceToOutput(p) => {
+            GfxPdu::MapSurfaceToOutput(p) => {
                 debug!(
                     "EGFX[{n}]: MapSurfaceToOutput id={} ->({},{})",
                     p.surface_id, p.output_origin_x, p.output_origin_y
@@ -191,11 +190,11 @@ impl EgfxProcessor {
                 self.surfaces
                     .map_to_output(p.surface_id, p.output_origin_x as i32, p.output_origin_y as i32);
             }
-            ServerPdu::StartFrame(p) => debug!(
+            GfxPdu::StartFrame(p) => debug!(
                 "EGFX[{n}]: StartFrame frame_id={} timestamp={:?}",
                 p.frame_id, p.timestamp
             ),
-            ServerPdu::EndFrame(p) => {
+            GfxPdu::EndFrame(p) => {
                 self.total_frames_decoded = self.total_frames_decoded.saturating_add(1);
                 debug!(
                     "EGFX[{n}]: EndFrame frame_id={} total_decoded={}",
@@ -208,11 +207,11 @@ impl EgfxProcessor {
                     frame_id: p.frame_id,
                     total_frames_decoded: self.total_frames_decoded,
                 };
-                out.push(Box::new(GfxClientMessage(ClientPdu::FrameAcknowledge(ack))));
+                out.push(Box::new(GfxClientMessage(GfxPdu::FrameAcknowledge(ack))));
             }
-            ServerPdu::WireToSurface1(p) => self.handle_wire_to_surface1(n, p),
-            ServerPdu::WireToSurface2(p) => self.handle_wire_to_surface2(n, p),
-            ServerPdu::SolidFill(p) => {
+            GfxPdu::WireToSurface1(p) => self.handle_wire_to_surface1(n, p),
+            GfxPdu::WireToSurface2(p) => self.handle_wire_to_surface2(n, p),
+            GfxPdu::SolidFill(p) => {
                 debug!(
                     "EGFX[{n}]: SolidFill surface={} rects={} colour={:?}",
                     p.surface_id,
@@ -221,7 +220,7 @@ impl EgfxProcessor {
                 );
                 self.surfaces.solid_fill(p);
             }
-            ServerPdu::SurfaceToSurface(p) => {
+            GfxPdu::SurfaceToSurface(p) => {
                 debug!(
                     "EGFX[{n}]: SurfaceToSurface src={} dst={} points={}",
                     p.source_surface_id,
@@ -230,14 +229,14 @@ impl EgfxProcessor {
                 );
                 self.surfaces.surface_to_surface(p);
             }
-            ServerPdu::SurfaceToCache(p) => {
+            GfxPdu::SurfaceToCache(p) => {
                 debug!(
                     "EGFX[{n}]: SurfaceToCache surface={} key=0x{:016x} cache_slot={}",
                     p.surface_id, p.cache_key, p.cache_slot
                 );
                 self.surfaces.surface_to_cache(p);
             }
-            ServerPdu::CacheToSurface(p) => {
+            GfxPdu::CacheToSurface(p) => {
                 debug!(
                     "EGFX[{n}]: CacheToSurface cache_slot={} surface={} positions={}",
                     p.cache_slot,
@@ -246,18 +245,23 @@ impl EgfxProcessor {
                 );
                 self.surfaces.cache_to_surface(p);
             }
-            ServerPdu::EvictCacheEntry(p) => {
+            GfxPdu::EvictCacheEntry(p) => {
                 debug!("EGFX[{n}]: EvictCacheEntry cache_slot={}", p.cache_slot);
                 self.surfaces.evict_cache(p);
             }
-            ServerPdu::DeleteEncodingContext(_) => debug!("EGFX[{n}]: DeleteEncodingContext"),
-            ServerPdu::CacheImportReply(_) => debug!("EGFX[{n}]: CacheImportReply"),
-            ServerPdu::MapSurfaceToScaledOutput(_) => {
+            GfxPdu::DeleteEncodingContext(_) => debug!("EGFX[{n}]: DeleteEncodingContext"),
+            GfxPdu::CacheImportReply(_) => debug!("EGFX[{n}]: CacheImportReply"),
+            GfxPdu::MapSurfaceToScaledOutput(_) => {
                 debug!("EGFX[{n}]: MapSurfaceToScaledOutput")
             }
-            ServerPdu::MapSurfaceToScaledWindow(_) => {
+            GfxPdu::MapSurfaceToScaledWindow(_) => {
                 debug!("EGFX[{n}]: MapSurfaceToScaledWindow")
             }
+            // Client-origin variants of the merged GfxPdu enum
+            // (CapabilitiesAdvertise, FrameAcknowledge, CacheImportOffer,
+            // QoeFrameAcknowledge, MapSurfaceToWindow): a server must not
+            // send these; log and drop.
+            other => warn!("EGFX[{n}]: unexpected client-origin PDU: {}", pdu_kind_label(other)),
         }
         if !self.capabilities_received {
             warn!("EGFX[{n}]: server PDU before CapabilitiesConfirm");
@@ -419,8 +423,8 @@ impl EgfxProcessor {
     fn handle_wire_to_surface1(&mut self, n: u64, p: &WireToSurface1Pdu) {
         // MS-RDPEGFX `RDPGFX_RECT16` uses *exclusive* right/bottom for
         // WireToSurface destinations (matches FreeRDP's `width = right -
-        // left`). ironrdp names the type `InclusiveRectangle`, but for this
-        // PDU the right/bottom indices are one-past-end, so we drop the +1.
+        // left`); egfx 0.2 types this correctly as ExclusiveRectangle, so
+        // right/bottom are one-past-end and we use the width directly.
         let r = &p.destination_rectangle;
         let w = (r.right as i32 - r.left as i32).max(0) as u32;
         let h = (r.bottom as i32 - r.top as i32).max(0) as u32;
@@ -518,7 +522,7 @@ impl EgfxProcessor {
                 for tile in &tiles {
                     self.surfaces.dirty.push((
                         p.surface_id,
-                        ironrdp_pdu::geometry::InclusiveRectangle {
+                        ironrdp_pdu::geometry::ExclusiveRectangle {
                             left: tile.x,
                             top: tile.y,
                             right: tile.x.saturating_add(64),
@@ -534,7 +538,7 @@ impl EgfxProcessor {
 /// Clip an EGFX rectangle (RDPGFX_RECT16, exclusive right/bottom) to a
 /// surface of the given size. Returns `(x, y, w, h)` in surface-local
 /// pixels. `(0, 0, 0, 0)` if the rect is fully outside.
-fn clip_to_surface(r: &ironrdp_pdu::geometry::InclusiveRectangle, sw: u32, sh: u32) -> (u32, u32, u32, u32) {
+fn clip_to_surface(r: &ironrdp_pdu::geometry::ExclusiveRectangle, sw: u32, sh: u32) -> (u32, u32, u32, u32) {
     let l = u32::from(r.left).min(sw);
     let t = u32::from(r.top).min(sh);
     let right = u32::from(r.right).min(sw);
@@ -549,15 +553,15 @@ fn clip_to_surface(r: &ironrdp_pdu::geometry::InclusiveRectangle, sw: u32, sh: u
 impl DvcClientProcessor for EgfxProcessor {}
 
 /// If `EGFX_PDU_DUMP_DIR` is set, write the post-zgfx-decompressed bytes
-/// of each [`ServerPdu`] to `<dir>/pdu_NNNN_<kind>.bin`. Useful as
+/// of each [`GfxPdu`] to `<dir>/pdu_NNNN_<kind>.bin`. Useful as
 /// regression / upstream-bug-report fixtures: the bytes are exactly what
-/// the `<ServerPdu as Decode>::decode` parser saw, so feeding them back
+/// the `<GfxPdu as Decode>::decode` parser saw, so feeding them back
 /// through the same parser is a deterministic reproduction.
 ///
 /// Names are zero-padded so a normal `ls` lists them in arrival order.
 /// Logs (not panics) on I/O failure — a session shouldn't die because
 /// the brewer's dump dir is full.
-fn maybe_dump_pdu(n: u64, bytes: &[u8], pdu: &ServerPdu) {
+fn maybe_dump_pdu(n: u64, bytes: &[u8], pdu: &GfxPdu) {
     let Ok(dir) = std::env::var("EGFX_PDU_DUMP_DIR") else {
         return;
     };
@@ -568,27 +572,30 @@ fn maybe_dump_pdu(n: u64, bytes: &[u8], pdu: &ServerPdu) {
     }
 }
 
-fn pdu_kind_label(p: &ServerPdu) -> &'static str {
-    // Exhaustive match — if upstream adds a ServerPdu variant we want
+fn pdu_kind_label(p: &GfxPdu) -> &'static str {
+    // Exhaustive match — if upstream adds a GfxPdu variant we want
     // the build to break here so we add it to the dump filename.
     match p {
-        ServerPdu::CapabilitiesConfirm(_) => "capabilities_confirm",
-        ServerPdu::ResetGraphics(_) => "reset_graphics",
-        ServerPdu::CreateSurface(_) => "create_surface",
-        ServerPdu::DeleteSurface(_) => "delete_surface",
-        ServerPdu::MapSurfaceToOutput(_) => "map_surface_to_output",
-        ServerPdu::MapSurfaceToScaledOutput(_) => "map_surface_to_scaled_output",
-        ServerPdu::MapSurfaceToScaledWindow(_) => "map_surface_to_scaled_window",
-        ServerPdu::StartFrame(_) => "start_frame",
-        ServerPdu::EndFrame(_) => "end_frame",
-        ServerPdu::WireToSurface1(_) => "wire_to_surface1",
-        ServerPdu::WireToSurface2(_) => "wire_to_surface2",
-        ServerPdu::SolidFill(_) => "solid_fill",
-        ServerPdu::SurfaceToSurface(_) => "surface_to_surface",
-        ServerPdu::SurfaceToCache(_) => "surface_to_cache",
-        ServerPdu::CacheToSurface(_) => "cache_to_surface",
-        ServerPdu::EvictCacheEntry(_) => "evict_cache_entry",
-        ServerPdu::DeleteEncodingContext(_) => "delete_encoding_context",
-        ServerPdu::CacheImportReply(_) => "cache_import_reply",
+        GfxPdu::CapabilitiesConfirm(_) => "capabilities_confirm",
+        GfxPdu::ResetGraphics(_) => "reset_graphics",
+        GfxPdu::CreateSurface(_) => "create_surface",
+        GfxPdu::DeleteSurface(_) => "delete_surface",
+        GfxPdu::MapSurfaceToOutput(_) => "map_surface_to_output",
+        GfxPdu::MapSurfaceToScaledOutput(_) => "map_surface_to_scaled_output",
+        GfxPdu::MapSurfaceToScaledWindow(_) => "map_surface_to_scaled_window",
+        GfxPdu::StartFrame(_) => "start_frame",
+        GfxPdu::EndFrame(_) => "end_frame",
+        GfxPdu::WireToSurface1(_) => "wire_to_surface1",
+        GfxPdu::WireToSurface2(_) => "wire_to_surface2",
+        GfxPdu::SolidFill(_) => "solid_fill",
+        GfxPdu::SurfaceToSurface(_) => "surface_to_surface",
+        GfxPdu::SurfaceToCache(_) => "surface_to_cache",
+        GfxPdu::CacheToSurface(_) => "cache_to_surface",
+        GfxPdu::EvictCacheEntry(_) => "evict_cache_entry",
+        GfxPdu::DeleteEncodingContext(_) => "delete_encoding_context",
+        GfxPdu::CacheImportReply(_) => "cache_import_reply",
+        // Client-origin variants (the merged GfxPdu enum covers both
+        // directions); a server never legitimately sends these.
+        _ => "unexpected_client_origin_pdu",
     }
 }

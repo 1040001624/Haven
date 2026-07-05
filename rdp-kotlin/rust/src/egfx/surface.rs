@@ -11,10 +11,9 @@
 
 use std::collections::HashMap;
 
-use ironrdp_pdu::geometry::InclusiveRectangle;
-use ironrdp_pdu::rdp::vc::dvc::gfx::{
-    CacheToSurfacePdu, Color, CreateSurfacePdu, DeleteSurfacePdu, EvictCacheEntryPdu, PixelFormat,
-    SolidFillPdu, SurfaceToCachePdu, SurfaceToSurfacePdu,
+use ironrdp_pdu::geometry::ExclusiveRectangle;
+use ironrdp_egfx::pdu::{
+    CacheToSurfacePdu, Color, CreateSurfacePdu, DeleteSurfacePdu, EvictCacheEntryPdu, PixelFormat, SolidFillPdu, SurfaceToCachePdu, SurfaceToSurfacePdu,
 };
 use log::{debug, warn};
 
@@ -49,11 +48,11 @@ impl Surface {
         }
     }
 
-    fn fill_rect(&mut self, rect: &InclusiveRectangle, rgba: [u8; 4]) {
+    fn fill_rect(&mut self, rect: &ExclusiveRectangle, rgba: [u8; 4]) {
         // MS-RDPEGFX RDPGFX_RECT16 uses *exclusive* right/bottom (matches
-        // FreeRDP's `width = right - left`). ironrdp names the type
-        // `InclusiveRectangle` but for EGFX PDUs we treat right/bottom as
-        // one-past-end. Clip to surface bounds.
+        // FreeRDP's `width = right - left`); egfx 0.2 types this correctly
+        // as ExclusiveRectangle (older ironrdp mislabeled it Inclusive).
+        // Clip to surface bounds.
         let l = rect.left.min(self.width as u16) as u32;
         let t = rect.top.min(self.height as u16) as u32;
         let r = (rect.right as u32).min(self.width);
@@ -120,7 +119,7 @@ pub struct SurfaceManager {
     /// Dirty rectangles since the last `take_dirty()`, paired with the
     /// surface they apply to. Coordinates are surface-local; the projection
     /// step looks up `output_map` to translate to host framebuffer coords.
-    pub dirty: Vec<(u16, InclusiveRectangle)>,
+    pub dirty: Vec<(u16, ExclusiveRectangle)>,
 }
 
 #[derive(Debug, Clone)]
@@ -206,7 +205,7 @@ impl SurfaceManager {
             dst.blit_rgba(u32::from(point.x), u32::from(point.y), w, h, &tile);
             self.dirty.push((
                 dst_id,
-                InclusiveRectangle {
+                ExclusiveRectangle {
                     left: point.x,
                     top: point.y,
                     right: point.x.saturating_add(w as u16),
@@ -260,7 +259,7 @@ impl SurfaceManager {
             dst.blit_rgba(u32::from(point.x), u32::from(point.y), w, h, &pixels);
             self.dirty.push((
                 p.surface_id,
-                InclusiveRectangle {
+                ExclusiveRectangle {
                     left: point.x,
                     top: point.y,
                     right: point.x.saturating_add(w as u16),
@@ -277,7 +276,7 @@ impl SurfaceManager {
     /// Take the dirty-rect accumulator. Each entry is `(surface_id, rect)`
     /// in surface-local coords; the caller (egfx::framebuffer) projects
     /// through `output_map` to drive the host FrameCallback.
-    pub fn take_dirty(&mut self) -> Vec<(u16, InclusiveRectangle)> {
+    pub fn take_dirty(&mut self) -> Vec<(u16, ExclusiveRectangle)> {
         std::mem::take(&mut self.dirty)
     }
 
@@ -308,7 +307,7 @@ fn color_to_rgba(c: &Color) -> [u8; 4] {
     [c.r, c.g, c.b, 0xFF]
 }
 
-fn copy_rect_out(src: &Surface, r: &InclusiveRectangle, w: u32, h: u32, out: &mut [u8]) {
+fn copy_rect_out(src: &Surface, r: &ExclusiveRectangle, w: u32, h: u32, out: &mut [u8]) {
     let stride = src.width as usize * BYTES_PER_PIXEL;
     let row_bytes = w as usize * BYTES_PER_PIXEL;
     for row in 0..h {

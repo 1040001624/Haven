@@ -375,6 +375,11 @@ fn build_config(config: &RdpConfig) -> ironrdp_connector::Config {
             username: config.username.clone().into(),
             password: config.password.clone().into(),
         },
+        // New in connector 0.9; keep prior behaviour (none requested).
+        alternate_shell: String::new(),
+        work_dir: String::new(),
+        compression_type: None,
+        multitransport_flags: None,
         domain: if config.domain.is_empty() {
             None
         } else {
@@ -1047,6 +1052,16 @@ fn run_rdp_session(
                                     // Server-initiated deactivation-reactivation
                                     // Would need to handle reconnection here
                                     break;
+                                }
+                                // New in session 0.10: multitransport/autodetect
+                                // negotiation requests. We advertise neither
+                                // (Config sets multitransport_flags: None), so
+                                // ignore rather than respond.
+                                ActiveStageOutput::MultitransportRequest(_) => {
+                                    debug!("Ignoring multitransport request");
+                                }
+                                ActiveStageOutput::AutoDetect(_) => {
+                                    debug!("Ignoring autodetect request");
                                 }
                             }
                         }
