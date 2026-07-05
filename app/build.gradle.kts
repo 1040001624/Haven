@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
@@ -8,7 +7,7 @@ plugins {
 
 android {
     namespace = "sh.haven.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "sh.haven.app"
@@ -70,22 +69,6 @@ android {
         }
     }
 
-    // Version code scheme: base * 10 + abiOffset
-    val abiCodes = mapOf("arm64" to 1, "x64" to 2, "armv7" to 3)
-
-    applicationVariants.all {
-        val variant = this
-        val abi = variant.productFlavors.first { it.dimension == "abi" }.name
-        val abiCode = abiCodes[abi]
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.ApkVariantOutputImpl
-            if (abiCode != null) {
-                output.versionCodeOverride = (defaultConfig.versionCode ?: 0) * 10 + abiCode
-            }
-            output.outputFileName = "haven-${variant.versionName}-$abi-${variant.buildType.name}.apk"
-        }
-    }
-
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -119,6 +102,26 @@ android {
     }
 }
 
+// Version code scheme: base * 10 + abiOffset; APK named
+// haven-<version>-<abi>-<buildtype>.apk. Rewritten from the removed
+// applicationVariants API for AGP 9's Variant API; outputFileName still
+// needs the impl cast — there is no public rename hook yet.
+androidComponents {
+    onVariants { variant ->
+        val abiCodes = mapOf("arm64" to 1, "x64" to 2, "armv7" to 3)
+        val abi = variant.productFlavors.firstOrNull { it.first == "abi" }?.second
+        val abiCode = abiCodes[abi]
+        val base = android.defaultConfig.versionCode ?: 0
+        val versionName = android.defaultConfig.versionName
+        variant.outputs.forEach { output ->
+            if (abiCode != null) {
+                output.versionCode.set(base * 10 + abiCode)
+            }
+            (output as? com.android.build.api.variant.impl.VariantOutputImpl)
+                ?.outputFileName?.set("haven-$versionName-$abi-${variant.buildType}.apk")
+        }
+    }
+}
 
 dependencies {
     implementation(project(":core:ui"))

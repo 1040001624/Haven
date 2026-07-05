@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
@@ -8,7 +7,7 @@ plugins {
 
 android {
     namespace = "sh.haven.feature.terminal"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -54,6 +53,8 @@ dependencies {
     // same touch/PIN prompt instead of hanging silently.
     implementation(project(":feature:connections"))
 
+    implementation(libs.core.ktx)
+    implementation(libs.activity.compose)
     implementation(libs.termlib)
 
     implementation(libs.hilt.android)

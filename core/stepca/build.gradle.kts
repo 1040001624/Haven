@@ -1,13 +1,12 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "sh.haven.core.stepca"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -28,6 +27,7 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":core:ssh"))
 
+    implementation(libs.core.ktx)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.hilt.work)

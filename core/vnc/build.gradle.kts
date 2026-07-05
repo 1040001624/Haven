@@ -1,11 +1,10 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
     namespace = "sh.haven.core.vnc"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26

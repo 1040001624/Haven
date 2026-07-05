@@ -1,13 +1,12 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "sh.haven.core.security"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -24,6 +23,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.core.ktx)
     implementation(libs.tink.android)
     implementation(libs.biometric)
     implementation(libs.bouncycastle)
