@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  # Skip a full ~16 min testReleaseUnitTest re-run when CI has already
+  # Skip a full ~16 min unit-test re-run when CI has already
   # verified the tagged commit on main — same commit, same test invocation
   # would produce the same result. Falls through to a real test run if
   # CI hasn't reported yet (rare: tag created without a prior main push)
@@ -75,7 +75,7 @@ jobs:
             build-proot/proot-termux
       - uses: ./.github/actions/setup-toolchain
       - name: Run release unit tests
-        run: ./gradlew testReleaseUnitTest
+        run: ./gradlew testDebugUnitTest
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
