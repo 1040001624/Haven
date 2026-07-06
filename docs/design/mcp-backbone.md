@@ -450,19 +450,24 @@ wins land first, protocol churn last.
   unchanged, so the transport and every server test stay untouched — no
   Hilt-multibinding rewire of `McpServer`'s constructor (which would cascade
   into every server test builder). Each future domain is a mechanical repeat.
-  **Still to do:** extract the remaining domains (mail, rclone, usb, desktop,
-  tunnels, …) into providers the same way; a schema DSL to replace the inline
-  `org.json` builders; deleting the internal `__` keys at the ~6 handler sites
-  once handlers can return `ToolResult` directly; and the whole of Layer F (§1b
+  All seven domains (key-store, tunnels, ssh-keys, rclone, usb, desktop, mail)
+  are now extracted; the `__` keys are deleted (handlers return `ToolResult`
+  directly); and every `inputSchema` is built by the `SchemaDsl.kt` builder
+  (`objectSchema { string("path", …, required = true) }`) instead of inline
+  `org.json` — the conversion was verified by a canonical-JSON snapshot diff of
+  all 182 tool schemas (identical modulo `required: []` vs omitted, which are
+  equivalent in JSON Schema). **Still to do:** the whole of Layer F (§1b
   Android-app MCP discovery via `<intent-filter>`/`meta-data`, a `ClientRegistry`,
-  and SSE/`listChanged` server→client push).
+  and SSE/`listChanged` server→client push) — deferred until a consumer exists.
 
 Stages 0–2 are the ones that make the moat defensible and are worth prioritizing;
 3–5 are the ones that make it *architecturally* first-class and unlock the
 bidirectional vision.
 
-**Status (2026-07-06):** Stages 0–4 shipped; Stage 5's declarative tool
-contract shipped, its provider split + §1b plugin bus remain.
+**Status (2026-07-06):** Stages 0–4 shipped; Stage 5 Layer E complete
+(declarative contract, all 7 provider extractions, typed `ToolResult`,
+schema DSL). Only Layer F (§1b plugin bus + SSE push) remains, deferred
+until a consumer exists.
 
 ---
 

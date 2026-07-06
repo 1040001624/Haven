@@ -42,15 +42,8 @@ internal class UsbToolProvider(
 
         "request_usb_permission" to ToolHandler(
             description = "Request the Android runtime USB permission for a device (pops the system grant dialog) and open it, caching the connection for usb_control_transfer / usb_bulk_transfer. Idempotent: a no-op if permission is already held and the device is open. Returns the device info with hasPermission/isOpen reflecting the result.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "deviceName from list_usb_devices (the /dev/bus/usb/BBB/DDD path).")
-                    })
-                })
-                put("required", JSONArray().put("deviceName"))
+            inputSchema = objectSchema {
+                string("deviceName", "deviceName from list_usb_devices (the /dev/bus/usb/BBB/DDD path).", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Grant the agent access to USB device ${usbLabel(args.optString("deviceName"))}?" },
@@ -58,19 +51,15 @@ internal class UsbToolProvider(
 
         "usb_control_transfer" to ToolHandler(
             description = "Perform a USB endpoint-0 control transfer on an opened device. Args: deviceName, requestType (bmRequestType, int — bit 7 set = device-to-host/IN), request (bRequest), value (wValue), index (wIndex), dataBase64 (OUT payload, omit for IN), length (IN read length), timeoutMs (default 1000). Returns bytesTransferred and, for IN transfers, dataBase64. The device must already be opened via request_usb_permission.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply { put("type", "string") })
-                    put("requestType", JSONObject().apply { put("type", "integer"); put("description", "bmRequestType. Bit 7 (0x80) set = IN.") })
-                    put("request", JSONObject().apply { put("type", "integer"); put("description", "bRequest.") })
-                    put("value", JSONObject().apply { put("type", "integer"); put("description", "wValue.") })
-                    put("index", JSONObject().apply { put("type", "integer"); put("description", "wIndex.") })
-                    put("dataBase64", JSONObject().apply { put("type", "string"); put("description", "Base64 OUT payload; omit for IN.") })
-                    put("length", JSONObject().apply { put("type", "integer"); put("description", "IN read length; ignored for OUT.") })
-                    put("timeoutMs", JSONObject().apply { put("type", "integer") })
-                })
-                put("required", JSONArray().put("deviceName").put("requestType").put("request").put("value").put("index"))
+            inputSchema = objectSchema {
+                string("deviceName", required = true)
+                integer("requestType", "bmRequestType. Bit 7 (0x80) set = IN.", required = true)
+                integer("request", "bRequest.", required = true)
+                integer("value", "wValue.", required = true)
+                integer("index", "wIndex.", required = true)
+                string("dataBase64", "Base64 OUT payload; omit for IN.")
+                integer("length", "IN read length; ignored for OUT.")
+                integer("timeoutMs")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "USB control transfer to ${usbLabel(args.optString("deviceName"))}" },
@@ -78,16 +67,12 @@ internal class UsbToolProvider(
 
         "usb_bulk_transfer" to ToolHandler(
             description = "Perform a USB bulk or interrupt transfer on an opened device. Direction is taken from the endpoint descriptor. Args: deviceName, endpoint (bEndpointAddress, int), dataBase64 (OUT payload, omit for IN), length (IN read length), timeoutMs (default 1000). The owning interface is claimed automatically. Returns bytesTransferred and, for IN endpoints, dataBase64.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply { put("type", "string") })
-                    put("endpoint", JSONObject().apply { put("type", "integer"); put("description", "bEndpointAddress from the interface descriptor.") })
-                    put("dataBase64", JSONObject().apply { put("type", "string"); put("description", "Base64 OUT payload; omit for IN endpoints.") })
-                    put("length", JSONObject().apply { put("type", "integer"); put("description", "IN read length; ignored for OUT.") })
-                    put("timeoutMs", JSONObject().apply { put("type", "integer") })
-                })
-                put("required", JSONArray().put("deviceName").put("endpoint"))
+            inputSchema = objectSchema {
+                string("deviceName", required = true)
+                integer("endpoint", "bEndpointAddress from the interface descriptor.", required = true)
+                string("dataBase64", "Base64 OUT payload; omit for IN endpoints.")
+                integer("length", "IN read length; ignored for OUT.")
+                integer("timeoutMs")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "USB bulk transfer to ${usbLabel(args.optString("deviceName"))}" },
@@ -95,14 +80,8 @@ internal class UsbToolProvider(
 
         "usb_attach_to_guest" to ToolHandler(
             description = "Expose a USB device to the proot Linux guest: opens it (requesting permission if needed) and binds the haven-usb proxy on an abstract LocalSocket the guest can reach, then stages the haven-usb-probe binary into the guest. Returns the socketName, the in-guest probePath, and a probeCommand you can run via run_in_proot to verify reachability. For a CDC-ACM serial device it also returns serialBridgeCommand (the haven-usb-serial PTY bridge) so unmodified serial apps (e.g. LIRC's lircd/mode2) can open it as /dev/pts/N. deviceName is optional when exactly one device is attached. This is the entry point for the guest-side USB shim (LD_PRELOAD/DllMap for HID, a PTY bridge for serial).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "deviceName from list_usb_devices; optional if only one device is attached.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("deviceName", "deviceName from list_usb_devices; optional if only one device is attached.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -113,32 +92,17 @@ internal class UsbToolProvider(
 
         "detach_from_guest" to ToolHandler(
             description = "Stop the haven-usb guest proxy started by usb_attach_to_guest and release the brokered USB device handle (the guest's /dev/pts serial bridge or LD_PRELOAD HID routing stops working immediately). Pass keepOpen:true to leave the device handle open. The teardown counterpart to usb_attach_to_guest.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("keepOpen", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Leave the brokered device handle open (default false = fully release it).")
-                    })
-                })
+            inputSchema = objectSchema {
+                boolean("keepOpen", "Leave the brokered device handle open (default false = fully release it).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> detachFromGuest(args) },
 
         "start_usbip_export" to ToolHandler(
             description = "Start a userspace USB/IP server exporting a phone-attached USB device over TCP (default port 3240) so a remote Linux host can `usbip attach` it as a real local device node — every app there (ssh, libfido2, browsers) sees it, with the touch happening on the phone. Opens the device (requesting permission if needed) and returns the busid, bound port, and the client-side attach command. deviceName is optional when exactly one device is attached. Pass loopbackOnly:true to bind 127.0.0.1 only (for use behind an SSH/WireGuard tunnel); the default binds all interfaces for direct LAN attach. This is the remote-host counterpart to usb_attach_to_guest (which targets the local proot guest, where usbip can't run — the Android kernel has no vhci-hcd).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "deviceName from list_usb_devices; optional if only one device is attached.")
-                    })
-                    put("loopbackOnly", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Bind 127.0.0.1 only (use behind a tunnel). Default false = all interfaces, LAN-reachable.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("deviceName", "deviceName from list_usb_devices; optional if only one device is attached.")
+                boolean("loopbackOnly", "Bind 127.0.0.1 only (use behind a tunnel). Default false = all interfaces, LAN-reachable.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -149,44 +113,23 @@ internal class UsbToolProvider(
 
         "stop_usbip_export" to ToolHandler(
             description = "Stop the USB/IP server started by start_usbip_export (closes the listening socket and any active client connection) and release the brokered USB device handle. Pass keepOpen:true to leave the handle open for a fast re-export.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("keepOpen", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Leave the brokered device handle open for a fast re-export (default false = fully release it).")
-                    })
-                })
+            inputSchema = objectSchema {
+                boolean("keepOpen", "Leave the brokered device handle open for a fast re-export (default false = fully release it).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> stopUsbipExport(args) },
 
         "list_usb_exports" to ToolHandler(
             description = "List active USB exports of phone-attached devices: the USB/IP server (start_usbip_export — to remote hosts) and the guest proxy (usb_attach_to_guest — to the local proot guest). Reports the exported device, busid/bound port, and whether a remote usbip client is currently attached. Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> listUsbExports() },
 
         "open_usb_drive" to ToolHandler(
             description = "Open a phone-attached USB drive (mass storage — flash drive, SSD, SD reader) inside an on-device QEMU Linux VM and surface its files as an ordinary connection (#287). Unlike usb_attach_to_guest (which gives the proot guest a char device), this gives the drive a REAL kernel, so ext4 / GPT / block partitions mount and their files are browseable. Flow: exports the drive over USB/IP, boots (or reuses, if another drive is already open) a small Alpine VM that imports it, mounts every partition (read-only unless `writable`), and runs sshd — then returns a loopback SSH/SFTP `profileId` you browse with list_directory / serve_file (and a terminal tab into the VM). A LUKS-encrypted partition mounts locked (reported in list_usb_drives' vm.locked) — call unlock_usb_drive_partition with its passphrase to mount it. The VM boot is slow (TCG, no KVM unrooted) + the first run installs packages, so this returns {status:\"starting\"} immediately — poll list_usb_drives until phase=ready (profileId set) or error. Consent-gated per session (mounting the user's disk is sensitive). Up to a phone-resource limit of concurrent drives (they share one VM, so this is a vhci-port/practical cap, not RAM); isochronous (webcam/audio) still can't pass.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deviceName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "deviceName from list_usb_devices / list_usb_drives; optional if exactly one USB drive is attached.")
-                    })
-                    put("writable", JSONObject().apply {
-                        put("type", "boolean")
-                        put(
-                            "description",
-                            "Mount read-write instead of the default read-only. An interrupted write (VM killed, app backgrounded under memory pressure) can corrupt the drive's filesystem — only set this when the caller genuinely needs to write.",
-                        )
-                    })
-                })
+            inputSchema = objectSchema {
+                string("deviceName", "deviceName from list_usb_devices / list_usb_drives; optional if exactly one USB drive is attached.")
+                boolean("writable", "Mount read-write instead of the default read-only. An interrupted write (VM killed, app backgrounded under memory pressure) can corrupt the drive's filesystem — only set this when the caller genuinely needs to write.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -202,32 +145,16 @@ internal class UsbToolProvider(
 
         "list_usb_drives" to ToolHandler(
             description = "List phone-attached USB mass-storage drives (the candidates for open_usb_drive) and every currently-open USB-drive VM in `vms` (up to a phone-resource concurrency limit): busid, phase (idle/opening/ready/error), the loopback SSH `profileId`, whether it's mounted read-only, any locked (LUKS) partitions awaiting unlock_usb_drive_partition, and the mounted paths once ready. Read-only — poll this after open_usb_drive until the matching vms[] entry has phase=ready.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> listUsbDrives() },
 
         "unlock_usb_drive_partition" to ToolHandler(
             description = "Unlock a LUKS-encrypted partition on an open USB-drive VM (see list_usb_drives' vms[].locked for candidates, e.g. \"sdb2\" → devicePath \"/dev/sdb2\") and mount it. Runs against the already-booted VM — no reboot. Returns the updated mount/locked lists; throws on a wrong passphrase.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("busid", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Which open drive's VM (see list_usb_drives' vms[].busid); optional if exactly one is open.")
-                    })
-                    put("devicePath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "e.g. /dev/sdb2 — the locked partition's device path inside the VM.")
-                    })
-                    put("passphrase", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The LUKS passphrase.")
-                    })
-                })
-                put("required", JSONArray().put("devicePath").put("passphrase"))
+            inputSchema = objectSchema {
+                string("busid", "Which open drive's VM (see list_usb_drives' vms[].busid); optional if exactly one is open.")
+                string("devicePath", "e.g. /dev/sdb2 — the locked partition's device path inside the VM.", required = true)
+                string("passphrase", "The LUKS passphrase.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Unlock ${args.optString("devicePath")} with the supplied passphrase?" },
@@ -235,24 +162,15 @@ internal class UsbToolProvider(
 
         "close_usb_drive" to ToolHandler(
             description = "Close a USB-drive VM opened by open_usb_drive: power off the VM, stop its USB/IP export, and remove the transient SSH profile + ephemeral key. Idempotent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("busid", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Which open drive to close (see list_usb_drives' vms[].busid); optional if exactly one is open.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("busid", "Which open drive to close (see list_usb_drives' vms[].busid); optional if exactly one is open.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> closeUsbDrive(args) },
 
         "delete_usb_appliance" to ToolHandler(
             description = "Delete the persistent USB-helper Linux appliance — the small installed Alpine VM (with usbip+ssh baked in) that open_usb_drive boots to mount drives. It's provisioned once and kept so repeat opens are fast; deleting it frees the disk (~280 MB) and forces a one-time re-provision (re-download + install) on the next open_usb_drive. Closes any live USB-drive VM first. Idempotent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
         ) { _ -> deleteUsbAppliance() },
     )

@@ -29,23 +29,10 @@ internal class SshKeyToolProvider(
 
         "import_ssh_key" to ToolHandler(
             description = "Import an OpenSSH / PEM / PKCS#8 / PuTTY PPK private key into the Haven key store. Pass `privateKey` (the text body, e.g. starting with `-----BEGIN OPENSSH PRIVATE KEY-----`), `label` (user-facing name), and optional `passphrase` (only if the key is encrypted). Returns the new key id, keyType, publicKeyOpenSsh (suitable for an `authorized_keys` line), and fingerprintSha256.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("privateKey", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Private key body in OpenSSH / PEM / PKCS#8 / PuTTY format. Pass the file's text contents verbatim, including BEGIN/END lines.")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "User-facing label shown on the Keys screen and in profile pickers.")
-                    })
-                    put("passphrase", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Only required if the private key is encrypted at rest. Stored only briefly to decrypt the key for parsing; the saved entity keeps the original (still-encrypted) bytes.")
-                    })
-                })
-                put("required", JSONArray().put("privateKey").put("label"))
+            inputSchema = objectSchema {
+                string("privateKey", "Private key body in OpenSSH / PEM / PKCS#8 / PuTTY format. Pass the file's text contents verbatim, including BEGIN/END lines.", required = true)
+                string("label", "User-facing label shown on the Keys screen and in profile pickers.", required = true)
+                string("passphrase", "Optional. Only required if the private key is encrypted at rest. Stored only briefly to decrypt the key for parsing; the saved entity keeps the original (still-encrypted) bytes.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -56,15 +43,8 @@ internal class SshKeyToolProvider(
 
         "delete_ssh_key" to ToolHandler(
             description = "Delete a saved SSH key by id. Profiles that referenced it via sshKeyId will fall through to password auth (or fail) on next connect — no cascade rewrite. Irreversible: the encrypted private key bytes are removed.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sshKeyId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "SSH key id from list_ssh_keys.")
-                    })
-                })
-                put("required", JSONArray().put("sshKeyId"))
+            inputSchema = objectSchema {
+                string("sshKeyId", "SSH key id from list_ssh_keys.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -80,20 +60,10 @@ internal class SshKeyToolProvider(
                 "`enabledForAuth` (bool) — whether the key takes part in 'any saved key' auto-auth (off = only used when a profile pins it); " +
                 "`verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering. " +
                 "Returns the key's resulting enabledForAuth and verifyRequired. Biometric-protected SK keys can't have verifyRequired changed over MCP (no prompt available).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("keyId", JSONObject().apply {
-                        put("type", "string"); put("description", "SSH key id from list_ssh_keys.")
-                    })
-                    put("enabledForAuth", JSONObject().apply {
-                        put("type", "boolean"); put("description", "Include this key in 'any saved key' auto-auth.")
-                    })
-                    put("verifyRequired", JSONObject().apply {
-                        put("type", "boolean"); put("description", "FIDO2/SK only: require the key's PIN at every sign-in.")
-                    })
-                })
-                put("required", JSONArray().put("keyId"))
+            inputSchema = objectSchema {
+                string("keyId", "SSH key id from list_ssh_keys.", required = true)
+                boolean("enabledForAuth", "Include this key in 'any saved key' auto-auth.")
+                boolean("verifyRequired", "FIDO2/SK only: require the key's PIN at every sign-in.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
         ) { args -> setSshKeyOption(args) },

@@ -40,10 +40,7 @@ internal class DesktopToolProvider(
 
         "list_guest_apps" to ToolHandler(
             description = "List the GUI applications installed in the active proot guest, discovered from its `.desktop` files (the same source an xfce4 application menu reads). Use this to find an app to launch with `present_app` without knowing its exact command. Returns { count, iconsResolved, apps:[{ name, exec, hasIcon, categories }] } sorted by name; `exec` is the runnable guest command (field codes stripped) you pass straight to present_app's `command`. `hasIcon` indicates whether a decodable icon was resolved (icons themselves stay on-device for the launcher UI). Skips NoDisplay/Terminal/non-application entries.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { listGuestApps() },
 
@@ -55,19 +52,9 @@ internal class DesktopToolProvider(
 
         "install_desktop" to ToolHandler(
             description = "Install a desktop environment on the active distro. Calls ProotManager.setupDesktop which downloads packages, configures VNC, and writes the launcher. Poll `inspect_proot.desktopSetupState` for progress. Failures are attributed to a DePhase (Packages / VncConfig / Marker) in both the state and the install log.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id (e.g. \"xfce4\", \"openbox\", \"labwc-native\").")
-                    })
-                    put("vncPassword", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "VNC password. Defaults to empty (SecurityTypes None).")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id (e.g. \"xfce4\", \"openbox\", \"labwc-native\").", required = true)
+                string("vncPassword", "VNC password. Defaults to empty (SecurityTypes None).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -88,15 +75,8 @@ internal class DesktopToolProvider(
 
         "uninstall_desktop" to ToolHandler(
             description = "Remove a desktop environment from the active distro. Stops it first if running. Calls ProotManager.uninstallDesktop.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id to uninstall.")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id to uninstall.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -109,15 +89,8 @@ internal class DesktopToolProvider(
 
         "start_desktop" to ToolHandler(
             description = "Start an installed desktop environment on the active distro. Calls DesktopManager.startDesktop; the launch is asynchronous. Returns the allocated display + vncPort so callers can connect a VNC client. Poll `inspect_proot.desktopEnvironments[].running` (or list_desktop_environments) to confirm RUNNING state. NestedWayland DEs (Sway, Hyprland, niri) bring up a wlroots/smithay compositor on the headless backend inside the rootfs and expose it via wayvnc on the returned port; X11Vnc DEs spawn Xvnc + the desktop; NativeCompositor runs the JNI labwc bridge.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id to start.")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id to start.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -130,15 +103,8 @@ internal class DesktopToolProvider(
 
         "stop_desktop" to ToolHandler(
             description = "Stop a running desktop environment. Tears down the compositor / Xvnc process tree and releases the display number.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id to stop.")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id to stop.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -150,33 +116,17 @@ internal class DesktopToolProvider(
 
         "read_desktop_log" to ToolHandler(
             description = "Read a running (or just-failed) desktop's RUNTIME logs — distinct from inspect_proot, which only covers install state. For nested-Wayland DEs (Sway / Hyprland / niri) returns the compositor's own stdout/stderr (compositor.log: the wlr/[ERROR] lines, output-enable, buffer-allocation failures) plus Haven's captured launch-process output (the `[haven]` progress markers + wayvnc lines). This is the diagnostic for grey-screen / no-frames / compositor-refuses-to-start issues — the data that otherwise requires opening a proot shell. Pass deId to target one DE; omit for all running desktops.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id (e.g. \"sway\"). Omit for all running desktops.")
-                    })
-                    put("maxChars", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Cap compositor.log to its last N chars. Default 4000.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id (e.g. \"sway\"). Omit for all running desktops.")
+                integer("maxChars", "Cap compositor.log to its last N chars. Default 4000.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readDesktopLog(args) },
 
         "list_desktop_windows" to ToolHandler(
             description = "Enumerate the visible top-level windows on a running desktop (deId), so an agent can target a specific application window (e.g. KiCad's schematic editor vs. PCB editor) before capturing it. Returns { deId, count, windows:[{id,title,x,y,width,height}] }. Works on X11/VNC desktops (via xdotool) and Sway nested-Wayland desktops (via swaymsg get_tree); other nested-Wayland compositors (Hyprland/niri/cage) aren't enumerable yet — use capture_desktop for a whole-output screenshot there. Installs the X11 capture toolset (xdotool + ImageMagick) on first use.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -186,27 +136,11 @@ internal class DesktopToolProvider(
 
         "capture_desktop" to ToolHandler(
             description = "Capture a screenshot of a running desktop (deId) and return it INLINE as an image the agent can see directly — no second port or file download. Works for both X11/VNC desktops (via ImageMagick `import`) and nested-Wayland desktops — Sway / Hyprland / niri / cage (via `grim`, the wlroots screenshooter; auto-installed on first use). Whole screen by default; a single window via windowId (from list_desktop_windows) is X11/VNC only — nested-Wayland captures the whole output. The image is downscaled to maxWidth and JPEG-encoded by default to stay cheap over the MCP tunnel. Captures inside the guest, so it works even when the user isn't on the VNC tab. Returns the image plus { deId, width, height, format, source, windowId?, windowTitle? }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.")
-                    })
-                    put("windowId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional X11 window id from list_desktop_windows. Captures just that window (cropped to its geometry). Omit for the whole screen.")
-                    })
-                    put("maxWidth", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Downscale so the image is at most this many pixels wide. Default 1024 (clamped 160–4096).")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.", required = true)
+                string("windowId", "Optional X11 window id from list_desktop_windows. Captures just that window (cropped to its geometry). Omit for the whole screen.")
+                integer("maxWidth", "Downscale so the image is at most this many pixels wide. Default 1024 (clamped 160–4096).")
+                string("format", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -218,22 +152,10 @@ internal class DesktopToolProvider(
 
         "capture_desktop_tab" to ToolHandler(
             description = "Capture what a remote-desktop VIEWER tab (RDP, VNC, or SPICE) is actually rendering, INLINE as an image — the framebuffer the user sees, with the server cursor composited on top at the tracked pointer position. This is distinct from capture_desktop, which screenshots an in-guest X11/VNC desktop; this one captures the RDP/VNC/SPICE client viewer (e.g. to verify colours and the cursor against a remote Windows/Linux server). Pass profileId to pick a tab (from list_desktop_sessions); omit it when exactly one desktop tab is open. Returns the image plus { profileId, protocol, width, height, hasCursor, cursorWidth?, cursorHeight?, hotspotX?, hotspotY?, pointerX?, pointerY?, format }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Profile id of the desktop tab (from list_desktop_sessions). Omit when exactly one tab is open.")
-                    })
-                    put("maxWidth", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Downscale so the image is at most this many pixels wide. Default 1280 (clamped 160–4096).")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("profileId", "Profile id of the desktop tab (from list_desktop_sessions). Omit when exactly one tab is open.")
+                integer("maxWidth", "Downscale so the image is at most this many pixels wide. Default 1280 (clamped 160–4096).")
+                string("format", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -245,15 +167,11 @@ internal class DesktopToolProvider(
 
         "tap_desktop_tab" to ToolHandler(
             description = "Click a point on a remote-desktop VIEWER tab (RDP/VNC/SPICE) — inject a mouse click into the remote server. Coordinates are in the REMOTE framebuffer's pixel space (the same space capture_desktop_tab reports: 0..width, 0..height), NOT Haven's own UI (that's tap_haven_ui). Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one desktop tab is open. Buttons follow X11: 1=left (default), 2=middle, 3=right. Keyboard typing is not yet supported (the session abstraction has no key verb). Returns { profileId, protocol, x, y, button }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id of the desktop tab (from list_desktop_sessions). Omit when exactly one is open.") })
-                    put("x", JSONObject().apply { put("type", "integer"); put("description", "Remote framebuffer X (0..width from capture_desktop_tab).") })
-                    put("y", JSONObject().apply { put("type", "integer"); put("description", "Remote framebuffer Y (0..height from capture_desktop_tab).") })
-                    put("button", JSONObject().apply { put("type", "integer"); put("description", "X11 button: 1=left (default), 2=middle, 3=right.") })
-                })
-                put("required", JSONArray().put("x").put("y"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id of the desktop tab (from list_desktop_sessions). Omit when exactly one is open.")
+                integer("x", "Remote framebuffer X (0..width from capture_desktop_tab).", required = true)
+                integer("y", "Remote framebuffer Y (0..height from capture_desktop_tab).", required = true)
+                integer("button", "X11 button: 1=left (default), 2=middle, 3=right.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -265,13 +183,9 @@ internal class DesktopToolProvider(
 
         "scroll_desktop_tab" to ToolHandler(
             description = "Scroll a remote-desktop VIEWER tab (RDP/VNC/SPICE) by injecting mouse-wheel notches into the remote server. deltaY > 0 scrolls down, < 0 scrolls up; magnitude is the number of notches. Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one is open. Returns { profileId, protocol, deltaY }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id (from list_desktop_sessions). Omit when exactly one is open.") })
-                    put("deltaY", JSONObject().apply { put("type", "integer"); put("description", "Wheel notches: >0 scrolls down, <0 scrolls up.") })
-                })
-                put("required", JSONArray().put("deltaY"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id (from list_desktop_sessions). Omit when exactly one is open.")
+                integer("deltaY", "Wheel notches: >0 scrolls down, <0 scrolls up.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -283,13 +197,9 @@ internal class DesktopToolProvider(
 
         "send_desktop_clipboard" to ToolHandler(
             description = "Set the clipboard on a remote-desktop VIEWER tab (RDP/VNC) to the given text, so it can be pasted inside the remote server (Ctrl+V / right-click paste). This is the closest substitute for typing while keyboard injection is unsupported. Pass profileId to pick a tab (from list_desktop_sessions); omit when exactly one is open. Returns { profileId, protocol, chars }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id (from list_desktop_sessions). Omit when exactly one is open.") })
-                    put("text", JSONObject().apply { put("type", "string"); put("description", "Text to place on the remote clipboard.") })
-                })
-                put("required", JSONArray().put("text"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id (from list_desktop_sessions). Omit when exactly one is open.")
+                string("text", "Text to place on the remote clipboard.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -301,27 +211,11 @@ internal class DesktopToolProvider(
 
         "launch_app_in_desktop" to ToolHandler(
             description = "Launch a GUI application into a RUNNING desktop (deId). X11/VNC desktops get DISPLAY/XAUTHORITY; nested-Wayland desktops (Sway/Hyprland/niri/cage) get XDG_RUNTIME_DIR/WAYLAND_DISPLAY. The software-GL fallback (LIBGL_ALWAYS_SOFTWARE=1, GALLIUM_DRIVER=llvmpipe) is exported either way, so GPU-less GL apps like KiCad/eeschema don't crash their canvas. Optionally waits for the app's window to appear and returns its windowId — pass that to capture_desktop to screenshot just that window (window-wait/windowId need enumeration: X11 and Sway; on other nested-Wayland compositors the app still launches but no windowId is returned). The app keeps running after this returns. For looking at saved design FILES prefer view_file (headless, no desktop needed); use this when you need the live interactive app.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.")
-                    })
-                    put("command", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Shell command to launch, e.g. 'eeschema /root/proj/board.kicad_sch'.")
-                    })
-                    put("waitForWindowTitle", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "If set, poll until a window whose title contains this substring (case-insensitive) appears; otherwise return the first new window seen.")
-                    })
-                    put("timeoutMs", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Max ms to wait for the window. Default 15000, clamped 0..60000. 0 = launch and return without waiting.")
-                    })
-                })
-                put("required", JSONArray().put("deId").put("command"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id (e.g. \"xfce4\") of a RUNNING X11/VNC desktop.", required = true)
+                string("command", "Shell command to launch, e.g. 'eeschema /root/proj/board.kicad_sch'.", required = true)
+                string("waitForWindowTitle", "If set, poll until a window whose title contains this substring (case-insensitive) appears; otherwise return the first new window seen.")
+                integer("timeoutMs", "Max ms to wait for the window. Default 15000, clamped 0..60000. 0 = launch and return without waiting.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Launch '${args.optString("command")}' on desktop '${args.optString("deId")}'" },
@@ -329,19 +223,9 @@ internal class DesktopToolProvider(
 
         "open_desktop_terminal" to ToolHandler(
             description = "Open an interactive local PRoot shell whose environment JOINS a RUNNING desktop (deId) — exports DISPLAY (X11/VNC) or WAYLAND_DISPLAY + XDG_RUNTIME_DIR (nested-Wayland / native labwc) — so you can drive the desktop's apps from the command line (e.g. launch/inspect GUI programs in the same session a user is viewing over VNC). Returns a sessionId usable with send_terminal_input / read_terminal_scrollback, plus the resolved display/waylandDisplay/xdgRuntimeDir. Always a fresh session (a reused plain shell would lack the display env). The desktop must already be RUNNING (start_desktop). Unlike launch_app_in_desktop (fire-and-forget single app), this gives you an interactive shell.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id of a RUNNING desktop (e.g. \"openbox\", \"xfce4\", \"sway\").")
-                    })
-                    put("plain", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Skip the user's sessionManager preference and exec a bare login shell. Default false.")
-                    })
-                })
-                put("required", JSONArray().put("deId"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id of a RUNNING desktop (e.g. \"openbox\", \"xfce4\", \"sway\").", required = true)
+                boolean("plain", "Skip the user's sessionManager preference and exec a bare login shell. Default false.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> openDesktopTerminal(args) },

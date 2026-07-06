@@ -280,15 +280,8 @@ internal class McpTools(
 
         "unpair_mcp_client" to ToolHandler(
             description = "Remove a paired MCP client from Haven's allowlist. It must be approved again via a fresh pairing prompt the next time it connects, and any persistent auto-approval for it is revoked. Use list_paired_clients for exact names. Note: this gates *new* connections — a client with an already-established session may keep working until Haven restarts. The pairing allowlist is the trust boundary, so there is intentionally no MCP tool to *add* a client (that only happens through the on-device pairing prompt) or to grant a client auto-approval (that's UI-only). Gated by consent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("name", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Exact clientInfo.name to un-pair, as shown by list_paired_clients.")
-                    })
-                })
-                put("required", JSONArray().put("name"))
+            inputSchema = objectSchema {
+                string("name", "Exact clientInfo.name to un-pair, as shown by list_paired_clients.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Un-pair MCP client '${args.optString("name", "?")}' from Haven?" },
@@ -327,19 +320,9 @@ internal class McpTools(
 
         "list_directory" to ToolHandler(
             description = "List entries at a path on any connected backend (local, SSH/SFTP, SMB, rclone). Resolves the right driver from profileId — pass the literal string 'local' for the device filesystem, otherwise a profile ID from list_connections. Returns name, path, isDir, size, modTime, permissions, and mimeType for each entry. Replaces list_sftp_directory and list_rclone_directory; those still work as deprecated aliases.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID, or 'local' for the device filesystem.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Directory path to list. Default '/' (POSIX backends), '' (rclone root), '/' for local synthetic-roots view.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID, or 'local' for the device filesystem.", required = true)
+                string("path", "Directory path to list. Default '/' (POSIX backends), '' (rclone root), '/' for local synthetic-roots view.")
             },
         ) { args -> listDirectory(args) },
 
@@ -353,16 +336,12 @@ internal class McpTools(
 
         "queue_terminal_input" to ToolHandler(
             description = "Power-user: queue text to be typed into any connected SSH session at the next matching prompt. Haven polls the session's stdout, matches `promptPattern` against the tail (ANSI escapes stripped, regex MULTILINE), then types `text + submitKey` via the session's tty when the pattern appears. Use cases include responding to interactive prompts in install scripts (`Continue? [y/N]` → `y`, or `Path:` → `/usr/local`), driving REPLs (Python, psql, Claude Code, etc.), and chaining steps where the agent waits for one prompt then types into the next. Defaults are tuned for the common \"drive an interactive shell or REPL\" case; supply explicit `promptPattern` / `submitKey` / `sessionId` when targeting something specific. Returns immediately with a queueId; delivery happens out-of-turn whenever the prompt appears (or the queue times out). Caveat: within one SSH session, only the *foreground* tmux pane receives the typed text — for multi-pane setups, pass `sessionId` to the right session and ensure the target pane is foreground. Gated by Settings → Agent endpoint → \"Allow agents to queue terminal input\" *and* per-call consent (with an \"Allow for N min\" option for collaborative windows).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("text", JSONObject().apply { put("type", "string"); put("description", "Text to type. `submitKey` is appended automatically.") })
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "SSH session id from list_sessions. Optional — defaults to the SSH session carrying the MCP reverse tunnel on port 8730 (which, in the agent-drives-its-own-conversation case, is the session running the agent's REPL). For unrelated sessions, pass this explicitly.") })
-                    put("promptPattern", JSONObject().apply { put("type", "string"); put("description", "Regex matched against the tail of the SSH scrollback to trigger delivery. Default `[\\\$#%>❯]\\s*\$` matches the trailing prompt glyph of common interactive shells (bash `\$`, root `#`, csh `%`, traditional `>`, fish/Claude Code/starship `❯`) at end-of-line. For specific programs, supply a pattern that matches their input prompt — e.g. `\\[y/N\\]\\s*\$` or `Password:\\s*\$` or `(?:postgres|mydb)=#\\s*\$`. ANSI escapes are stripped before matching; regex is MULTILINE.") })
-                    put("submitKey", JSONObject().apply { put("type", "string"); put("description", "Key bytes sent after the text. Default `\\r` — what TTYs in cooked mode translate to NL, and what programs in raw mode (Claude Code, vim, less, fzf, readline-based shells) read as Enter. Use `\\n` for line-buffered programs reading stdin directly without a tty. Use `\"\"` (empty) to leave the text in the input buffer without submitting (e.g. pre-fill a prompt the user will edit).") })
-                    put("timeoutSeconds", JSONObject().apply { put("type", "integer"); put("description", "Give up if the prompt hasn't appeared in this many seconds. Default 60.") })
-                })
-                put("required", JSONArray().put("text"))
+            inputSchema = objectSchema {
+                string("text", "Text to type. `submitKey` is appended automatically.", required = true)
+                string("sessionId", "SSH session id from list_sessions. Optional — defaults to the SSH session carrying the MCP reverse tunnel on port 8730 (which, in the agent-drives-its-own-conversation case, is the session running the agent's REPL). For unrelated sessions, pass this explicitly.")
+                string("promptPattern", "Regex matched against the tail of the SSH scrollback to trigger delivery. Default `[\\\$#%>❯]\\s*\$` matches the trailing prompt glyph of common interactive shells (bash `\$`, root `#`, csh `%`, traditional `>`, fish/Claude Code/starship `❯`) at end-of-line. For specific programs, supply a pattern that matches their input prompt — e.g. `\\[y/N\\]\\s*\$` or `Password:\\s*\$` or `(?:postgres|mydb)=#\\s*\$`. ANSI escapes are stripped before matching; regex is MULTILINE.")
+                string("submitKey", "Key bytes sent after the text. Default `\\r` — what TTYs in cooked mode translate to NL, and what programs in raw mode (Claude Code, vim, less, fzf, readline-based shells) read as Enter. Use `\\n` for line-buffered programs reading stdin directly without a tty. Use `\"\"` (empty) to leave the text in the input buffer without submitting (e.g. pre-fill a prompt the user will edit).")
+                integer("timeoutSeconds", "Give up if the prompt hasn't appeared in this many seconds. Default 60.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             capability = AgentCapability.TERMINAL_INPUT_QUEUE,
@@ -379,15 +358,11 @@ internal class McpTools(
         // place. Drop after the next final release. (#161)
         "queue_self_message" to ToolHandler(
             description = "DEPRECATED: alias for `queue_terminal_input` kept for one release. Use queue_terminal_input — same arguments, same behaviour, plus a `submitKey` parameter you didn't have here.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("text", JSONObject().apply { put("type", "string") })
-                    put("sessionId", JSONObject().apply { put("type", "string") })
-                    put("promptPattern", JSONObject().apply { put("type", "string") })
-                    put("timeoutSeconds", JSONObject().apply { put("type", "integer") })
-                })
-                put("required", JSONArray().put("text"))
+            inputSchema = objectSchema {
+                string("text", required = true)
+                string("sessionId")
+                string("promptPattern")
+                integer("timeoutSeconds")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             capability = AgentCapability.TERMINAL_INPUT_QUEUE,
@@ -400,55 +375,25 @@ internal class McpTools(
 
         "list_sftp_directory" to ToolHandler(
             description = "DEPRECATED: prefer list_directory(profileId=..., path=...). List files at a path on a connected SFTP profile. Requires an already-connected SSH/SFTP session for the profile.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "ID of the connected SSH/SFTP profile.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute directory path to list. Defaults to '.'")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "ID of the connected SSH/SFTP profile.", required = true)
+                string("path", "Absolute directory path to list. Defaults to '.'")
             },
         ) { args -> listSftpDirectory(args) },
 
         "stream_sftp_file" to ToolHandler(
             description = "Start an HLS stream for an SFTP file and return the playlist URL. Reads via a loopback HTTP bridge so no bulk download is needed. Requires a connected SSH/SFTP session. Stops any prior HLS stream.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "ID of the connected SSH/SFTP profile.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path of the media file on the SFTP server.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "ID of the connected SSH/SFTP profile.", required = true)
+                string("path", "Absolute path of the media file on the SFTP server.", required = true)
             },
         ) { args -> streamSftpFile(args) },
 
         "serve_file" to ToolHandler(
             description = "Publish a single file from any connected backend (local, SFTP, SMB, rclone) as a short-lived loopback HTTP URL the caller can curl to its own filesystem. Returns { url, size, mimeType }. Bytes are streamed over HTTP rather than returned inline through JSON-RPC. Gated by Settings → Agent endpoint → \"Allow agents to read file contents\" and confirmed per-call by a consent prompt.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID, or 'local' for the device filesystem.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path of the file on the chosen backend.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID, or 'local' for the device filesystem.", required = true)
+                string("path", "Absolute path of the file on the chosen backend.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             capability = AgentCapability.FILE_READ,
@@ -466,53 +411,22 @@ internal class McpTools(
 
         "play_file" to ToolHandler(
             description = "Open a media URL in the system player (VLC, MX Player, Chrome, etc.) via Android's ACTION_VIEW intent. Typically the playerUrl/playlistUrl returned by stream_sftp_file, or any http/https/content URL the agent already knows. The user's preferred app picker (or default app) decides what handles it — Haven only kicks off the intent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("url", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "URL or content URI to open. http://, https://, file:// (rare; prefer FileProvider URIs) and content:// are accepted.")
-                    })
-                    put("mimeType", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional MIME hint, e.g. 'video/mp4', 'application/vnd.apple.mpegurl' for HLS. Auto-detected from URL extension when omitted.")
-                    })
-                })
-                put("required", JSONArray().put("url"))
+            inputSchema = objectSchema {
+                string("url", "URL or content URI to open. http://, https://, file:// (rare; prefer FileProvider URIs) and content:// are accepted.", required = true)
+                string("mimeType", "Optional MIME hint, e.g. 'video/mp4', 'application/vnd.apple.mpegurl' for HLS. Auto-detected from URL extension when omitted.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> playFile(args) },
 
         "present_media" to ToolHandler(
             description = "Show the user an image — or play a short sound — inline in Haven. A bottom sheet floats over whatever screen the user is on, rendering the image (or an audio card with a play button) plus an optional caption. The \"here, look at / listen to this\" channel: use it when you have something visual or audible you want the user to perceive directly. Reference the media by a file Haven can reach — `profileId` (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone profile id) + `path` — or by a ready `url` (e.g. a serve_file loopback URL). Haven streams the file into a local handle; the bytes never pass through the agent context. `mimeType` is inferred from the file (extension, else content sniff) when omitted; set it for audio. Only image/* and audio/* are supported. Returns immediately ({ presented }) as soon as the request is accepted — Haven fetches/stages the file and shows the sheet in the background, so a slow transfer can't turn a delivered image into a timeout; a staging failure is logged (not returned). The user dismisses the sheet at their leisure.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Backend holding the file: \"local\" for the device / proot-guest cache (default), or an SSH/SMB/rclone profile id. Used with `path`.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path of the image/audio file on that backend.")
-                    })
-                    put("url", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Alternative to profileId+path: an http(s) URL to fetch the media from (e.g. a serve_file loopback URL).")
-                    })
-                    put("mimeType", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional MIME, e.g. 'image/png' or 'audio/mpeg'. Inferred from the file otherwise; set it for audio.")
-                    })
-                    put("caption", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional one-line caption shown above the media.")
-                    })
-                    put("autoPlay", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Audio only: start playback as soon as the sheet appears. Defaults to false.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("profileId", "Backend holding the file: \"local\" for the device / proot-guest cache (default), or an SSH/SMB/rclone profile id. Used with `path`.")
+                string("path", "Absolute path of the image/audio file on that backend.")
+                string("url", "Alternative to profileId+path: an http(s) URL to fetch the media from (e.g. a serve_file loopback URL).")
+                string("mimeType", "Optional MIME, e.g. 'image/png' or 'audio/mpeg'. Inferred from the file otherwise; set it for audio.")
+                string("caption", "Optional one-line caption shown above the media.")
+                boolean("autoPlay", "Audio only: start playback as soon as the sheet appears. Defaults to false.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> presentMedia(args) },
@@ -522,61 +436,24 @@ internal class McpTools(
     private fun toolsPart2(): Map<String, ToolHandler> = linkedMapOf(
         "present_web" to ToolHandler(
             description = "Show the user HTML, an SVG, or a PDF inline in an in-app WebView — the interactive rung between present_media (a static image) and present_app (a full live VNC app). Pass a `url` (e.g. a serve_file loopback URL or any web page), or reference a file with `profileId` (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone profile id) + `path`, which Haven serves over a loopback URL. A PDF is paged; HTML/SVG render live (pinch-zoom + pan). Floats in a bottom sheet over whatever screen the user is on; bytes never pass through the agent context. Returns immediately: a `url` acks with { presented, id, url }; a file reference acks with { presented } and is staged/shown in the background (a staging failure is logged, not returned). The user dismisses it at their leisure.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("url", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "An http(s) URL to load (e.g. a serve_file loopback URL or any web page). Alternative to profileId+path.")
-                    })
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Backend holding the file: \"local\" (device / proot-guest cache, default) or an SSH/SMB/rclone profile id. Used with `path`.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path of the .html/.svg/.pdf file on that backend.")
-                    })
-                    put("caption", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional one-line caption shown above the view.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("url", "An http(s) URL to load (e.g. a serve_file loopback URL or any web page). Alternative to profileId+path.")
+                string("profileId", "Backend holding the file: \"local\" (device / proot-guest cache, default) or an SSH/SMB/rclone profile id. Used with `path`.")
+                string("path", "Absolute path of the .html/.svg/.pdf file on that backend.")
+                string("caption", "Optional one-line caption shown above the view.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> presentWeb(args) },
 
         "present_app" to ToolHandler(
             description = "Show the user a LIVE, interactive single application window inline in Haven. Launches `command` as a Wayland app under a `cage` kiosk inside the active proot guest, exposes it over VNC, and embeds the live view in a bottom sheet over whatever screen the user is on (pinch-zoom, pan, drag and fullscreen all work; the user can interact). Use this to collaborate in a real GUI app — an image viewer, a media/audio player, a PDF/whiteboard tool — rather than pushing a static image with present_media. `command` is the guest shell command cage runs (e.g. 'imv /root/board.png', 'mpv /root/clip.mp4'); the app and any Wayland deps must already be installed in the guest. Returns { presented, sessionId, vncPort, state } once the window is up. Multiple app windows can run at once: each call launches another cage; the newest is shown full-overlay and any previous one is backgrounded to a draggable edge icon (tap to bring it back). The user backgrounds a window by tapping outside it (keeps it running) and tears it down with the Dismiss button or the edge-icon close. If the window comes up grey/blank or vanishes, read the app's own stdout/stderr with read_app_window_log (works even after it crashed) instead of wrapping the command in a logging script.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("command", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Guest shell command for the GUI app cage runs, e.g. 'imv /root/x.png'.")
-                    })
-                    put("caption", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional one-line caption shown above the window.")
-                    })
-                    put("fullscreen", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Open the window filling the whole screen (immersive) instead of the bottom sheet. Default false.")
-                    })
-                    put("resolution", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Cage display resolution: 'auto' (portrait, fills the screen — default) or a 'WxH' token like '1280x720'. Lower resolution = bigger fonts.")
-                    })
-                    put("scale", JSONObject().apply {
-                        put("type", "number")
-                        put("description", "Output scale factor (wlroots HiDPI; foot/GTK honour it). 1.0 default; 1.5/2 enlarge fonts + UI.")
-                    })
-                    put("runAsRoot", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Run the app as root via fakeroot-tcp (the cage compositor itself runs non-root, so system tools like package managers go read-only otherwise). Installs fakeroot if missing. APT distros only today. Default false.")
-                    })
-                })
-                put("required", JSONArray().put("command"))
+            inputSchema = objectSchema {
+                string("command", "Guest shell command for the GUI app cage runs, e.g. 'imv /root/x.png'.", required = true)
+                string("caption", "Optional one-line caption shown above the window.")
+                boolean("fullscreen", "Open the window filling the whole screen (immersive) instead of the bottom sheet. Default false.")
+                string("resolution", "Cage display resolution: 'auto' (portrait, fills the screen — default) or a 'WxH' token like '1280x720'. Lower resolution = bigger fonts.")
+                number("scale", "Output scale factor (wlroots HiDPI; foot/GTK honour it). 1.0 default; 1.5/2 enlarge fonts + UI.")
+                boolean("runAsRoot", "Run the app as root via fakeroot-tcp (the cage compositor itself runs non-root, so system tools like package managers go read-only otherwise). Installs fakeroot if missing. APT distros only today. Default false.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -586,18 +463,9 @@ internal class McpTools(
 
         "read_app_window_log" to ToolHandler(
             description = "Read the captured output log of a present_app cage window. The cage redirects BOTH the sway compositor AND the GUI app it runs (stdout+stderr merged) into one log, so this is how the agent SEES a present_app app's own output — startup errors, GL/Mesa diagnostics, a crash trace — without wrapping the command in a logging script. Pass the sessionId returned by present_app for a live window; OMIT it to read the most-recent app-window log, which still works after the app crashed or exited (the session is gone but the log survives on disk). Returns { sessionId?, display, bytes, truncated, log }. For a GUI app that came up then died (a grey/blank or vanished window), this is the first thing to read.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "present_app sessionId for a live window. Omit to read the newest app-window log (survives a crashed/exited app).")
-                    })
-                    put("maxBytes", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Return at most the last N bytes of the log. Default 16384, clamped 256..262144.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("sessionId", "present_app sessionId for a live window. Omit to read the newest app-window log (survives a crashed/exited app).")
+                integer("maxBytes", "Return at most the last N bytes of the log. Default 16384, clamped 256..262144.")
             },
             consentLevel = ConsentLevel.NEVER,
             summarise = { _ -> "Read a present_app window's output log" },
@@ -606,181 +474,85 @@ internal class McpTools(
 
         "raise_notification" to ToolHandler(
             description = "Post a real Android system notification on Haven's behalf so the agent can drive notification-listener / wake / DND / silencer apps during F-Droid tester reviews without needing a second device. Always posts to the dedicated 'agent.test.notifications' channel (created on first use) so the user can mute agent notifications cleanly without affecting Haven's own connection / renewal notifications. Returns { posted, id, channel } — keep the id around if you want to dismiss or replace the notification later (a future tool). Notifications use Haven's app identity, so notification-listener apps see package=sh.haven.app. Requires the POST_NOTIFICATIONS runtime grant (declared in the manifest, granted by the user on first Haven launch); the call fails with a clear error if notifications have been disabled in system settings.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("title", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Notification title (mandatory). Shown on the lockscreen / shade row.")
-                    })
-                    put("body", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Notification body (mandatory). Expanded into a BigTextStyle so multi-line content stays readable.")
-                    })
-                    put("priority", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "One of 'min', 'low', 'default', 'high', 'max'. Maps to NotificationCompat.PRIORITY_*. Defaults to 'default'. Note: from Android 8 the channel's importance is what actually drives heads-up behaviour; priority only matters on pre-O devices and as a hint to ranking.")
-                    })
-                    put("ongoing", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, post as ongoing (non-dismissable) so the agent can test foreground-service-like notifications. Defaults to false (dismissable, auto-cancels on tap).")
-                    })
-                })
-                put("required", JSONArray().put("title").put("body"))
+            inputSchema = objectSchema {
+                string("title", "Notification title (mandatory). Shown on the lockscreen / shade row.", required = true)
+                string("body", "Notification body (mandatory). Expanded into a BigTextStyle so multi-line content stays readable.", required = true)
+                string("priority", "One of 'min', 'low', 'default', 'high', 'max'. Maps to NotificationCompat.PRIORITY_*. Defaults to 'default'. Note: from Android 8 the channel's importance is what actually drives heads-up behaviour; priority only matters on pre-O devices and as a hint to ranking.")
+                boolean("ongoing", "If true, post as ongoing (non-dismissable) so the agent can test foreground-service-like notifications. Defaults to false (dismissable, auto-cancels on tap).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> raiseNotification(args) },
 
         "open_convert_dialog_with_args" to ToolHandler(
             description = "Stage a conversion in the SFTP screen's convert dialog with the given container / codec defaults. Switches to the SFTP tab and opens the dialog; the user reviews and taps Convert to actually run ffmpeg. Tap-equivalent — the agent suggests, the user confirms. Use convert_file (EVERY_CALL consent) to skip the dialog and run the conversion directly.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID. Use list_connections to find IDs.")
-                    })
-                    put("sourcePath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path of the source file.")
-                    })
-                    put("container", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Pre-selected container, e.g. 'mp4', 'mkv', 'webm', 'mp3'. Optional — defaults to source extension.")
-                    })
-                    put("videoEncoder", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Pre-selected video codec, e.g. 'libx264', 'libx265', 'copy'. Optional — defaults to 'copy'.")
-                    })
-                    put("audioEncoder", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Pre-selected audio codec, e.g. 'aac', 'libopus', 'copy'. Optional — defaults to 'copy'.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("sourcePath"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID. Use list_connections to find IDs.", required = true)
+                string("sourcePath", "Absolute path of the source file.", required = true)
+                string("container", "Pre-selected container, e.g. 'mp4', 'mkv', 'webm', 'mp3'. Optional — defaults to source extension.")
+                string("videoEncoder", "Pre-selected video codec, e.g. 'libx264', 'libx265', 'copy'. Optional — defaults to 'copy'.")
+                string("audioEncoder", "Pre-selected audio codec, e.g. 'aac', 'libopus', 'copy'. Optional — defaults to 'copy'.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> openConvertDialogWithArgs(args) },
 
         "focus_terminal_session" to ToolHandler(
             description = "Switch to the Terminal tab and bring the session with this sessionId to the front. Tap-equivalent — same effect as the user tapping the Terminal tab and tapping the session header. Use list_sessions to discover live sessionIds; stale IDs drop silently without error.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Active session ID (from list_sessions). Must be a session attached to a Terminal tab.")
-                    })
-                })
-                put("required", JSONArray().put("sessionId"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Must be a session attached to a Terminal tab.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> focusTerminalSession(args) },
 
         "navigate_sftp_browser" to ToolHandler(
             description = "Switch to the Files tab and open the file browser at the given path on the given profile. Tap-equivalent — same effect as the user tapping into the SFTP screen and entering the path. The path is interpreted by whichever backend the profile resolves to (POSIX absolute for SSH/Local, share-relative for SMB, remote-relative for rclone).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID (or the literal string \"local\" for the device filesystem). Use list_connections to find IDs.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Directory path to open. Default '/' for SSH/Local, '' for rclone (treated as remote root).")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID (or the literal string \"local\" for the device filesystem). Use list_connections to find IDs.", required = true)
+                string("path", "Directory path to open. Default '/' for SSH/Local, '' for rclone (treated as remote root).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> navigateSftpBrowser(args) },
 
         "open_file_in_editor" to ToolHandler(
             description = "Open a text file in Haven's built-in editor (TextMate-syntax-highlighted, with Save). Routes to the SFTP/Files tab and loads the file from the given profile's backend (SSH, SMB, rclone, or the literal \"local\" for the device filesystem). The file is read on demand by the active backend; binary files render as garbled UTF-8 — use this for source code, config, logs, etc.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID (or the literal string \"local\" for the device filesystem). Use list_connections to find IDs.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the file to open. POSIX absolute for SSH/Local, share-relative for SMB, remote-relative for rclone.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID (or the literal string \"local\" for the device filesystem). Use list_connections to find IDs.", required = true)
+                string("path", "Absolute path to the file to open. POSIX absolute for SSH/Local, share-relative for SMB, remote-relative for rclone.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> openFileInEditor(args) },
 
         "read_terminal_scrollback" to ToolHandler(
             description = "Return the most recent bytes of raw SSH stdout for an active terminal session, exactly as the user sees them (ANSI escapes, OSC markers, control bytes preserved). Use list_sessions to discover sessionIds. The buffer is capped at 256 KiB per session and rolls older bytes off; the human terminal still keeps its own visual scrollback separately.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open.")
-                    })
-                    put("maxBytes", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Maximum bytes to return. Default 16384, hard-capped at 262144.")
-                    })
-                })
-                put("required", JSONArray())
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open.")
+                integer("maxBytes", "Maximum bytes to return. Default 16384, hard-capped at 262144.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readTerminalScrollback(args) },
 
         "read_terminal_snapshot" to ToolHandler(
             description = "Return a structured snapshot of an active terminal session: dimensions, cursor row/col, terminal title, scrollback line count + current scrollbackPosition, the remote-driven terminal modes (mouseMode / activeMouseMode 1000|1002|1003 / bracketPasteMode), an oscEvents object with the last-seen OSC 52 clipboard-set / OSC 7 cwd / OSC 8 hyperlink / OSC 9|777 notification, and the visible-screen lines as plain text (with `softWrapped` flag per line, and optional OSC 133 semantic segments). Use list_sessions to discover sessionIds. Distinct from read_terminal_scrollback, which returns raw bytes; this is the parsed view useful for cursor-aware tooling, prompt detection, and asserting OSC/mouse-mode round-trips.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open. Must have an attached terminal tab.")
-                    })
-                    put("includeSemanticSegments", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, include each line's OSC 133 prompt-marker segments (PROMPT / COMMAND_INPUT / COMMAND_OUTPUT / COMMAND_FINISHED / ANNOTATION). Default false.")
-                    })
-                    put("maxLines", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Maximum number of visible-screen lines to include from the top. Default returns all visible rows. Cursor and dimensions are always present regardless.")
-                    })
-                })
-                put("required", JSONArray())
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open. Must have an attached terminal tab.")
+                boolean("includeSemanticSegments", "If true, include each line's OSC 133 prompt-marker segments (PROMPT / COMMAND_INPUT / COMMAND_OUTPUT / COMMAND_FINISHED / ANNOTATION). Default false.")
+                integer("maxLines", "Maximum number of visible-screen lines to include from the top. Default returns all visible rows. Cursor and dimensions are always present regardless.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readTerminalSnapshot(args) },
 
         "get_selection" to ToolHandler(
             description = "Return the current text-selection state for an active terminal session: { active, mode (NONE/CHARACTER/WORD/LINE), range: { startRow, startCol, endRow, endCol } | null }. Reads termlib's SelectionController; valid only while the session has an attached terminal tab.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Active session ID with an attached terminal tab.")
-                    })
-                })
-                put("required", JSONArray().put("sessionId"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> getSelection(args) },
 
         "set_compose_mode" to ToolHandler(
             description = "Toggle or set termlib's local compose mode for a terminal session — the on-screen buffer used for CJK / accented / voice-friendly text entry. While compose mode is on, typed text (including IME-composed CJK candidates) buffers in an overlay at the cursor and the terminal hands the IME a composition-friendly InputConnection; the buffer commits to the shell on Enter, after which compose mode clears. Pass enabled=true/false to set explicitly, or omit enabled to toggle. Requires an attached terminal tab (errors for headless agent shells). Returns { sessionId, composeModeActive, composedText }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with an attached terminal tab.") })
-                    put("enabled", JSONObject().apply { put("type", "boolean"); put("description", "true = start compose mode, false = stop. Omit to toggle the current state.") })
-                })
-                put("required", JSONArray().put("sessionId"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
+                boolean("enabled", "true = start compose mode, false = stop. Omit to toggle the current state.")
             },
             // ONCE_PER_SESSION: only flips an in-memory IME input mode +
             // local compose buffer; nothing is sent to the remote until the
@@ -800,15 +572,8 @@ internal class McpTools(
 
         "get_preference" to ToolHandler(
             description = "Read a Haven user preference by key. Whitelisted keys: terminal_scrollback_rows, terminal_tap_to_position_cursor, terminal_font_size, terminal_color_scheme, terminal_auto_switch_scheme, terminal_light_color_scheme, terminal_dark_color_scheme, mouse_input_enabled, terminal_right_click, mcp_tunnel_endpoint_profile_id, mcp_wireguard_enabled, mcp_lan_bind_enabled, mcp_wireguard_tunnel_config_id, usb_guest_exposure_enabled, connection_logging_enabled, remap_low_ports (#300 proot launch toggle), share_storage_with_guest (#301 proot launch toggle), bind_android_system (#304 proot launch toggle). Returns { key, value } where value's type follows the preference's type (int / boolean / string). Colour-scheme values are TerminalColorScheme enum names.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("key", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Preference key (see whitelist in description).")
-                    })
-                })
-                put("required", JSONArray().put("key"))
+            inputSchema = objectSchema {
+                string("key", "Preference key (see whitelist in description).", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> getPreference(args) },
@@ -817,15 +582,8 @@ internal class McpTools(
 
         "disconnect_profile" to ToolHandler(
             description = "Disconnect every live session for a profile across all transports (SSH, Mosh, Eternal Terminal, RDP, VNC, SMB, Reticulum, local). Use list_connections to find profileIds.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "ID of the connection profile to disconnect.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "ID of the connection profile to disconnect.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Disconnect from \"${profileLabel(args.optString("profileId"))}\"?" },
@@ -833,17 +591,13 @@ internal class McpTools(
 
         "add_port_forward" to ToolHandler(
             description = "Save a port-forward rule on an SSH profile. If the profile is currently connected the rule is also activated immediately. Type LOCAL=`-L` (local→remote), REMOTE=`-R` (remote→local), DYNAMIC=`-D` (SOCKS5 proxy server). Returns the saved rule's id and (when activated) the actually-bound port; activated:false with an error means the bind failed on the live session (e.g. port held in TIME_WAIT by a just-closed connection) — the rule is still saved and applies on the next connect.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Owning profile ID.") })
-                    put("type", JSONObject().apply { put("type", "string"); put("description", "LOCAL | REMOTE | DYNAMIC.") })
-                    put("bindAddress", JSONObject().apply { put("type", "string"); put("description", "Bind address. Default 127.0.0.1.") })
-                    put("bindPort", JSONObject().apply { put("type", "integer"); put("description", "Bind port. 0 = OS picks (REMOTE only).") })
-                    put("targetHost", JSONObject().apply { put("type", "string"); put("description", "Target host (LOCAL/REMOTE only). Ignored for DYNAMIC.") })
-                    put("targetPort", JSONObject().apply { put("type", "integer"); put("description", "Target port (LOCAL/REMOTE only). Ignored for DYNAMIC.") })
-                })
-                put("required", JSONArray().put("profileId").put("type").put("bindPort"))
+            inputSchema = objectSchema {
+                string("profileId", "Owning profile ID.", required = true)
+                string("type", "LOCAL | REMOTE | DYNAMIC.", required = true)
+                string("bindAddress", "Bind address. Default 127.0.0.1.")
+                integer("bindPort", "Bind port. 0 = OS picks (REMOTE only).", required = true)
+                string("targetHost", "Target host (LOCAL/REMOTE only). Ignored for DYNAMIC.")
+                integer("targetPort", "Target port (LOCAL/REMOTE only). Ignored for DYNAMIC.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -858,12 +612,8 @@ internal class McpTools(
 
         "remove_port_forward" to ToolHandler(
             description = "Delete a port-forward rule by id, and deactivate it on the live session if the owning profile is currently connected.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("ruleId", JSONObject().apply { put("type", "string"); put("description", "ID of the rule to remove.") })
-                })
-                put("required", JSONArray().put("ruleId"))
+            inputSchema = objectSchema {
+                string("ruleId", "ID of the rule to remove.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Remove port-forward rule ${args.optString("ruleId").take(8)}…?" },
@@ -871,14 +621,10 @@ internal class McpTools(
 
         "upload_file" to ToolHandler(
             description = "Write a local file to a path on any connected backend (local, SSH, SMB, rclone). Source must live under Haven's app cache (context.cacheDir) — the agent has no other writable surface, so this constraint blocks reads of arbitrary device files via the upload destination. Currently uses small-file semantics (loads the source into memory); streaming variants ship in a later #126 stage. Replaces upload_file_to_sftp; that still works as a deprecated alias for the SSH streaming path.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Connection profile ID, or 'local' for the device filesystem.") })
-                    put("localPath", JSONObject().apply { put("type", "string"); put("description", "Absolute path to a file under context.cacheDir on the device.") })
-                    put("remotePath", JSONObject().apply { put("type", "string"); put("description", "Destination path on the target backend.") })
-                })
-                put("required", JSONArray().put("profileId").put("localPath").put("remotePath"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID, or 'local' for the device filesystem.", required = true)
+                string("localPath", "Absolute path to a file under context.cacheDir on the device.", required = true)
+                string("remotePath", "Destination path on the target backend.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -892,13 +638,9 @@ internal class McpTools(
 
         "delete_file" to ToolHandler(
             description = "Delete a file (not a directory) on any connected backend (local, SSH, SMB, rclone). Replaces delete_sftp_file; that still works as a deprecated alias.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Connection profile ID, or 'local' for the device filesystem.") })
-                    put("path", JSONObject().apply { put("type", "string"); put("description", "Path of the file to delete.") })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID, or 'local' for the device filesystem.", required = true)
+                string("path", "Path of the file to delete.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete ${args.optString("path")} on \"${profileLabel(args.optString("profileId"))}\"?" },
@@ -906,14 +648,10 @@ internal class McpTools(
 
         "upload_file_to_sftp" to ToolHandler(
             description = "DEPRECATED: prefer upload_file(profileId=..., localPath=..., remotePath=...). Upload a local file to a path on a connected SFTP profile. Source must be a path under Haven's app cache (context.cacheDir) — the agent has no other writable surface, so this constraint blocks reads of arbitrary files via the upload destination. Requires a connected SSH/SFTP session. Uses streaming SFTP put (no in-memory buffer); use this for files larger than ~50 MiB until upload_file gains streaming support.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Connected SSH/SFTP profile ID.") })
-                    put("localPath", JSONObject().apply { put("type", "string"); put("description", "Absolute path to a file under context.cacheDir on the device.") })
-                    put("remotePath", JSONObject().apply { put("type", "string"); put("description", "Absolute destination path on the SFTP server.") })
-                })
-                put("required", JSONArray().put("profileId").put("localPath").put("remotePath"))
+            inputSchema = objectSchema {
+                string("profileId", "Connected SSH/SFTP profile ID.", required = true)
+                string("localPath", "Absolute path to a file under context.cacheDir on the device.", required = true)
+                string("remotePath", "Absolute destination path on the SFTP server.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -927,13 +665,9 @@ internal class McpTools(
 
         "delete_sftp_file" to ToolHandler(
             description = "DEPRECATED: prefer delete_file(profileId=..., path=...). Delete a file (not directory) from a connected SFTP profile. Requires a connected SSH/SFTP session.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Connected SSH/SFTP profile ID.") })
-                    put("path", JSONObject().apply { put("type", "string"); put("description", "Absolute path of the file to delete.") })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connected SSH/SFTP profile ID.", required = true)
+                string("path", "Absolute path of the file to delete.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete ${args.optString("path")} on \"${profileLabel(args.optString("profileId"))}\"?" },
@@ -941,20 +675,13 @@ internal class McpTools(
 
         "send_terminal_input" to ToolHandler(
             description = "Send input to an active terminal session as if the user typed it. Provide `text` (UTF-8) and/or named `keys` — real control bytes (Enter/Esc/Ctrl-C/arrows) that `text` can't express (a \"\\r\" in text arrives as literal chars; a raw-mode REPL reads \"\\n\" as newline-insert, not submit). `text` is sent first, then `keys`, so a submit key lands after the body. Set `bracketedPaste` to wrap `text` in bracketed-paste markers so a raw-mode REPL (Claude Code, readline, vim) treats multi-line input as one paste instead of interleaved keystrokes that fight submit. Set `returnSnapshot` to get the resulting screen back without a follow-up read_terminal_snapshot. Hard cap 4096 bytes total.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open. Must have an attached terminal.") })
-                    put("text", JSONObject().apply { put("type", "string"); put("description", "UTF-8 text to send (before keys). To submit into a raw-mode REPL, prefer keys:[\"enter\"] over a trailing \\n.") })
-                    put("keys", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "Named keys sent after text, e.g. [\"enter\"], [\"ctrl-c\"], [\"up\",\"enter\"]. Supported: enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, ctrl-a/c/d/e/l/u/w/z.")
-                    })
-                    put("bracketedPaste", JSONObject().apply { put("type", "boolean"); put("description", "Wrap text in bracketed-paste markers (ESC[200~ … ESC[201~). Default false. Use for multi-line input into a raw-mode REPL so it isn't folded into submit.") })
-                    put("returnSnapshot", JSONObject().apply { put("type", "boolean"); put("description", "Return the terminal snapshot after sending, so you see the result without a follow-up read. Default false.") })
-                    put("snapshotDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Wait this long after sending before capturing the returnSnapshot, so the target has rendered the input. Default 0, max 5000. Only meaningful with returnSnapshot=true.") })
-                })
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session; required only when several are open. Must have an attached terminal.")
+                string("text", "UTF-8 text to send (before keys). To submit into a raw-mode REPL, prefer keys:[\"enter\"] over a trailing \\n.")
+                stringArray("keys", "Named keys sent after text, e.g. [\"enter\"], [\"ctrl-c\"], [\"up\",\"enter\"]. Supported: enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, ctrl-a/c/d/e/l/u/w/z.")
+                boolean("bracketedPaste", "Wrap text in bracketed-paste markers (ESC[200~ … ESC[201~). Default false. Use for multi-line input into a raw-mode REPL so it isn't folded into submit.")
+                boolean("returnSnapshot", "Return the terminal snapshot after sending, so you see the result without a follow-up read. Default false.")
+                integer("snapshotDelayMs", "Wait this long after sending before capturing the returnSnapshot, so the target has rendered the input. Default 0, max 5000. Only meaningful with returnSnapshot=true.")
             },
             // Once the user approves the agent typing into a session, per-call
             // re-approval is friction without added safety — the session is
@@ -972,15 +699,11 @@ internal class McpTools(
 
         "send_to_agent" to ToolHandler(
             description = "Deliver one message to another agent's REPL (or any raw-mode prompt) as a single submitted turn: bracketed-paste the text, settle, then Enter — and return the resulting screen (last ~50 lines by default, captured after a short render delay). A convenience wrapper over send_terminal_input tuned for agent↔agent / REPL conversation, so you don't hand-assemble the body-then-Enter sequence. Use list_sessions (chosenSessionName + isAgentRepl) to pick the target; pair with await_turn + read_last_turn for the full send → wait → read loop. Returns { sessionId, delivered, bytesSent, snapshot }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session.") })
-                    put("message", JSONObject().apply { put("type", "string"); put("description", "The message to deliver as one submitted prompt.") })
-                    put("maxLines", JSONObject().apply { put("type", "integer"); put("description", "Cap the returned snapshot to the last N lines (default 50). Keeps the ack small so a delivered message doesn't read back as a timeout behind a large scrollback over a tunnel.") })
-                    put("snapshotDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Wait this long after Enter before capturing the ack snapshot so it reflects the submitted turn. Default 500, max 5000.") })
-                })
-                put("required", JSONArray().put("message"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session.")
+                string("message", "The message to deliver as one submitted prompt.", required = true)
+                integer("maxLines", "Cap the returned snapshot to the last N lines (default 50). Keeps the ack small so a delivered message doesn't read back as a timeout behind a large scrollback over a tunnel.")
+                integer("snapshotDelayMs", "Wait this long after Enter before capturing the ack snapshot so it reflects the submitted turn. Default 500, max 5000.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -991,41 +714,29 @@ internal class McpTools(
 
         "await_turn" to ToolHandler(
             description = "Block until a terminal session is idle-at-prompt — the natural \"wait for the other agent / command to finish\" primitive for turn-based conversation (#226). Detection: OSC 133 shell-integration segments when present (idle = cursor on the newest prompt row); otherwise screen heuristics tuned for Claude Code's TUI (no busy spinner / \"esc to interrupt\", a prompt-looking line near the bottom, and the screen stable across polls). Idle must hold for settleMs before returning. Returns { sessionId, idle, method: \"osc133\"|\"heuristic\", waitedMs, timedOut }. idle=false + timedOut=true means the timeout elapsed first — the session may still be mid-turn. Full-screen TUIs that are neither shells nor agent REPLs (vim, htop) can read as idle once their screen stops changing; this is a turn heuristic, not a process-state probe.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session. Must have an attached terminal tab.") })
-                    put("timeoutMs", JSONObject().apply { put("type", "integer"); put("description", "Give up after this long. Default 60000, clamped to 1000–300000. Keep under your MCP client's request timeout.") })
-                    put("settleMs", JSONObject().apply { put("type", "integer"); put("description", "How long idle must hold continuously before returning. Default 1500, clamped to 0–30000.") })
-                })
-                put("required", JSONArray())
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session. Must have an attached terminal tab.")
+                integer("timeoutMs", "Give up after this long. Default 60000, clamped to 1000–300000. Keep under your MCP client's request timeout.")
+                integer("settleMs", "How long idle must hold continuously before returning. Default 1500, clamped to 0–30000.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> awaitTurn(args) },
 
         "read_last_turn" to ToolHandler(
             description = "Return the target session's latest completed turn as text — the receive half of agent↔agent conversation (#226). When the session is idle at an OSC 133-integrated shell prompt, returns the last command's output (semantic COMMAND_OUTPUT between the newest COMMAND_INPUT and COMMAND_FINISHED, scrollback included; source=\"osc133\"). Otherwise (Claude Code and other REPLs that don't emit shell-style 133) falls back to scraping the last ●/⏺-bulleted block above the input box from the visible screen (source=\"scrape\" — inherently heuristic; long replies that scrolled off-screen are truncated to what's visible). Returns { sessionId, text|null, source|null, truncated }. Call await_turn first so you read a finished turn, not a partial one.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session. Must have an attached terminal tab.") })
-                    put("maxChars", JSONObject().apply { put("type", "integer"); put("description", "Cap the returned text, keeping the TAIL (the end of a reply is usually the conclusion). Default 20000, clamped to 256–100000. Sets truncated=true when applied.") })
-                })
-                put("required", JSONArray())
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session. Must have an attached terminal tab.")
+                integer("maxChars", "Cap the returned text, keeping the TAIL (the end of a reply is usually the conclusion). Default 20000, clamped to 256–100000. Sets truncated=true when applied.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readLastTurn(args) },
 
         "feed_terminal_output" to ToolHandler(
             description = "Inject raw bytes into a terminal session's OUTPUT stream — as if they had arrived from the remote — running the exact pipeline the live data callback uses (OSC scan → mouse-mode scan → emulator). Distinct from send_terminal_input, which sends to the PTY input as if typed. Use this to deterministically exercise output-side parsing without a cooperating remote: e.g. feed an OSC 52 sequence to test the clipboard round-trip, a DECSET 1000/1002/1003 to flip mouseMode, an OSC 8 hyperlink, or a partial escape split across two calls (the OSC scanner keeps state between calls). Provide exactly one of `text` (UTF-8) or `bytesBase64` (for control bytes / ESC). Hard cap 65536 bytes per call. On agent-opened local shells the bytes go straight into the agent emulator (no OSC/mouse scan — same as their live pipeline). Errors when the session has no output pipeline. Returns { sessionId, bytesFed }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with an attached terminal tab.") })
-                    put("text", JSONObject().apply { put("type", "string"); put("description", "UTF-8 text to inject as output. Mutually exclusive with bytesBase64.") })
-                    put("bytesBase64", JSONObject().apply { put("type", "string"); put("description", "Base64-encoded raw bytes to inject — use this for escape sequences (ESC = \\u001b) and other control bytes. Mutually exclusive with text.") })
-                })
-                put("required", JSONArray().put("sessionId"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
+                string("text", "UTF-8 text to inject as output. Mutually exclusive with bytesBase64.")
+                string("bytesBase64", "Base64-encoded raw bytes to inject — use this for escape sequences (ESC = \\u001b) and other control bytes. Mutually exclusive with text.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1041,15 +752,8 @@ internal class McpTools(
 
         "write_clipboard" to ToolHandler(
             description = "Set the system clipboard's primary plain-text content. Replaces whatever's currently on the clipboard. Useful for priming the clipboard before triggering a terminal paste.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("text", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Text to place on the clipboard. Empty string is allowed and clears the clipboard's primary item.")
-                    })
-                })
-                put("required", JSONArray().put("text"))
+            inputSchema = objectSchema {
+                string("text", "Text to place on the clipboard. Empty string is allowed and clears the clipboard's primary item.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1062,13 +766,9 @@ internal class McpTools(
 
         "set_preference" to ToolHandler(
             description = "Write a Haven user preference. Whitelisted keys (and their types): terminal_scrollback_rows (int 100..25000), terminal_tap_to_position_cursor (bool), terminal_font_size (int 8..32), mouse_input_enabled (bool), terminal_right_click (bool), terminal_color_scheme (string — a TerminalColorScheme enum name, e.g. HAVEN, DRACULA, NORD, GRUVBOX; case-insensitive), terminal_auto_switch_scheme (bool — when true the active scheme follows system light/dark via the light/dark keys), terminal_light_color_scheme (string scheme name), terminal_dark_color_scheme (string scheme name), terminal_background_opacity (float 0.0..1.0 — below 1.0 the terminal renders over the device wallpaper), mcp_tunnel_endpoint_profile_id (string SSH profile id, empty to clear), mcp_wireguard_enabled (bool), mcp_lan_bind_enabled (bool — also bind the device Wi-Fi/LAN address for direct same-network reach), mcp_wireguard_tunnel_config_id (string tunnel config id the MCP server keeps up as its WG carrier, empty to clear), usb_guest_exposure_enabled (bool — master gate for usb_attach_to_guest), connection_logging_enabled (bool — audit-log connection lifecycle events to Settings → View connection log; off by default; enable before reproducing a connection issue, then read get_connection_log), gpu_use_venus (bool — experimental venus+zink GPU stack for accelerated desktops; off = virgl/virpipe), remap_low_ports (bool — #300 proot launch toggle: remap guest privileged ports +2000), share_storage_with_guest (bool — #301 proot launch toggle: mount /storage + /sdcard into the local guest; default on), bind_android_system (bool — #304 proot launch toggle: bind Android's read-only /system, /vendor, /apex, /product, /system_ext, /odm into the guest so it can run Android native binaries like getprop/toybox; default off, exposes device internals). Takes effect on the next local session/command. Returns { key, value }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("key", JSONObject().apply { put("type", "string"); put("description", "Preference key (see whitelist).") })
-                    put("value", JSONObject().apply { put("description", "New value. Type must match the key's type — int for the *_rows / *_size keys, bool for the rest.") })
-                })
-                put("required", JSONArray().put("key").put("value"))
+            inputSchema = objectSchema {
+                string("key", "Preference key (see whitelist).", required = true)
+                property("value", JSONObject().put("description", "New value. Type must match the key's type — int for the *_rows / *_size keys, bool for the rest."), required = true)
             },
             // ONCE_PER_SESSION: settings writes are reversible and the
             // whitelist is small + non-sensitive (terminal display
@@ -1082,15 +782,11 @@ internal class McpTools(
 
         "start_selection" to ToolHandler(
             description = "Anchor a new text selection at (row, col) in an active terminal session. Equivalent to a long-press at that cell. Modes: CHARACTER (default), WORD (snaps to word boundaries on creation), LINE (whole-row selection). Subsequent extend_selection / copy_selection / clear_selection calls on the same session operate on this anchor. Replaces any existing selection on this session.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with an attached terminal tab.") })
-                    put("row", JSONObject().apply { put("type", "integer"); put("description", "Viewport-relative row, 0 = top.") })
-                    put("col", JSONObject().apply { put("type", "integer"); put("description", "Column, 0 = leftmost.") })
-                    put("mode", JSONObject().apply { put("type", "string"); put("description", "CHARACTER | WORD | LINE. Default CHARACTER.") })
-                })
-                put("required", JSONArray().put("sessionId").put("row").put("col"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
+                integer("row", "Viewport-relative row, 0 = top.", required = true)
+                integer("col", "Column, 0 = leftmost.", required = true)
+                string("mode", "CHARACTER | WORD | LINE. Default CHARACTER.")
             },
             // ONCE_PER_SESSION: only mutates an in-memory UI selection,
             // doesn't write to the clipboard or send anything to the
@@ -1102,14 +798,10 @@ internal class McpTools(
 
         "extend_selection" to ToolHandler(
             description = "Move the selection's end anchor to (row, col) in an active terminal session. Equivalent to dragging the selection handle to that cell. Pairs with start_selection — call start_selection first to set the anchor, then extend_selection to move the far end. Does NOT scroll the viewport — use drag_selection_to to extend a selection past the top or bottom of the viewport into scrollback.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID.") })
-                    put("row", JSONObject().apply { put("type", "integer"); put("description", "Viewport-relative row, 0 = top.") })
-                    put("col", JSONObject().apply { put("type", "integer"); put("description", "Column, 0 = leftmost.") })
-                })
-                put("required", JSONArray().put("sessionId").put("row").put("col"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID.", required = true)
+                integer("row", "Viewport-relative row, 0 = top.", required = true)
+                integer("col", "Column, 0 = leftmost.", required = true)
             },
             // ONCE_PER_SESSION for the same reason as start_selection —
             // pure UI-state move, the clipboard-touching follow-up
@@ -1120,14 +812,10 @@ internal class McpTools(
 
         "drag_selection_to" to ToolHandler(
             description = "Drag the selection's end anchor toward (toRow, toCol), auto-scrolling the viewport into scrollback (or back toward live) when toRow lies outside [0, rows-1]. Mirrors the Compose drag gesture that runs when the finger crosses the top or bottom edge zone: each row of out-of-viewport target is one ScrollController.scrollBy(±1) paired with one shiftSelectionStartByRows(±1) in lockstep. toRow < 0 scrolls back |toRow| rows (end anchor lands at viewport row 0). toRow >= rows scrolls forward toRow-(rows-1) rows (end anchor lands at viewport row rows-1). toRow in [0, rows-1] is equivalent to extend_selection. Clamps at the live screen and at scrollback.size; the response's `clamped` field indicates whether the full requested distance was achieved. Returns the resolved selection range, the new scrollbackPosition, the number of scroll steps actually taken (signed), the clamp flag, and the selection text via SelectionController.getSelectedText (libvterm softWrapped-aware, scrollback-aware).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with an attached terminal tab.") })
-                    put("toRow", JSONObject().apply { put("type", "integer"); put("description", "Target row. May be negative (above viewport top — drag into scrollback) or >= rows (below viewport bottom — drag toward live).") })
-                    put("toCol", JSONObject().apply { put("type", "integer"); put("description", "Target column.") })
-                })
-                put("required", JSONArray().put("sessionId").put("toRow").put("toCol"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
+                integer("toRow", "Target row. May be negative (above viewport top — drag into scrollback) or >= rows (below viewport bottom — drag toward live).", required = true)
+                integer("toCol", "Target column.", required = true)
             },
             // Same rationale as start_selection / extend_selection — pure
             // UI-state moves, the clipboard-touching follow-up gates
@@ -1138,12 +826,8 @@ internal class McpTools(
 
         "copy_selection" to ToolHandler(
             description = "Copy the current selection to the system clipboard and return the copied text. Goes through Haven's smart-copy interceptor (TUI border-strip + soft-wrap rejoin). Clears the selection after copying. Returns { text }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with a current selection.") })
-                })
-                put("required", JSONArray().put("sessionId"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with a current selection.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { _ -> "Copy current terminal selection to clipboard?" },
@@ -1151,14 +835,10 @@ internal class McpTools(
 
         "tap_terminal" to ToolHandler(
             description = "Simulate a tap inside an active terminal session at (row, col). When the user has Settings → Terminal → Tap to move cursor on supported prompts enabled, and the tap lands on a row carrying an OSC 133 COMMAND_INPUT segment with no matching COMMAND_FINISHED, Haven dispatches arrow keys so the readline cursor lands at the tapped column. Returns { handled, deltaCols, dispatched } describing what happened. handled=false means no OSC 133 prompt at the tap row — falls through silently.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID.") })
-                    put("row", JSONObject().apply { put("type", "integer"); put("description", "Viewport-relative row.") })
-                    put("col", JSONObject().apply { put("type", "integer"); put("description", "Column.") })
-                })
-                put("required", JSONArray().put("sessionId").put("row").put("col"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID.", required = true)
+                integer("row", "Viewport-relative row.", required = true)
+                integer("col", "Column.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Tap terminal at row=${args.optInt("row")} col=${args.optInt("col")}?" },
@@ -1166,13 +846,9 @@ internal class McpTools(
 
         "scroll_terminal" to ToolHandler(
             description = "Scroll an active terminal session's viewport by N lines. Positive lines = back into scrollback (older content); negative lines = toward the live screen. Clamps at 0 (live) and scrollback.size. Returns { scrollbackPosition } — the new position after clamping.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID with an attached terminal tab.") })
-                    put("lines", JSONObject().apply { put("type", "integer"); put("description", "Lines to scroll. Positive = into scrollback, negative = toward live.") })
-                })
-                put("required", JSONArray().put("sessionId").put("lines"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID with an attached terminal tab.", required = true)
+                integer("lines", "Lines to scroll. Positive = into scrollback, negative = toward live.", required = true)
             },
             // ONCE_PER_SESSION: pure view-state change — no PTY input,
             // no clipboard write, fully reversible by the user.
@@ -1186,27 +862,15 @@ internal class McpTools(
 
         "drag_terminal" to ToolHandler(
             description = "Drive a synthetic touch-drag through the terminal's REAL pointer pipeline — the same awaitEachGesture handler a physical finger feeds. Unlike start_selection / extend_selection / drag_selection_to, which mutate the selection model directly, this exercises the actual gesture code: long-press classification, drag-extend, edge-zone detection, and the held-still auto-repeat edge-scroll ticker. The gesture is: touch-down at path[0]; hold still for pressMs (long enough for the long-press selection timeout, ~500ms, to fire); move through path[1..] one stepMs apart; hold still at path.last() for holdMs (the window the edge-scroll ticker runs in); lift. Rows are viewport-relative; out-of-viewport rows (e.g. -3, or rows beyond the bottom) still map to valid pixels so a path can target the top/bottom edge zone. Blocks until the gesture completes (~pressMs + path*stepMs + holdMs). Requires the session's terminal tab to be the foreground tab (the gesture injector mounts with the Composable). Returns { sessionId, cells, approxDurationMs }. Verify the effect with get_selection + read_terminal_snapshot afterwards.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionId", JSONObject().apply { put("type", "string"); put("description", "Active session ID; its terminal tab must be the foreground tab.") })
-                    put("path", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "Ordered cells to traverse. Each element is { row, col } (viewport-relative; row may be negative or >= rows to reach the edge zones). path[0] = touch-down, last = lift. Must be non-empty; a single cell is a long-press with no drag.")
-                        put("items", JSONObject().apply {
-                            put("type", "object")
-                            put("properties", JSONObject().apply {
-                                put("row", JSONObject().apply { put("type", "integer") })
-                                put("col", JSONObject().apply { put("type", "integer") })
-                            })
-                            put("required", JSONArray().put("row").put("col"))
-                        })
-                    })
-                    put("pressMs", JSONObject().apply { put("type", "integer"); put("description", "Initial still-hold before the first move. Default 900. Must clear the long-press timeout (~500ms).") })
-                    put("stepMs", JSONObject().apply { put("type", "integer"); put("description", "Delay between successive move events. Default 30.") })
-                    put("holdMs", JSONObject().apply { put("type", "integer"); put("description", "Still-hold at the final cell before lifting — the edge-scroll ticker's window. Default 1000.") })
-                })
-                put("required", JSONArray().put("sessionId").put("path"))
+            inputSchema = objectSchema {
+                string("sessionId", "Active session ID; its terminal tab must be the foreground tab.", required = true)
+                objectArray("path", "Ordered cells to traverse. Each element is { row, col } (viewport-relative; row may be negative or >= rows to reach the edge zones). path[0] = touch-down, last = lift. Must be non-empty; a single cell is a long-press with no drag.", required = true) {
+                    integer("row", required = true)
+                    integer("col", required = true)
+                }
+                integer("pressMs", "Initial still-hold before the first move. Default 900. Must clear the long-press timeout (~500ms).")
+                integer("stepMs", "Delay between successive move events. Default 30.")
+                integer("holdMs", "Still-hold at the final cell before lifting — the edge-scroll ticker's window. Default 1000.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1223,15 +887,8 @@ internal class McpTools(
 
         "install_apk_from_url" to ToolHandler(
             description = "Download an APK from a URL and install it on the device. Validates the URL synchronously, then downloads + installs in the BACKGROUND and returns {pending:true, staging:true} immediately — a large APK on a slow link would otherwise outlast the request timeout (#331). Poll get_app_info: `activeInstall` carries the live phase (connecting/downloading/installing) and bytes/totalBytes while in flight; `lastInstall` carries the terminal outcome. With Shizuku running and granted, install is silent via `pm install`; without it a 'tap to install' prompt/notification appears on-device. A truncated transfer (dropped connection) is rejected against the advertised Content-Length rather than staged — a partial APK still passes the zip-magic check and would fail on-device with 'problem parsing the package', so `lastInstall` reports the short read instead. Useful for agent-driven self-update or sideloading over VPN where wireless ADB isn't reachable. NOTE: Android's network-security policy blocks cleartext http:// to anything but localhost, so an http:// URL on the LAN (e.g. a workstation IP) is rejected — use https://, or install_apk_from_backend (SFTP/rclone/Reticulum) which carries no cleartext.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("url", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "http(s) URL pointing at a signed APK file. Should resolve to APK bytes (no HTML wrapper).")
-                    })
-                })
-                put("required", JSONArray().put("url"))
+            inputSchema = objectSchema {
+                string("url", "http(s) URL pointing at a signed APK file. Should resolve to APK bytes (no HTML wrapper).", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1241,19 +898,9 @@ internal class McpTools(
 
         "install_apk_from_backend" to ToolHandler(
             description = "Install an APK from a path on any connected backend (local, SSH/SFTP, SMB, rclone, Reticulum). Streams APK bytes via the existing FileBackend abstraction. Same Shizuku/system-installer fallback as install_apk_from_url. Because backend transfers can be slow (a big APK over SFTP/rclone/Reticulum), this validates synchronously (missing file, directory, size cap → immediate error) then streams + installs in the background, returning {pending:true, staging:true} right away rather than blocking past the request timeout. Poll get_app_info: `activeInstall` has live phase/bytes while in flight (#331), `lastInstall` the terminal outcome (and /mcp reconnect if Haven is updating itself). Gated by Settings → Agent endpoint → \"Allow agents to read file contents\" and confirmed per-call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile ID, or 'local' for the device filesystem.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the APK file on the chosen backend.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile ID, or 'local' for the device filesystem.", required = true)
+                string("path", "Absolute path to the APK file on the chosen backend.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1270,30 +917,12 @@ internal class McpTools(
 
         "read_logcat" to ToolHandler(
             description = "Read recent Android system log lines via Shizuku, so the agent can observe foreign-app behaviour (network calls, crashes, lifecycle) during F-Droid tester reviews. Requires Shizuku running + granted (no separate READ_LOGS grant on Haven — logcat is read as Shizuku's shell uid, which already has the permission). Optional `packageName` resolves to a `--uid` filter via `pm list packages -U`; combine with `filter` for tag-level narrowing. Returns the raw logcat block; the agent parses it. `lines` is capped at 5000 and the response payload is capped at 256 KiB (truncated:true when either limit hits). Use this whenever an MR review needs log-level observation of a non-Haven app — the Haven local shell's Alpine proot can't reach /system/bin/logcat.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("lines", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Number of recent lines to return (default 200, capped at 5000). Maps to logcat -t.")
-                    })
-                    put("filter", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Standard logcat filter expression, e.g. 'NOVA:V *:S' to keep only NOVA-tagged lines, or '*:E' to keep only errors. Appended verbatim to the logcat command.")
-                    })
-                    put("packageName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Filter to this app only. Resolved to '--uid <uid>' via 'pm list packages -U'. Errors out if the package is not installed.")
-                    })
-                    put("pid", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Filter to this process pid only. Maps to logcat --pid <pid>. Use when you already have the pid (e.g. from a previous capture or pgrep).")
-                    })
-                    put("since", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Only return lines after this point. Pass a logcat timestamp ('MM-DD HH:MM:SS.SSS') or an epoch-ms integer. Maps to logcat -T.")
-                    })
-                })
+            inputSchema = objectSchema {
+                integer("lines", "Number of recent lines to return (default 200, capped at 5000). Maps to logcat -t.")
+                string("filter", "Standard logcat filter expression, e.g. 'NOVA:V *:S' to keep only NOVA-tagged lines, or '*:E' to keep only errors. Appended verbatim to the logcat command.")
+                string("packageName", "Filter to this app only. Resolved to '--uid <uid>' via 'pm list packages -U'. Errors out if the package is not installed.")
+                integer("pid", "Filter to this process pid only. Maps to logcat --pid <pid>. Use when you already have the pid (e.g. from a previous capture or pgrep).")
+                string("since", "Only return lines after this point. Pass a logcat timestamp ('MM-DD HH:MM:SS.SSS') or an epoch-ms integer. Maps to logcat -T.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -1306,14 +935,8 @@ internal class McpTools(
 
         "expose_adb" to ToolHandler(
             description = "Make the device's adb reachable from the workstation over 4G even with a system VPN active. Enables classic adb-over-TCP on a loopback port (default 5555) via Shizuku — no per-host pairing — then reverse-forwards 127.0.0.1:<port> over the existing MCP tunnel. Because the only phone-side hop is loopback (which Android never routes through a VpnService), adb stays reachable through any VPN. On the workstation: `adb connect localhost:<port>`. Requires Shizuku running + granted. Use install_apk_from_url/_from_backend for installs that don't need a full adb connection. Tear down with unexpose_adb.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("port", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Loopback adb-over-TCP port to expose (default 5555).")
-                    })
-                })
+            inputSchema = objectSchema {
+                integer("port", "Loopback adb-over-TCP port to expose (default 5555).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { _ -> "Expose full adb device control to the workstation over the MCP tunnel?" },
@@ -1330,23 +953,14 @@ internal class McpTools(
     private fun toolsPart3(): Map<String, ToolHandler> = linkedMapOf(
         "list_bridges" to ToolHandler(
             description = "Unified view of every phone capability Haven is currently **brokering** to a sink — the 'Bridges' registry (see docs/design/bridges.md). A bridge is one Android-held capability (a USB device, audio, etc.) re-exposed to a consumer that can't reach it directly: the AI agent, the local Linux guest, a local VM, a remote host, or the workstation. Generalises list_usb_exports across all bridge types. Each entry: source, sourceKind, sink, transport, state, plus type-specific detail (busid/port/profileId/mounts). Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { _ -> listBridges() },
 
         "open_local_shell" to ToolHandler(
             description = "Open a fresh local Alpine PRoot shell session and return its sessionId. Equivalent to tapping the Terminal icon in the Connections top bar — creates the local shell profile if missing, registers a session, and connects it. The returned sessionId is immediately usable with send_terminal_input and read_terminal_scrollback. Use this when you need a clean bash REPL (e.g. when an existing session has Claude Code, vim, or another stdin-capturing process in front of it). Pass `plain: true` to bypass the user's session-manager preference (tmux / zellij / screen / byobu) and exec a bare login shell — required when the agent needs Haven's own scrollback ring to capture output, which doesn't happen when a multiplexer's status bar uses DECSTBM to reserve the bottom row. NOTE: if a live local shell already exists, this returns that sessionId regardless of `plain` (response `reused: true`); call disconnect_profile on the existing profile first if you need a fresh plain-shell respawn.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("plain", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Skip the user's sessionManager preference and exec /bin/busybox sh -l directly. Default false (UI-equivalent behaviour).")
-                    })
-                })
+            inputSchema = objectSchema {
+                boolean("plain", "Skip the user's sessionManager preference and exec /bin/busybox sh -l directly. Default false (UI-equivalent behaviour).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> openLocalShell(args) },
@@ -1359,14 +973,8 @@ internal class McpTools(
 
         "inspect_proot" to ToolHandler(
             description = "Single rich read of the proot subsystem: active distro id, every Distro (id, label, family, installed, sizeMb, bytesOnDisk, postExtractHookIds, and installedDesktops — the desktop ids installed on THAT distro's rootfs, so the cross-distro picture is visible without switching active distro), every DesktopEnvironment with per-family Stable/Experimental/Broken compatibility and Experimental notes, current osSetupState (phase / step / progress / errorPhase / errorMessage / errorTail), current desktopSetupState (phase / errorMessage / errorTail), and the last 50 install-log events. The single endpoint to drive issue #162 verification.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("eventLimit", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Max install-log events to return. Default 50.")
-                    })
-                })
+            inputSchema = objectSchema {
+                integer("eventLimit", "Max install-log events to return. Default 50.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> inspectProot(args) },
@@ -1380,30 +988,16 @@ internal class McpTools(
 
         "set_active_distro" to ToolHandler(
             description = "Switch the active proot distro WITHOUT installing anything — the lightweight counterpart to install_distro (which downloads). The active distro is the rootfs that run_in_proot, install_desktop, start_desktop and the desktop/USB tools all operate on, so this is how you drive cross-distro work over MCP (e.g. run_in_proot inside Void instead of the current active distro). The distro must already be installed — call list_distros for installed ids, or install_distro to add one. Returns the new active distro id, its family, and the desktops installed on it.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Installed distro id to make active (e.g. \"void\", \"archlinux\", \"alpine-3.21\"). See list_distros.")
-                    })
-                })
-                put("required", JSONArray().put("distroId"))
+            inputSchema = objectSchema {
+                string("distroId", "Installed distro id to make active (e.g. \"void\", \"archlinux\", \"alpine-3.21\"). See list_distros.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> setActiveDistroTool(args) },
 
         "install_distro" to ToolHandler(
             description = "Set the given distro as active and trigger installRootfs(). Returns immediately; poll `inspect_proot.osSetupState` for progress (Downloading → Extracting → BootstrapHook → Baseline → Ready, or Error with attribution). Idempotent: if the distro is already installed, just switches active.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Distro id from DistroCatalog (e.g. \"alpine-3.21\", \"debian-bookworm\", \"ubuntu-noble\", \"archlinux\", \"void\").")
-                    })
-                })
-                put("required", JSONArray().put("distroId"))
+            inputSchema = objectSchema {
+                string("distroId", "Distro id from DistroCatalog (e.g. \"alpine-3.21\", \"debian-bookworm\", \"ubuntu-noble\", \"archlinux\", \"void\").", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1416,15 +1010,8 @@ internal class McpTools(
 
         "delete_distro" to ToolHandler(
             description = "Wipe a distro's rootfs and remove all installed DEs on it. Stops any running DEs first. Destructive — frees the disk space and is also the recovery path when an install lands in a broken state.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Distro id to delete.")
-                    })
-                })
-                put("required", JSONArray().put("distroId"))
+            inputSchema = objectSchema {
+                string("distroId", "Distro id to delete.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1437,39 +1024,14 @@ internal class McpTools(
 
         "import_distro" to ToolHandler(
             description = "Import a custom rootfs tarball as a new distro (#284) — \"bring your own rootfs\". The tarball (http(s) URL or an on-device file path) is extracted to its own rootfs and registered as a first-class distro, so it then appears in list_distros / set_active_distro / install_desktop exactly like a built-in. Raw mode: no baseline packages and no distro hooks run — the rootfs is used as shipped; `family` only routes later package installs (apk/apt/pacman/xbps). Use this for proot-distro / Docker-export tarballs and for a SECOND instance of a distro you already have (give it a new id — that is how #302 multiple-instances is done). Returns immediately; poll inspect_proot.osSetupState (Downloading → Extracting → Ready/Error). Supported compression: .tar.gz and .tar.xz (zstd not yet supported — recompress first).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "New distro id (slug: lowercase letters/digits/.-_, e.g. \"ubuntu-trixie\" or \"debian-test2\"). Must not collide with a built-in or existing custom id.")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Human label shown in the picker (e.g. \"Ubuntu 26.04 (imported)\").")
-                    })
-                    put("family", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Package family for later installs: APK | APT | PACMAN | XBPS | NIX.")
-                    })
-                    put("source", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Rootfs tarball: an http(s):// URL, or an absolute on-device file path.")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional compression: TAR_GZ | TAR_XZ. Auto-detected from the source extension if omitted.")
-                    })
-                    put("stripComponents", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Optional leading path components to strip (proot-distro tarballs wrap in one dir → 1). Defaults to auto: tries 0, retries 1 if no bin/sh is found.")
-                    })
-                    put("sha256", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional SHA-256 to verify the download against. Skipped if omitted.")
-                    })
-                })
-                put("required", JSONArray().put("id").put("family").put("source"))
+            inputSchema = objectSchema {
+                string("id", "New distro id (slug: lowercase letters/digits/.-_, e.g. \"ubuntu-trixie\" or \"debian-test2\"). Must not collide with a built-in or existing custom id.", required = true)
+                string("label", "Human label shown in the picker (e.g. \"Ubuntu 26.04 (imported)\").")
+                string("family", "Package family for later installs: APK | APT | PACMAN | XBPS | NIX.", required = true)
+                string("source", "Rootfs tarball: an http(s):// URL, or an absolute on-device file path.", required = true)
+                string("format", "Optional compression: TAR_GZ | TAR_XZ. Auto-detected from the source extension if omitted.")
+                integer("stripComponents", "Optional leading path components to strip (proot-distro tarballs wrap in one dir → 1). Defaults to auto: tries 0, retries 1 if no bin/sh is found.")
+                string("sha256", "Optional SHA-256 to verify the download against. Skipped if omitted.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1479,34 +1041,24 @@ internal class McpTools(
 
         "get_custom_binds" to ToolHandler(
             description = "List the user-defined extra proot bind mounts (#301) for a distro — the per-distro custom Android→guest mounts added on top of the fixed system binds. Pass distroId; omit to use the active distro. Returns each bind as {host, guest} plus its proot spec.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Distro id; omit for the active distro.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("distroId", "Distro id; omit for the active distro.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> getCustomBindsTool(args) },
 
         "set_custom_binds" to ToolHandler(
             description = "Replace the user-defined extra proot bind mounts (#301) for a distro — exposes arbitrary Android paths inside that distro's guest (interactive shell, desktop, and run_in_proot all pick them up). proot binds are read-write. Pass distroId (omit for active) and `binds`, an array of {host, guest?} objects (guest blank = same path as host). This REPLACES the whole list; pass [] to clear. Takes effect on the NEXT session/command, not already-running ones.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Distro id; omit for the active distro.")
-                    })
-                    put("binds", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "Full replacement list. Each item: {host: \"/abs/android/path\", guest: \"/abs/guest/path\" (optional)}.")
-                        put("items", JSONObject().apply { put("type", "object") })
-                    })
-                })
-                put("required", JSONArray().put("binds"))
+            inputSchema = objectSchema {
+                string("distroId", "Distro id; omit for the active distro.")
+                property(
+                    "binds",
+                    JSONObject()
+                        .put("type", "array")
+                        .put("description", "Full replacement list. Each item: {host: \"/abs/android/path\", guest: \"/abs/guest/path\" (optional)}.")
+                        .put("items", JSONObject().put("type", "object")),
+                    required = true,
+                )
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1515,31 +1067,11 @@ internal class McpTools(
             },
         ) { args -> setCustomBindsTool(args) },
 
-
-
-
-
-
-
-
-
-
-
-
         "capture_haven_ui" to ToolHandler(
             description = "Capture HAVEN'S OWN rendered screen — the app UI the user is looking at right now (Connections list, terminal tab, a dialog, the file browser, an agent overlay), NOT a remote desktop (capture_desktop_tab) or the terminal text (read_terminal_snapshot). This is the 'perceive' half of the self-hosting loop: after install_apk_from_backend deploys a build, capture_haven_ui lets the agent see the result and diff it. Returns the image plus { width, height, imageWidth, imageHeight, format }. width/height are the FULL window in pixels — pass tap_haven_ui / swipe_haven_ui coordinates in THAT space even when the returned image was downscaled via maxWidth. If Settings → screen security (FLAG_SECURE) is on, returns { secure: true } with no image (capture is intentionally blocked). Errors if Haven is not in the foreground.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("maxWidth", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Downscale so the returned image is at most this many pixels wide (the reported width/height stay full-window). Default 1080 (clamped 160–4096).")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
-                    })
-                })
+            inputSchema = objectSchema {
+                integer("maxWidth", "Downscale so the returned image is at most this many pixels wide (the reported width/height stay full-window). Default 1080 (clamped 160–4096).")
+                string("format", "\"jpeg\" (default, smaller) or \"png\" (lossless, larger).")
             },
             // A screen capture is a "let the agent SEE Haven's screen" act,
             // matching capture_desktop_tab — ONCE_PER_SESSION, not NEVER,
@@ -1558,14 +1090,10 @@ internal class McpTools(
 
         "tap_haven_ui" to ToolHandler(
             description = "Inject a tap (or, with holdMs > 0, a press-and-hold) into HAVEN'S OWN UI at window-pixel (x, y) — the same coordinate space capture_haven_ui reports in its width/height. This is the 'drive' half of the self-hosting loop: read a control's position from a capture_haven_ui image, then tap it. Drives the real touch pipeline (Compose clickables, nav tabs, dialog buttons). Refused while a consent prompt is showing (so an injected tap can't self-confirm) and when Haven is not foreground. Returns { delivered, reason?, x, y, holdMs }. Verify the effect with a follow-up capture_haven_ui.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("x", JSONObject().apply { put("type", "integer"); put("description", "Window-pixel X (0..width from capture_haven_ui).") })
-                    put("y", JSONObject().apply { put("type", "integer"); put("description", "Window-pixel Y (0..height from capture_haven_ui).") })
-                    put("holdMs", JSONObject().apply { put("type", "integer"); put("description", "Press-and-hold duration. 0 (default) = a quick tap; >~500 triggers a long-press. Clamped 0–10000.") })
-                })
-                put("required", JSONArray().put("x").put("y"))
+            inputSchema = objectSchema {
+                integer("x", "Window-pixel X (0..width from capture_haven_ui).", required = true)
+                integer("y", "Window-pixel Y (0..height from capture_haven_ui).", required = true)
+                integer("holdMs", "Press-and-hold duration. 0 (default) = a quick tap; >~500 triggers a long-press. Clamped 0–10000.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1577,17 +1105,13 @@ internal class McpTools(
 
         "swipe_haven_ui" to ToolHandler(
             description = "Inject a swipe/drag into HAVEN'S OWN UI from (fromX, fromY) to (toX, toY) in window pixels (the coordinate space capture_haven_ui reports), over durationMs split into N steps. Drives pager flings (swipe between Connections/Terminal/Files tabs), list scrolls, and bottom-sheet drags. Refused while a consent prompt is showing and when Haven is not foreground. Returns { delivered, reason?, fromX, fromY, toX, toY, durationMs, steps }. Verify with capture_haven_ui.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("fromX", JSONObject().apply { put("type", "integer"); put("description", "Start X (window px).") })
-                    put("fromY", JSONObject().apply { put("type", "integer"); put("description", "Start Y (window px).") })
-                    put("toX", JSONObject().apply { put("type", "integer"); put("description", "End X (window px).") })
-                    put("toY", JSONObject().apply { put("type", "integer"); put("description", "End Y (window px).") })
-                    put("durationMs", JSONObject().apply { put("type", "integer"); put("description", "Total swipe time. Default 200 (clamped 1–10000). Longer = slower drag (less fling momentum).") })
-                    put("steps", JSONObject().apply { put("type", "integer"); put("description", "ACTION_MOVE events between down and up. Default 16 (clamped 1–200).") })
-                })
-                put("required", JSONArray().put("fromX").put("fromY").put("toX").put("toY"))
+            inputSchema = objectSchema {
+                integer("fromX", "Start X (window px).", required = true)
+                integer("fromY", "Start Y (window px).", required = true)
+                integer("toX", "End X (window px).", required = true)
+                integer("toY", "End Y (window px).", required = true)
+                integer("durationMs", "Total swipe time. Default 200 (clamped 1–10000). Longer = slower drag (less fling momentum).")
+                integer("steps", "ACTION_MOVE events between down and up. Default 16 (clamped 1–200).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1597,20 +1121,15 @@ internal class McpTools(
 
         "create_standing_policy" to ToolHandler(
             description = "Propose a Tier-3 STANDING POLICY: a scoped, rate-capped, expiring grant that lets THIS client call the listed tools without a per-call consent prompt. The user's tap on this tool's consent sheet IS the installation — the sheet spells out the full scope. Use it when a workflow needs many consented calls in a row (e.g. a tap_haven_ui/swipe_haven_ui drive-and-verify loop) so the user grants the loop once instead of per tap. toolNames must be existing tools; some can never be covered (the policy tools themselves, install_apk_*, unpair_mcp_client). argConstraints (optional) pins arguments: every key given must exactly equal the call's argument (e.g. {\"profileId\":\"<id>\"} scopes the grant to one connection). Covered calls are still written to the audit log; the rate ceiling makes extra calls fall back to normal prompts; the policy expires on its own and can be revoked any time from Haven's Agent activity screen or via revoke_standing_policy. Returns { id, expiresAt }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("description", JSONObject().apply { put("type", "string"); put("description", "Short human label for what this grant is for, shown on the consent sheet and the kill-switch list. E.g. \"Drive the UI to verify build 5.59.54\".") })
-                    put("toolNames", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "Exact tool names the policy covers.")
-                    })
-                    put("maxCallsPerMinute", JSONObject().apply { put("type", "integer"); put("description", "Rate ceiling per rolling minute (default 60, clamped 1–600). Beyond it, calls fall back to per-call prompts.") })
-                    put("expiresInMinutes", JSONObject().apply { put("type", "integer"); put("description", "Lifetime (default 60, clamped 5–1440). After expiry the policy never applies.") })
-                    put("argConstraints", JSONObject().apply { put("type", "object"); put("description", "Optional exact-match argument pins, e.g. {\"profileId\":\"abc\"}.") })
-                })
-                put("required", JSONArray().put("description").put("toolNames"))
+            inputSchema = objectSchema {
+                string("description", "Short human label for what this grant is for, shown on the consent sheet and the kill-switch list. E.g. \"Drive the UI to verify build 5.59.54\".", required = true)
+                stringArray("toolNames", "Exact tool names the policy covers.", required = true)
+                integer("maxCallsPerMinute", "Rate ceiling per rolling minute (default 60, clamped 1–600). Beyond it, calls fall back to per-call prompts.")
+                integer("expiresInMinutes", "Lifetime (default 60, clamped 5–1440). After expiry the policy never applies.")
+                property(
+                    "argConstraints",
+                    JSONObject().put("type", "object").put("description", "Optional exact-match argument pins, e.g. {\"profileId\":\"abc\"}."),
+                )
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1632,12 +1151,8 @@ internal class McpTools(
 
         "revoke_standing_policy" to ToolHandler(
             description = "Revoke (delete) a standing policy by id — see list_standing_policies. Pure privilege reduction, so no prompt; the user's kill-switch lives on the Agent activity screen.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Policy id from list_standing_policies.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Policy id from list_standing_policies.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> revokeStandingPolicy(args) },
@@ -1645,31 +1160,12 @@ internal class McpTools(
 
         "gl_smoke_test" to ToolHandler(
             description = "Launch a GL app into a RUNNING desktop on the GPU PATH (venus/virpipe — NOT the llvmpipe software fallback that launch_app_in_desktop forces), screenshot it, and heuristically report whether the frame is non-blank. A regression check for the windowed-GL-present pipeline (a blank/white frame = GL didn't present). The verdict is reliable only for a FULL-FRAME GL app (a fullscreen / cage-kiosk GL test app like 'glxgears' or 'es2gears'); for a windowed app the 2D chrome masks a blank 3D pane, so rely on the returned image. Optionally writes the gpu_use_venus pref first. Returns the screenshot plus { passed, distinctColors, topColorFraction, gpuPath, windowId? }. Detects non-blank, not correctness.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("deId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Desktop environment id of a RUNNING desktop (prefer a fullscreen/kiosk GL surface for a clean verdict).")
-                    })
-                    put("command", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "GL app to launch, e.g. 'glxgears' or 'es2gears'.")
-                    })
-                    put("gpuUseVenus", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If set, write the gpu_use_venus pref before launching (true = venus+zink, false = virpipe). Omit to leave it unchanged.")
-                    })
-                    put("timeoutMs", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Max ms to wait for the app window before capturing. Default 12000, clamped 0..60000.")
-                    })
-                    put("maxWidth", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Downscale the returned image to at most this width. Default 1024 (clamped 160..4096).")
-                    })
-                })
-                put("required", JSONArray().put("deId").put("command"))
+            inputSchema = objectSchema {
+                string("deId", "Desktop environment id of a RUNNING desktop (prefer a fullscreen/kiosk GL surface for a clean verdict).", required = true)
+                string("command", "GL app to launch, e.g. 'glxgears' or 'es2gears'.", required = true)
+                boolean("gpuUseVenus", "If set, write the gpu_use_venus pref before launching (true = venus+zink, false = virpipe). Omit to leave it unchanged.")
+                integer("timeoutMs", "Max ms to wait for the app window before capturing. Default 12000, clamped 0..60000.")
+                integer("maxWidth", "Downscale the returned image to at most this width. Default 1024 (clamped 160..4096).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "GL smoke-test '${args.optString("command")}' on desktop '${args.optString("deId")}'" },
@@ -1677,50 +1173,21 @@ internal class McpTools(
 
         "view_file" to ToolHandler(
             description = "Render a file from the ACTIVE proot guest to an INLINE image the agent can see directly — no desktop, X server, VNC client, or GPU needed (fully headless / GL-free). Handles .kicad_sch and .kicad_pcb (via kicad-cli), .pdf (first page, or `page`), .svg, and raster images (png/jpg/jpeg/webp/bmp/gif). The result is downscaled to maxWidth and returned as an image content block, so it works even when no VNC desktop is running. Prefer this over capture_desktop for looking at design output (schematics, PCBs, PDFs, plots).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the file inside the active proot guest (e.g. /root/proj/board.kicad_sch).")
-                    })
-                    put("maxWidth", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Downscale so the image is at most this many pixels wide. Default 1024 (clamped 160–4096).")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "\"png\" (default, lossless) or \"jpeg\" (smaller over the tunnel).")
-                    })
-                    put("page", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "For multi-page PDFs, the 1-based page to render. Default 1.")
-                    })
-                })
-                put("required", JSONArray().put("path"))
+            inputSchema = objectSchema {
+                string("path", "Absolute path to the file inside the active proot guest (e.g. /root/proj/board.kicad_sch).", required = true)
+                integer("maxWidth", "Downscale so the image is at most this many pixels wide. Default 1024 (clamped 160–4096).")
+                string("format", "\"png\" (default, lossless) or \"jpeg\" (smaller over the tunnel).")
+                integer("page", "For multi-page PDFs, the 1-based page to render. Default 1.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> viewFile(args) },
 
         "read_guest_file" to ToolHandler(
             description = "Read a small file from the ACTIVE proot guest and return its contents to the agent (UTF-8 text; set asBase64 only for small binary). The reliable agent⇄guest text channel. Reads are capped to maxBytes. For large or binary files prefer serve_file (streams over a loopback URL — no base64 through the agent); for images/PDFs/schematics use view_file (renders to an inline picture); for anything the USER should see use present_media.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the file inside the active proot guest.")
-                    })
-                    put("asBase64", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Return base64 instead of UTF-8 text — only for small binary files; prefer serve_file for larger binaries. Default false.")
-                    })
-                    put("maxBytes", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Read at most this many bytes. Default 262144 (256 KiB), clamped 1..8388608.")
-                    })
-                })
-                put("required", JSONArray().put("path"))
+            inputSchema = objectSchema {
+                string("path", "Absolute path to the file inside the active proot guest.", required = true)
+                boolean("asBase64", "Return base64 instead of UTF-8 text — only for small binary files; prefer serve_file for larger binaries. Default false.")
+                integer("maxBytes", "Read at most this many bytes. Default 262144 (256 KiB), clamped 1..8388608.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readGuestFile(args) },
@@ -1730,35 +1197,13 @@ internal class McpTools(
     private fun toolsPart4(): Map<String, ToolHandler> = linkedMapOf(
         "write_guest_file" to ToolHandler(
             description = "Write a file into the ACTIVE proot guest. Supply `content` (UTF-8 text); for binary prefer upload_file (stages a device-cache file into the guest) over `contentBase64`. Parent directories are created by default. The reliable way to push agent-authored text files (scripts, generators, configs) into the guest without a terminal heredoc. For large files, send in ordered chunks: first chunk {append:false, final:false}, middle chunks {append:true, final:false}, last chunk {append:true, final:true} — the file lands in the guest only on the final chunk.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute destination path inside the active proot guest.")
-                    })
-                    put("content", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "UTF-8 text to write. Mutually exclusive with contentBase64.")
-                    })
-                    put("contentBase64", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Base64-encoded bytes for small binary writes; prefer upload_file for larger/binary files. Mutually exclusive with content.")
-                    })
-                    put("mkdirs", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Create parent directories if missing. Default true.")
-                    })
-                    put("append", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Append this chunk to the buffered bytes for this path instead of starting fresh. Default false (truncate). Use true for chunks after the first when sending a large file in pieces.")
-                    })
-                    put("final", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Copy the buffered bytes into the guest now. Default true (single-call write). Set false on every chunk except the last; the file isn't written into the guest until final=true.")
-                    })
-                })
-                put("required", JSONArray().put("path"))
+            inputSchema = objectSchema {
+                string("path", "Absolute destination path inside the active proot guest.", required = true)
+                string("content", "UTF-8 text to write. Mutually exclusive with contentBase64.")
+                string("contentBase64", "Base64-encoded bytes for small binary writes; prefer upload_file for larger/binary files. Mutually exclusive with content.")
+                boolean("mkdirs", "Create parent directories if missing. Default true.")
+                boolean("append", "Append this chunk to the buffered bytes for this path instead of starting fresh. Default false (truncate). Use true for chunks after the first when sending a large file in pieces.")
+                boolean("final", "Copy the buffered bytes into the guest now. Default true (single-call write). Set false on every chunk except the last; the file isn't written into the guest until final=true.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Write a file to '${args.optString("path")}' in the guest" },
@@ -1766,48 +1211,21 @@ internal class McpTools(
 
         "get_proot_install_log" to ToolHandler(
             description = "Return install-log events from the Room-backed ProotInstallLog table. Survives logcat rotation and app restarts. Filter by distroId and/or sinceMs (millis since epoch) to poll incrementally. Each event: id, timestamp, distroId, phase, deId?, exit?, ok, message?, logTail?.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("distroId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Filter to a single distro. Omit for all distros.")
-                    })
-                    put("sinceMs", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Return only events with timestamp > sinceMs. Default 0 (return all).")
-                    })
-                    put("limit", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Max events. Default 100.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("distroId", "Filter to a single distro. Omit for all distros.")
+                integer("sinceMs", "Return only events with timestamp > sinceMs. Default 0 (return all).")
+                integer("limit", "Max events. Default 100.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> getProotInstallLog(args) },
 
         "run_in_proot" to ToolHandler(
             description = "Run a shell command inside the ACTIVE distro's proot guest (the same rootfs the running desktop uses) and return its combined stdout+stderr. Distro-agnostic: invokes /bin/sh -lc in whatever distro is active (check inspect_proot.activeDistroId), so it works on Debian/Arch/Void, not just Alpine like open_local_shell. For long jobs (apt-get install, pip install) you can pass background:true to get a jobId immediately, then poll by calling again with that jobId — the response carries the accumulated output and, once finished, the exitCode. Even without background, a synchronous call that runs longer than ~30s is auto-backgrounded: it returns {jobId, status:\"running\", note, output:<partial>} instead of blocking past the MCP request timeout, and you poll it the same way. A quick command returns inline ({exitCode, output}). This is the agent's headless way to provision the guest (install packages, run kicad-cli ERC/DRC, etc.).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("command", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Shell command to run via /bin/sh -lc in the active proot. Required unless polling via jobId.")
-                    })
-                    put("background", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, start the command and return a jobId immediately instead of blocking. Poll with that jobId. Default false.")
-                    })
-                    put("jobId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Poll a previously started background job. When set, `command` is ignored and the current status + accumulated output are returned.")
-                    })
-                    put("maxOutputChars", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Cap the returned output to its last N chars. Default 8000.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("command", "Shell command to run via /bin/sh -lc in the active proot. Required unless polling via jobId.")
+                boolean("background", "If true, start the command and return a jobId immediately instead of blocking. Poll with that jobId. Default false.")
+                string("jobId", "Poll a previously started background job. When set, `command` is ignored and the current status + accumulated output are returned.")
+                integer("maxOutputChars", "Cap the returned output to its last N chars. Default 8000.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -1819,35 +1237,13 @@ internal class McpTools(
 
         "register_guest_service" to ToolHandler(
             description = "Register a long-lived helper process to run inside the ACTIVE distro's proot guest — typically an app-native MCP server (KiCad/FreeCAD/OpenSCAD) the agent drives for structured control. Haven supervises it: starts it (if autostart) when the MCP endpoint comes up, re-launches it after an app restart, and — when an MCP reverse-tunnel endpoint is configured — multiplexes its loopback `port` back to the remote MCP client alongside Haven's own endpoint (no adb forward needed). The registry is persisted per-distro. Returns the generated service id. Use start_guest_service to launch it now.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Human-readable name, e.g. \"KiCad MCP\".")
-                    })
-                    put("command", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Shell command run via /bin/sh -lc in the guest, e.g. 'cd /root/kicad-mcp && UV_LINK_MODE=copy uv run python http_server.py'. Should run in the foreground (Haven owns the process).")
-                    })
-                    put("port", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Loopback TCP port the service listens on inside the guest (e.g. 8766). Multiplexed over the MCP reverse tunnel.")
-                    })
-                    put("autostart", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Re-launch automatically when Haven's MCP endpoint comes up / after app restart. Default true.")
-                    })
-                    put("isMcp", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "True if this service is itself a streamable-HTTP MCP server. Haven then aggregates its tools into its own MCP surface, namespaced 'guest_<id>_<tool>', so you call them through Haven directly. Default false.")
-                    })
-                    put("mcpPath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "HTTP path of the guest MCP endpoint when isMcp=true. Default '/mcp'.")
-                    })
-                })
-                put("required", JSONArray().put("label").put("command").put("port"))
+            inputSchema = objectSchema {
+                string("label", "Human-readable name, e.g. \"KiCad MCP\".", required = true)
+                string("command", "Shell command run via /bin/sh -lc in the guest, e.g. 'cd /root/kicad-mcp && UV_LINK_MODE=copy uv run python http_server.py'. Should run in the foreground (Haven owns the process).", required = true)
+                integer("port", "Loopback TCP port the service listens on inside the guest (e.g. 8766). Multiplexed over the MCP reverse tunnel.", required = true)
+                boolean("autostart", "Re-launch automatically when Haven's MCP endpoint comes up / after app restart. Default true.")
+                boolean("isMcp", "True if this service is itself a streamable-HTTP MCP server. Haven then aggregates its tools into its own MCP surface, namespaced 'guest_<id>_<tool>', so you call them through Haven directly. Default false.")
+                string("mcpPath", "HTTP path of the guest MCP endpoint when isMcp=true. Default '/mcp'.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Register guest service '${args.optString("label")}' (runs: ${args.optString("command").take(80)})" },
@@ -1860,12 +1256,8 @@ internal class McpTools(
 
         "start_guest_service" to ToolHandler(
             description = "Start a registered guest service by id (no-op if already running). Returns its state.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Service id from register_guest_service / list_guest_services.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Service id from register_guest_service / list_guest_services.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Start guest service ${args.optString("id")}" },
@@ -1873,23 +1265,15 @@ internal class McpTools(
 
         "stop_guest_service" to ToolHandler(
             description = "Stop a running guest service by id (leaves it registered).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Service id.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Service id.", required = true)
             },
         ) { args -> stopGuestService(args) },
 
         "unregister_guest_service" to ToolHandler(
             description = "Stop (if running) and remove a guest service from the registry by id.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Service id.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Service id.", required = true)
             },
         ) { args -> unregisterGuestService(args) },
 
@@ -1913,15 +1297,8 @@ internal class McpTools(
 
         "set_terminal_font_from_url" to ToolHandler(
             description = "Download a font from a URL, validate it, install it as Haven's terminal font (replacing any prior custom font), and return the saved path. The URL may point at a .ttf/.otf, or a .zip containing them (a Regular face is auto-extracted) — useful for repos like Maple/Nerd Fonts that ship only zips (#123, #177). WOFF/WOFF2 web fonts are rejected (Android can't render them). Requires the URL to be reachable from the device — use a tunneled URL (via add_port_forward LOCAL) to expose a workstation HTTP server back through the existing SSH session.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("url", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "http(s) URL resolving to a .ttf/.otf, or a .zip of them (no HTML wrapper). WOFF/WOFF2 are not supported.")
-                    })
-                })
-                put("required", JSONArray().put("url"))
+            inputSchema = objectSchema {
+                string("url", "http(s) URL resolving to a .ttf/.otf, or a .zip of them (no HTML wrapper). WOFF/WOFF2 are not supported.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Download terminal font from ${args.optString("url").take(80)}?" },
@@ -1929,16 +1306,12 @@ internal class McpTools(
 
         "convert_file" to ToolHandler(
             description = "Run ffmpeg to transcode a source URL (typically the playerUrl/playlistUrl from stream_sftp_file, or any URL ffmpeg can read) into a new file in Haven's app cache. Returns the cache path on success — use upload_file_to_sftp to put the result on a remote.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sourceUrl", JSONObject().apply { put("type", "string"); put("description", "URL ffmpeg should read from. http(s)://, file://, or any protocol ffmpeg supports.") })
-                    put("container", JSONObject().apply { put("type", "string"); put("description", "Output container, e.g. 'mp4', 'mkv', 'webm'. Determines the file extension.") })
-                    put("videoEncoder", JSONObject().apply { put("type", "string"); put("description", "Video codec, e.g. 'libx264', 'libx265', 'copy'. Default: copy.") })
-                    put("audioEncoder", JSONObject().apply { put("type", "string"); put("description", "Audio codec, e.g. 'aac', 'libopus', 'copy'. Default: copy.") })
-                    put("outputName", JSONObject().apply { put("type", "string"); put("description", "Optional output filename (without extension). Default: 'agent-convert-<timestamp>'.") })
-                })
-                put("required", JSONArray().put("sourceUrl").put("container"))
+            inputSchema = objectSchema {
+                string("sourceUrl", "URL ffmpeg should read from. http(s)://, file://, or any protocol ffmpeg supports.", required = true)
+                string("container", "Output container, e.g. 'mp4', 'mkv', 'webm'. Determines the file extension.", required = true)
+                string("videoEncoder", "Video codec, e.g. 'libx264', 'libx265', 'copy'. Default: copy.")
+                string("audioEncoder", "Audio codec, e.g. 'aac', 'libopus', 'copy'. Default: copy.")
+                string("outputName", "Optional output filename (without extension). Default: 'agent-convert-<timestamp>'.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -1956,15 +1329,8 @@ internal class McpTools(
 
         "compose_workspace" to ToolHandler(
             description = "Launch every item of a saved workspace through the same WorkspaceLauncher the user's tap goes through — terminal sessions, file-browser tabs, remote desktops, and the Wayland tab open in dependency-friendly order (TERMINAL first so tunneled DESKTOPs attach to live SSH sessions). Returns the workspace id and item count; progress is surfaced live in the Connections screen banner.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("workspaceId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Workspace id from list_workspaces.")
-                    })
-                })
-                put("required", JSONArray().put("workspaceId"))
+            inputSchema = objectSchema {
+                string("workspaceId", "Workspace id from list_workspaces.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -1988,70 +1354,26 @@ internal class McpTools(
                 "`placement` — \"row1\"/\"row2\" gives it a toolbar button on that row, \"library\" (the default) keeps it in the scissors " +
                 "sheet only. Re-passing an existing label moves/updates it. To remove it from both the toolbar and the library, pass " +
                 "`delete`:true. Returns the affected snippet's resulting placement and the full snippet list.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Snippet label (its name; also the button caption when placed on a row).")
-                    })
-                    put("send", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Text the snippet types. Required for a new snippet. JSON escapes work: \\n = Enter, \\u001b = Esc.")
-                    })
-                    put("placement", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "\"row1\", \"row2\" (toolbar button) or \"library\" (scissors-only; default).")
-                    })
-                    put("delete", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Remove the snippet from the toolbar and the library entirely.")
-                    })
-                })
-                put("required", JSONArray().put("label"))
+            inputSchema = objectSchema {
+                string("label", "Snippet label (its name; also the button caption when placed on a row).", required = true)
+                string("send", "Text the snippet types. Required for a new snippet. JSON escapes work: \\n = Enter, \\u001b = Esc.")
+                string("placement", "\"row1\", \"row2\" (toolbar button) or \"library\" (scissors-only; default).")
+                boolean("delete", "Remove the snippet from the toolbar and the library entirely.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
         ) { args -> setSnippet(args) },
 
         "set_profile_routing" to ToolHandler(
             description = "Set or clear the Route-through configuration on a connection profile. Pass either tunnelConfigId (WireGuard / Tailscale tunnel from list_tunnels) OR proxyType+proxyHost+proxyPort (legacy SOCKS5 / SOCKS4 / HTTP), and the other field set is cleared — mutually exclusive at the data layer too. Pass `clear=true` to drop both and route direct.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Profile id from list_connections.")
-                    })
-                    put("tunnelConfigId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Tunnel id to route through. Mutually exclusive with proxyType.")
-                    })
-                    put("proxyType", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "SOCKS5 | SOCKS4 | HTTP. Pair with proxyHost + proxyPort.")
-                    })
-                    put("proxyHost", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Proxy host. Required when proxyType is set.")
-                    })
-                    put("proxyPort", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Proxy port. Default 1080 (SOCKS) / 8080 (HTTP).")
-                    })
-                    put("proxyUser", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Proxy username, when the proxy requires authentication (#227). Optional. SOCKS4 sends userid only.")
-                    })
-                    put("proxyPassword", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Proxy password for SOCKS5 (RFC 1929) / HTTP Basic auth (#227). Optional; ignored for SOCKS4.")
-                    })
-                    put("clear", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, clear both tunnelConfigId and proxyType. Profile routes direct.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                string("tunnelConfigId", "Tunnel id to route through. Mutually exclusive with proxyType.")
+                string("proxyType", "SOCKS5 | SOCKS4 | HTTP. Pair with proxyHost + proxyPort.")
+                string("proxyHost", "Proxy host. Required when proxyType is set.")
+                integer("proxyPort", "Proxy port. Default 1080 (SOCKS) / 8080 (HTTP).")
+                string("proxyUser", "Proxy username, when the proxy requires authentication (#227). Optional. SOCKS4 sends userid only.")
+                string("proxyPassword", "Proxy password for SOCKS5 (RFC 1929) / HTTP Basic auth (#227). Optional; ignored for SOCKS4.")
+                boolean("clear", "If true, clear both tunnelConfigId and proxyType. Profile routes direct.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -2068,48 +1390,40 @@ internal class McpTools(
 
         "create_connection" to ToolHandler(
             description = "Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, EMAIL. SSH-family fields: username (required), password (optional, stored), keyId (optional — references list_ssh_keys), ignoreSavedKeys (force password-only auth, never offer saved keys), useMosh (turn an SSH profile into a Mosh profile), sessionManager (optional: TMUX | ZELLIJ | SCREEN | BYOBU — attach through that multiplexer; omit for a plain shell). SMB: smbShare (required), username + password, smbDomain. VNC: vncUsername, vncPassword, vncPort, and vncSshForward + vncSshProfileId to tunnel VNC through a saved SSH profile. RDP: rdpUsername (required), rdpPassword, rdpDomain, rdpPort. SPICE: spicePassword (optional ticket — no username/domain), spicePort (default 5900), and spiceSshForward + spiceSshProfileId to tunnel SPICE through a saved SSH profile. EMAIL: emailProvider (\"imap\" default, or \"proton\"); username = the email address; password = the account/app-password; for IMAP set emailServer (required) + emailPort (993) + emailSmtpPort (465) + emailTls (true), plus emailSmtpServer when the SMTP host differs (e.g. smtp.gmail.com); for Proton add emailMailboxPassword if two-password mode. EMAIL host is optional (the tunnel-ingress/bastion SPA/knock guards), not the mail server. The new profile id is returned for follow-up calls (set_profile_routing, connect_profile). For Reticulum / rclone / local create the profile in the UI — those paths need OAuth / destination-hash flows the agent can't drive.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply { put("type", "string"); put("description", "User-facing label.") })
-                    put("connectionType", JSONObject().apply { put("type", "string"); put("description", "SSH | SMB | VNC | RDP | EMAIL.") })
-                    put("host", JSONObject().apply { put("type", "string"); put("description", "Target hostname or IP. For EMAIL this is the optional tunnel ingress/bastion (SPA/knock target), NOT the mail server — leave blank for a direct IMAP connection.") })
-                    put("port", JSONObject().apply { put("type", "integer"); put("description", "TCP port. Defaults: SSH 22, SMB 445, VNC 5900, RDP 3389.") })
-                    put("username", JSONObject().apply { put("type", "string"); put("description", "Username for SSH/SMB.") })
-                    put("password", JSONObject().apply { put("type", "string"); put("description", "Password (stored). Optional for SSH if a key is used; some VNC/SMB setups allow guest.") })
-                    put("smbShare", JSONObject().apply { put("type", "string"); put("description", "Share name (SMB). Required when connectionType=SMB.") })
-                    put("smbDomain", JSONObject().apply { put("type", "string"); put("description", "AD/workgroup domain (SMB). Optional.") })
-                    put("vncUsername", JSONObject().apply { put("type", "string"); put("description", "Username for VeNCrypt VNC.") })
-                    put("vncPassword", JSONObject().apply { put("type", "string"); put("description", "VNC password.") })
-                    put("vncSshForward", JSONObject().apply { put("type", "boolean"); put("description", "VNC only: tunnel the VNC connection through a saved SSH profile (set vncSshProfileId). The VNC target is reached at 127.0.0.1:<port> from the SSH server. Default false.") })
-                    put("vncSshProfileId", JSONObject().apply { put("type", "string"); put("description", "VNC only: id of the SSH profile (from list_connections) to tunnel through when vncSshForward is true.") })
-                    put("rdpUsername", JSONObject().apply { put("type", "string"); put("description", "Windows username (RDP). Required when connectionType=RDP.") })
-                    put("rdpPassword", JSONObject().apply { put("type", "string"); put("description", "Windows password (RDP).") })
-                    put("rdpDomain", JSONObject().apply { put("type", "string"); put("description", "AD domain (RDP). Optional.") })
-                    put("spicePassword", JSONObject().apply { put("type", "string"); put("description", "SPICE only: ticket/password (stored). Optional — omit for an unticketed server.") })
-                    put("spiceSshForward", JSONObject().apply { put("type", "boolean"); put("description", "SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId). The SPICE target is reached at 127.0.0.1:<port> from the SSH server. Default false.") })
-                    put("spiceSshProfileId", JSONObject().apply { put("type", "string"); put("description", "SPICE only: id of the SSH profile (from list_connections) to tunnel through when spiceSshForward is true.") })
-                    put("emailProvider", JSONObject().apply { put("type", "string"); put("description", "EMAIL only: \"imap\" (generic IMAP/SMTP, default) or \"proton\".") })
-                    put("emailServer", JSONObject().apply { put("type", "string"); put("description", "EMAIL/imap only: IMAP server hostname (required for imap). Reached through the tunnel when one is set.") })
-                    put("emailSmtpServer", JSONObject().apply { put("type", "string"); put("description", "EMAIL/imap only: SMTP submission host, when it differs from the IMAP host (e.g. smtp.gmail.com vs imap.gmail.com). Optional — defaults to emailServer.") })
-                    put("emailPort", JSONObject().apply { put("type", "integer"); put("description", "EMAIL/imap only: IMAP port. Default 993.") })
-                    put("emailSmtpPort", JSONObject().apply { put("type", "integer"); put("description", "EMAIL/imap only: SMTP port. Default 465.") })
-                    put("emailTls", JSONObject().apply { put("type", "boolean"); put("description", "EMAIL/imap only: implicit TLS (SSL). Default true.") })
-                    put("emailMailboxPassword", JSONObject().apply { put("type", "string"); put("description", "EMAIL/proton only: separate mailbox password for two-password-mode accounts.") })
-                    put("tunnelConfigId", JSONObject().apply { put("type", "string"); put("description", "Optional: route the new profile through this tunnel (from list_tunnels). Equivalent to follow-up set_profile_routing.") })
-                    put("tunnelOnly", JSONObject().apply { put("type", "boolean"); put("description", "SSH only: tunnel-only mode (#150). When true, the profile brings up the SSH transport and registers port forwards but does not open a terminal. Default false. Pair with auto_reconnect for autossh-style keepalive.") })
-                    put("useMosh", JSONObject().apply { put("type", "boolean"); put("description", "SSH only: when true, the profile uses Mosh on top of the SSH bootstrap. SSH execs `mosh-server new -s`, parses MOSH CONNECT, then the UDP transport takes over. Default false.") })
-                    put("keyId", JSONObject().apply { put("type", "string"); put("description", "SSH only: id of a saved SSH key (from list_ssh_keys) to authenticate with. Mutually optional with password.") })
-                    put("ignoreSavedKeys", JSONObject().apply { put("type", "boolean"); put("description", "SSH-family only: when true, authenticate with password (and keyboard-interactive) only — saved keystore keys are never offered to the server. Lets a profile target a password-only server without the auto-key-offer suppressing the password prompt (#121). Default false.") })
-                    put("authMethods", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "SSH only (#166): ordered multi-factor auth methods attempted in one connect, for servers requiring a chain like publickey,password. Each element is a token: \"PASSWORD\", \"KEY\" (any saved key), \"KEY:<keyId>\", \"KEYBOARD_INTERACTIVE\", or \"TOTP:<id>\" (auto-fill an OATH-TOTP code from list_totp_secrets, #178). Omit for the single-method default derived from keyId/password.")
-                    })
-                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Optional port-knock sequence fired before the real connect. Format: whitespace/comma-separated 'port[/proto]' tokens — e.g. '7000 8000 9000' (all TCP) or '7000/tcp 8000/udp 9000/tcp'. Empty = disabled.") })
-                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms (default 100). Ignored when portKnockSequence is empty.") })
-                })
-                put("required", JSONArray().put("label").put("connectionType").put("host"))
+            inputSchema = objectSchema {
+                string("label", "User-facing label.", required = true)
+                string("connectionType", "SSH | SMB | VNC | RDP | EMAIL.", required = true)
+                string("host", "Target hostname or IP. For EMAIL this is the optional tunnel ingress/bastion (SPA/knock target), NOT the mail server — leave blank for a direct IMAP connection.", required = true)
+                integer("port", "TCP port. Defaults: SSH 22, SMB 445, VNC 5900, RDP 3389.")
+                string("username", "Username for SSH/SMB.")
+                string("password", "Password (stored). Optional for SSH if a key is used; some VNC/SMB setups allow guest.")
+                string("smbShare", "Share name (SMB). Required when connectionType=SMB.")
+                string("smbDomain", "AD/workgroup domain (SMB). Optional.")
+                string("vncUsername", "Username for VeNCrypt VNC.")
+                string("vncPassword", "VNC password.")
+                boolean("vncSshForward", "VNC only: tunnel the VNC connection through a saved SSH profile (set vncSshProfileId). The VNC target is reached at 127.0.0.1:<port> from the SSH server. Default false.")
+                string("vncSshProfileId", "VNC only: id of the SSH profile (from list_connections) to tunnel through when vncSshForward is true.")
+                string("rdpUsername", "Windows username (RDP). Required when connectionType=RDP.")
+                string("rdpPassword", "Windows password (RDP).")
+                string("rdpDomain", "AD domain (RDP). Optional.")
+                string("spicePassword", "SPICE only: ticket/password (stored). Optional — omit for an unticketed server.")
+                boolean("spiceSshForward", "SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId). The SPICE target is reached at 127.0.0.1:<port> from the SSH server. Default false.")
+                string("spiceSshProfileId", "SPICE only: id of the SSH profile (from list_connections) to tunnel through when spiceSshForward is true.")
+                string("emailProvider", "EMAIL only: \"imap\" (generic IMAP/SMTP, default) or \"proton\".")
+                string("emailServer", "EMAIL/imap only: IMAP server hostname (required for imap). Reached through the tunnel when one is set.")
+                string("emailSmtpServer", "EMAIL/imap only: SMTP submission host, when it differs from the IMAP host (e.g. smtp.gmail.com vs imap.gmail.com). Optional — defaults to emailServer.")
+                integer("emailPort", "EMAIL/imap only: IMAP port. Default 993.")
+                integer("emailSmtpPort", "EMAIL/imap only: SMTP port. Default 465.")
+                boolean("emailTls", "EMAIL/imap only: implicit TLS (SSL). Default true.")
+                string("emailMailboxPassword", "EMAIL/proton only: separate mailbox password for two-password-mode accounts.")
+                string("tunnelConfigId", "Optional: route the new profile through this tunnel (from list_tunnels). Equivalent to follow-up set_profile_routing.")
+                boolean("tunnelOnly", "SSH only: tunnel-only mode (#150). When true, the profile brings up the SSH transport and registers port forwards but does not open a terminal. Default false. Pair with auto_reconnect for autossh-style keepalive.")
+                boolean("useMosh", "SSH only: when true, the profile uses Mosh on top of the SSH bootstrap. SSH execs `mosh-server new -s`, parses MOSH CONNECT, then the UDP transport takes over. Default false.")
+                string("keyId", "SSH only: id of a saved SSH key (from list_ssh_keys) to authenticate with. Mutually optional with password.")
+                boolean("ignoreSavedKeys", "SSH-family only: when true, authenticate with password (and keyboard-interactive) only — saved keystore keys are never offered to the server. Lets a profile target a password-only server without the auto-key-offer suppressing the password prompt (#121). Default false.")
+                stringArray("authMethods", "SSH only (#166): ordered multi-factor auth methods attempted in one connect, for servers requiring a chain like publickey,password. Each element is a token: \"PASSWORD\", \"KEY\" (any saved key), \"KEY:<keyId>\", \"KEYBOARD_INTERACTIVE\", or \"TOTP:<id>\" (auto-fill an OATH-TOTP code from list_totp_secrets, #178). Omit for the single-method default derived from keyId/password.")
+                string("portKnockSequence", "Optional port-knock sequence fired before the real connect. Format: whitespace/comma-separated 'port[/proto]' tokens — e.g. '7000 8000 9000' (all TCP) or '7000/tcp 8000/udp 9000/tcp'. Empty = disabled.")
+                integer("portKnockDelayMs", "Inter-knock delay in ms (default 100). Ignored when portKnockSequence is empty.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -2126,28 +1440,24 @@ internal class McpTools(
 
         "update_connection" to ToolHandler(
             description = "Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, spiceSshForward + spiceSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
-                    put("label", JSONObject().apply { put("type", "string"); put("description", "New user-facing label.") })
-                    put("host", JSONObject().apply { put("type", "string"); put("description", "New hostname or IP.") })
-                    put("port", JSONObject().apply { put("type", "integer"); put("description", "New TCP port.") })
-                    put("username", JSONObject().apply { put("type", "string"); put("description", "New username (SSH/SMB).") })
-                    put("password", JSONObject().apply { put("type", "string"); put("description", "New password (stored encrypted). Mapped to the profile's transport (SSH/VNC/RDP/SMB). Pass an empty string to clear it.") })
-                    put("keyId", JSONObject().apply { put("type", "string"); put("description", "SSH only: id of a saved key (list_ssh_keys). Empty string clears.") })
-                    put("ignoreSavedKeys", JSONObject().apply { put("type", "boolean"); put("description", "SSH-family only: force password-only auth, never offer saved keystore keys (#121).") })
-                    put("useMosh", JSONObject().apply { put("type", "boolean"); put("description", "SSH only: use Mosh on top of the SSH bootstrap.") })
-                    put("vncSshForward", JSONObject().apply { put("type", "boolean"); put("description", "VNC only: tunnel through a saved SSH profile (set vncSshProfileId).") })
-                    put("vncSshProfileId", JSONObject().apply { put("type", "string"); put("description", "VNC only: SSH profile id to tunnel through. Empty string clears.") })
-                    put("rdpSshForward", JSONObject().apply { put("type", "boolean"); put("description", "RDP only: tunnel through a saved SSH profile (set rdpSshProfileId).") })
-                    put("rdpSshProfileId", JSONObject().apply { put("type", "string"); put("description", "RDP only: SSH profile id to tunnel through. Empty string clears.") })
-                    put("smbSshForward", JSONObject().apply { put("type", "boolean"); put("description", "SMB only: tunnel through a saved SSH profile (set smbSshProfileId).") })
-                    put("smbSshProfileId", JSONObject().apply { put("type", "string"); put("description", "SMB only: SSH profile id to tunnel through. Empty string clears.") })
-                    put("spiceSshForward", JSONObject().apply { put("type", "boolean"); put("description", "SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId).") })
-                    put("spiceSshProfileId", JSONObject().apply { put("type", "string"); put("description", "SPICE only: SSH profile id to tunnel through. Empty string clears.") })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                string("label", "New user-facing label.")
+                string("host", "New hostname or IP.")
+                integer("port", "New TCP port.")
+                string("username", "New username (SSH/SMB).")
+                string("password", "New password (stored encrypted). Mapped to the profile's transport (SSH/VNC/RDP/SMB). Pass an empty string to clear it.")
+                string("keyId", "SSH only: id of a saved key (list_ssh_keys). Empty string clears.")
+                boolean("ignoreSavedKeys", "SSH-family only: force password-only auth, never offer saved keystore keys (#121).")
+                boolean("useMosh", "SSH only: use Mosh on top of the SSH bootstrap.")
+                boolean("vncSshForward", "VNC only: tunnel through a saved SSH profile (set vncSshProfileId).")
+                string("vncSshProfileId", "VNC only: SSH profile id to tunnel through. Empty string clears.")
+                boolean("rdpSshForward", "RDP only: tunnel through a saved SSH profile (set rdpSshProfileId).")
+                string("rdpSshProfileId", "RDP only: SSH profile id to tunnel through. Empty string clears.")
+                boolean("smbSshForward", "SMB only: tunnel through a saved SSH profile (set smbSshProfileId).")
+                string("smbSshProfileId", "SMB only: SSH profile id to tunnel through. Empty string clears.")
+                boolean("spiceSshForward", "SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId).")
+                string("spiceSshProfileId", "SPICE only: SSH profile id to tunnel through. Empty string clears.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -2162,14 +1472,10 @@ internal class McpTools(
 
         "set_port_knock" to ToolHandler(
             description = "Update the port-knock fields on an existing profile. Pass portKnockSequence='' (empty) to disable knocking. Format: 'port[/proto]' tokens — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'. Returns the updated profile summary.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
-                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Sequence string ('' to disable).") })
-                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms. Optional; default 100 when sequence becomes non-empty.") })
-                })
-                put("required", JSONArray().put("profileId").put("portKnockSequence"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                string("portKnockSequence", "Sequence string ('' to disable).", required = true)
+                integer("portKnockDelayMs", "Inter-knock delay in ms. Optional; default 100 when sequence becomes non-empty.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -2182,14 +1488,10 @@ internal class McpTools(
 
         "test_port_knock" to ToolHandler(
             description = "Send a port-knock sequence to a host without committing or connecting anything. Bypasses the saved profile state — pass host + sequence directly. Returns ok/sent/durationMs/error so an agent can verify a knockd config end-to-end without opening a real session.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("host", JSONObject().apply { put("type", "string"); put("description", "Hostname or IP literal to knock against.") })
-                    put("portKnockSequence", JSONObject().apply { put("type", "string"); put("description", "Sequence string — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'.") })
-                    put("portKnockDelayMs", JSONObject().apply { put("type", "integer"); put("description", "Inter-knock delay in ms (default 100).") })
-                })
-                put("required", JSONArray().put("host").put("portKnockSequence"))
+            inputSchema = objectSchema {
+                string("host", "Hostname or IP literal to knock against.", required = true)
+                string("portKnockSequence", "Sequence string — e.g. '7000 8000 9000' or '7000/tcp 8000/udp'.", required = true)
+                integer("portKnockDelayMs", "Inter-knock delay in ms (default 100).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -2199,20 +1501,16 @@ internal class McpTools(
 
         "set_spa" to ToolHandler(
             description = "Configure fwknop Single Packet Authorization (SPA) on an existing profile — the cryptographic alternative to port knocking. Pass spaKey='' to disable. spaAccessSpec is the port(s) to open, e.g. 'tcp/22' or 'tcp/22,udp/53'. allowMode is SOURCE (default; fwknopd opens for the packet's source IP), RESOLVE (resolve public IP), or EXPLICIT (use explicitIp). Returns the updated profile summary; key material is never echoed back.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
-                    put("spaKey", JSONObject().apply { put("type", "string"); put("description", "Rijndael/AES key ('' to disable SPA).") })
-                    put("spaKeyBase64", JSONObject().apply { put("type", "boolean"); put("description", "True if spaKey is base64 (fwknop --key-base64-rijndael).") })
-                    put("spaHmacKey", JSONObject().apply { put("type", "string"); put("description", "Optional HMAC-SHA256 key. '' = no HMAC.") })
-                    put("spaHmacKeyBase64", JSONObject().apply { put("type", "boolean"); put("description", "True if spaHmacKey is base64 (fwknop --key-base64-hmac).") })
-                    put("spaAccessSpec", JSONObject().apply { put("type", "string"); put("description", "proto/port token(s), e.g. 'tcp/22'.") })
-                    put("allowMode", JSONObject().apply { put("type", "string"); put("description", "SOURCE | RESOLVE | EXPLICIT. Default SOURCE.") })
-                    put("explicitIp", JSONObject().apply { put("type", "string"); put("description", "Allow-IP/CIDR for EXPLICIT mode.") })
-                    put("spaPort", JSONObject().apply { put("type", "integer"); put("description", "Destination UDP port (default 62201).") })
-                })
-                put("required", JSONArray().put("profileId").put("spaKey"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                string("spaKey", "Rijndael/AES key ('' to disable SPA).", required = true)
+                boolean("spaKeyBase64", "True if spaKey is base64 (fwknop --key-base64-rijndael).")
+                string("spaHmacKey", "Optional HMAC-SHA256 key. '' = no HMAC.")
+                boolean("spaHmacKeyBase64", "True if spaHmacKey is base64 (fwknop --key-base64-hmac).")
+                string("spaAccessSpec", "proto/port token(s), e.g. 'tcp/22'.")
+                string("allowMode", "SOURCE | RESOLVE | EXPLICIT. Default SOURCE.")
+                string("explicitIp", "Allow-IP/CIDR for EXPLICIT mode.")
+                integer("spaPort", "Destination UDP port (default 62201).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -2224,20 +1522,16 @@ internal class McpTools(
 
         "test_spa" to ToolHandler(
             description = "Build and send one fwknop SPA packet to a host without committing a profile or connecting. Pass the key/access directly. Returns ok/bytesSent/spaPort/error so an agent can verify a fwknopd config end-to-end. Key material is never echoed back.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("host", JSONObject().apply { put("type", "string"); put("description", "Hostname or IP literal to send the SPA packet to.") })
-                    put("spaKey", JSONObject().apply { put("type", "string"); put("description", "Rijndael/AES key.") })
-                    put("spaKeyBase64", JSONObject().apply { put("type", "boolean"); put("description", "True if spaKey is base64.") })
-                    put("spaHmacKey", JSONObject().apply { put("type", "string"); put("description", "Optional HMAC-SHA256 key.") })
-                    put("spaHmacKeyBase64", JSONObject().apply { put("type", "boolean"); put("description", "True if spaHmacKey is base64.") })
-                    put("spaAccessSpec", JSONObject().apply { put("type", "string"); put("description", "proto/port token(s), e.g. 'tcp/22'.") })
-                    put("allowMode", JSONObject().apply { put("type", "string"); put("description", "SOURCE | RESOLVE | EXPLICIT. Default SOURCE.") })
-                    put("explicitIp", JSONObject().apply { put("type", "string"); put("description", "Allow-IP/CIDR for EXPLICIT mode.") })
-                    put("spaPort", JSONObject().apply { put("type", "integer"); put("description", "Destination UDP port (default 62201).") })
-                })
-                put("required", JSONArray().put("host").put("spaKey").put("spaAccessSpec"))
+            inputSchema = objectSchema {
+                string("host", "Hostname or IP literal to send the SPA packet to.", required = true)
+                string("spaKey", "Rijndael/AES key.", required = true)
+                boolean("spaKeyBase64", "True if spaKey is base64.")
+                string("spaHmacKey", "Optional HMAC-SHA256 key.")
+                boolean("spaHmacKeyBase64", "True if spaHmacKey is base64.")
+                string("spaAccessSpec", "proto/port token(s), e.g. 'tcp/22'.", required = true)
+                string("allowMode", "SOURCE | RESOLVE | EXPLICIT. Default SOURCE.")
+                string("explicitIp", "Allow-IP/CIDR for EXPLICIT mode.")
+                integer("spaPort", "Destination UDP port (default 62201).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -2247,24 +1541,16 @@ internal class McpTools(
 
         "get_connection_log" to ToolHandler(
             description = "Read the most recent ConnectionLog entries for a profile. Use this to verify post-hoc what happened during a connect — including knock results (look for '[knock]' lines in verboseLog), TLS handshakes, and authentication. limit defaults to 10.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
-                    put("limit", JSONObject().apply { put("type", "integer"); put("description", "Max entries to return (default 10, max 100).") })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                integer("limit", "Max entries to return (default 10, max 100).")
             },
         ) { args -> getConnectionLog(args) },
 
         "delete_connection" to ToolHandler(
             description = "Delete a saved connection profile by id. Disconnects any live session for the profile first. Use this after integration tests to clean up agent-created profiles.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_connections.") })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete profile \"${profileLabel(args.optString("profileId"))}\"?" },
@@ -2272,19 +1558,9 @@ internal class McpTools(
 
         "connect_profile" to ToolHandler(
             description = "Initiate a connection for a saved profile via the same code path a UI tap uses (route-through, stored password, key auth all apply). Posts an AgentUiCommand.ConnectProfile that ConnectionsViewModel observes — the actual connect happens asynchronously. Use list_sessions afterwards to confirm the session reached CONNECTED. If the profile needs a password that isn't stored and isn't a key, the UI password prompt will surface to the user. For an SSH profile that uses a session manager (tmux/zellij/screen), pass sessionName to attach or create a named session non-interactively; without it, a connect to a profile that has existing sessions surfaces the interactive picker — poll get_pending_session_picker and resolve it with answer_session_picker (no longer stalls unanswerable).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Profile id from list_connections.")
-                    })
-                    put("sessionName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. SSH session-manager (tmux/zellij/screen) session to attach or create — attaches if it already exists, creates it otherwise. Skips the interactive session picker. Ignored for transports/profiles without a session manager.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "Profile id from list_connections.", required = true)
+                string("sessionName", "Optional. SSH session-manager (tmux/zellij/screen) session to attach or create — attaches if it already exists, creates it otherwise. Skips the interactive session picker. Ignored for transports/profiles without a session manager.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Connect to \"${profileLabel(args.optString("profileId"))}\"?" },
@@ -2297,23 +1573,10 @@ internal class McpTools(
 
         "answer_auth_prompt" to ToolHandler(
             description = "Answer the prompt reported by get_pending_auth_prompt — supply the secret a user would type into Haven's fallback dialog and Haven re-drives the connect through the same path a UI tap uses. Pass `password` (the host password or the encrypted key's passphrase). Optional `username` overrides the login user; `rememberPassword` stores it on the profile. Returns { answered:false } when no prompt is pending. A wrong value just re-surfaces the prompt (poll get_pending_auth_prompt; it clears on success) — confirm the result with list_sessions.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("password", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The host/account password or the encrypted key's passphrase to unlock the stalled connect.")
-                    })
-                    put("username", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Override the login username for this attempt.")
-                    })
-                    put("rememberPassword", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Optional. Persist the password on the profile (default false).")
-                    })
-                })
-                put("required", JSONArray().put("password"))
+            inputSchema = objectSchema {
+                string("password", "The host/account password or the encrypted key's passphrase to unlock the stalled connect.", required = true)
+                string("username", "Optional. Override the login username for this attempt.")
+                boolean("rememberPassword", "Optional. Persist the password on the profile (default false).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { _ -> "Answer Haven's pending connection password prompt?" },
@@ -2327,18 +1590,9 @@ internal class McpTools(
 
         "answer_session_picker" to ToolHandler(
             description = "Answer the picker reported by get_pending_session_picker — attach to an existing remote session by name, or create a new one. Pass `sessionName` (must be one of the picker's sessionNames) to attach to it, or `createNew: true` to start a fresh session. Haven re-drives the attach through the same path a human tap uses (onSessionSelected). Returns { answered:false } when no picker is pending. Confirm the result with list_sessions / read_terminal_snapshot.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sessionName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Existing remote session to attach to (from get_pending_session_picker.sessionNames). Omit and set createNew=true to start a new one.")
-                    })
-                    put("createNew", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Create a new session instead of attaching to an existing one (default false).")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("sessionName", "Existing remote session to attach to (from get_pending_session_picker.sessionNames). Omit and set createNew=true to start a new one.")
+                boolean("createNew", "Create a new session instead of attaching to an existing one (default false).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->

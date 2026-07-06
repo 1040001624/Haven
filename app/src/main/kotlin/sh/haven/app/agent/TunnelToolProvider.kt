@@ -37,51 +37,17 @@ internal class TunnelToolProvider(
 
         "create_tunnel" to ToolHandler(
             description = "Add a new WireGuard, Tailscale, or Cloudflare Tunnel config. WIREGUARD: pass `configText` (wg-quick INI body). TAILSCALE: pass `tailscaleAuthKey` (and optional `tailscaleControlUrl` for Headscale). CLOUDFLARE_ACCESS: pass `accessHostname`; for Access-protected routes also pass `accessJwt` (from `cloudflared access token --app https://<host>`); optional `accessJumpDestination` for bastion-mode multi-target tunnels. Returns the new tunnel id, which can then be passed to set_profile_routing.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "User-facing label (also used to derive the Tailscale hostname).")
-                    })
-                    put("type", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "WIREGUARD, TAILSCALE, or CLOUDFLARE_ACCESS.")
-                    })
-                    put("configText", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "WireGuard wg-quick INI body. Required when type=WIREGUARD.")
-                    })
-                    put("tailscaleAuthKey", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Tailscale single-use authkey (tskey-auth-...). Required when type=TAILSCALE.")
-                    })
-                    put("tailscaleControlUrl", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Self-hosted Headscale coordination URL. Optional — empty defaults to controlplane.tailscale.com.")
-                    })
-                    put("accessHostname", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Cloudflare Tunnel published hostname (e.g. ssh.example.com). Required when type=CLOUDFLARE_ACCESS.")
-                    })
-                    put("accessJwt", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Cloudflare Access JWT (`CF_Authorization` value). Optional — only needed when the Tunnel route is Access-protected.")
-                    })
-                    put("accessTeamDomain", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Cloudflare Access team domain (myteam.cloudflareaccess.com). Optional; only meaningful for Access-protected routes.")
-                    })
-                    put("accessExpiresAt", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Optional explicit JWT expiry (Unix epoch seconds). Defaults to parsing the `exp` claim out of accessJwt.")
-                    })
-                    put("accessJumpDestination", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional `Cf-Access-Jump-Destination` value for bastion-mode multi-target tunnels (e.g. internal-host:22).")
-                    })
-                })
-                put("required", JSONArray().put("label").put("type"))
+            inputSchema = objectSchema {
+                string("label", "User-facing label (also used to derive the Tailscale hostname).", required = true)
+                string("type", "WIREGUARD, TAILSCALE, or CLOUDFLARE_ACCESS.", required = true)
+                string("configText", "WireGuard wg-quick INI body. Required when type=WIREGUARD.")
+                string("tailscaleAuthKey", "Tailscale single-use authkey (tskey-auth-...). Required when type=TAILSCALE.")
+                string("tailscaleControlUrl", "Self-hosted Headscale coordination URL. Optional — empty defaults to controlplane.tailscale.com.")
+                string("accessHostname", "Cloudflare Tunnel published hostname (e.g. ssh.example.com). Required when type=CLOUDFLARE_ACCESS.")
+                string("accessJwt", "Cloudflare Access JWT (`CF_Authorization` value). Optional — only needed when the Tunnel route is Access-protected.")
+                string("accessTeamDomain", "Cloudflare Access team domain (myteam.cloudflareaccess.com). Optional; only meaningful for Access-protected routes.")
+                integer("accessExpiresAt", "Optional explicit JWT expiry (Unix epoch seconds). Defaults to parsing the `exp` claim out of accessJwt.")
+                string("accessJumpDestination", "Optional `Cf-Access-Jump-Destination` value for bastion-mode multi-target tunnels (e.g. internal-host:22).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -93,15 +59,8 @@ internal class TunnelToolProvider(
 
         "delete_tunnel" to ToolHandler(
             description = "Delete a saved tunnel config by id. Profiles that referenced it via tunnelConfigId will fall through to direct dialling on next connect.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("tunnelConfigId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Tunnel id from list_tunnels.")
-                    })
-                })
-                put("required", JSONArray().put("tunnelConfigId"))
+            inputSchema = objectSchema {
+                string("tunnelConfigId", "Tunnel id from list_tunnels.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Delete tunnel ${args.optString("tunnelConfigId").take(8)}…?" },

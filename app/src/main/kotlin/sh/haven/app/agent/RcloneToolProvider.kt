@@ -40,38 +40,22 @@ internal class RcloneToolProvider(
 
         "list_rclone_provider_options" to ToolHandler(
             description = "List a credentials-based rclone provider's basic config fields — the non-advanced options needed to configure a non-OAuth remote (ftp, sftp, webdav, s3, b2, mega, filen, …). Each entry has name, help, required, isPassword, default, type. Feed the collected values into configure_rclone_remote's `parameters`. OAuth providers (drive, dropbox, onedrive, box, pcloud) are configured via the in-app browser sign-in, not this. (#181)",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("provider", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "rclone provider/type, e.g. 'ftp', 'sftp', 's3', 'filen'.")
-                    })
-                })
-                put("required", JSONArray().put("provider"))
+            inputSchema = objectSchema {
+                string("provider", "rclone provider/type, e.g. 'ftp', 'sftp', 's3', 'filen'.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> listRcloneProviderOptions(args) },
 
         "configure_rclone_remote" to ToolHandler(
             description = "Create (or replace) a credentials-based rclone remote and verify it by listing the root. Pass remoteName, provider (ftp/sftp/webdav/s3/b2/mega/filen/…), and parameters — an option→value map (see list_rclone_provider_options; rclone obscures password fields server-side). For OAuth providers (drive/dropbox/…) use the in-app browser sign-in instead. Returns { created, verified, entryCount } or an error. Makes the remote usable by the rclone list/sync tools. (#181)",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("remoteName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Name for the remote in rclone.conf, e.g. 'myftp'. Replaces an existing remote of the same name.")
-                    })
-                    put("provider", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "rclone provider/type, e.g. 'ftp', 'sftp', 's3', 'filen'.")
-                    })
-                    put("parameters", JSONObject().apply {
-                        put("type", "object")
-                        put("description", "Option→value map for the provider (from list_rclone_provider_options), e.g. {\"host\":\"…\",\"user\":\"…\",\"pass\":\"…\",\"port\":\"2121\"}. Password fields are obscured by rclone.")
-                    })
-                })
-                put("required", JSONArray().put("remoteName").put("provider").put("parameters"))
+            inputSchema = objectSchema {
+                string("remoteName", "Name for the remote in rclone.conf, e.g. 'myftp'. Replaces an existing remote of the same name.", required = true)
+                string("provider", "rclone provider/type, e.g. 'ftp', 'sftp', 's3', 'filen'.", required = true)
+                property(
+                    "parameters",
+                    JSONObject().put("type", "object").put("description", "Option→value map for the provider (from list_rclone_provider_options), e.g. {\"host\":\"…\",\"user\":\"…\",\"pass\":\"…\",\"port\":\"2121\"}. Password fields are obscured by rclone."),
+                    required = true,
+                )
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -81,15 +65,8 @@ internal class RcloneToolProvider(
 
         "delete_rclone_remote" to ToolHandler(
             description = "Delete an rclone remote from rclone.conf by name, and any RCLONE connection profile that references it. The inverse of configure_rclone_remote / the rclone-config import — use it to clean up a remote (e.g. a test or a failed/ghost import that left a remote with no usable profile). Returns { deleted, remoteName, removedProfiles }. deleted is false if no such remote existed (matching profiles are still removed).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("remoteName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Remote name in rclone.conf (see list_rclone_remotes).")
-                    })
-                })
-                put("required", JSONArray().put("remoteName"))
+            inputSchema = objectSchema {
+                string("remoteName", "Remote name in rclone.conf (see list_rclone_remotes).", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete rclone remote \"${args.optString("remoteName")}\" and any profile using it?" },
@@ -97,19 +74,12 @@ internal class RcloneToolProvider(
 
         "import_rclone_config" to ToolHandler(
             description = "Import remotes from a Linux rclone.conf (the headless equivalent of the in-app Import rclone config dialog, #269). Pass configText (the file contents). Each chosen remote becomes an rclone remote (token/creds copied verbatim, non-interactively — OAuth remotes don't block on the browser flow) plus a matching RCLONE connection profile; a half-created remote is rolled back on failure so a failed import leaves no ghost. Skips typeless sections and names already configured. Optional `names` limits the import to those remote names. Returns { created, skipped, failed }. Returns an error if the config is password-encrypted.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("configText", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Contents of an rclone.conf to import.")
-                    })
-                    put("names", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "Optional: only import remotes with these names. Omit to import all importable remotes.")
-                    })
-                })
-                put("required", JSONArray().put("configText"))
+            inputSchema = objectSchema {
+                string("configText", "Contents of an rclone.conf to import.", required = true)
+                property(
+                    "names",
+                    JSONObject().put("type", "array").put("description", "Optional: only import remotes with these names. Omit to import all importable remotes."),
+                )
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { _ -> "Import rclone remotes from a pasted rclone.conf?" },
@@ -117,19 +87,13 @@ internal class RcloneToolProvider(
 
         "update_rclone_remote" to ToolHandler(
             description = "Update an existing rclone remote's config in place (rclone config/update) — unlike configure_rclone_remote, which replaces the whole remote. Pass remoteName and a parameters option→value map of just the fields to change (rclone obscures password fields). Returns { updated, remoteName }.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("remoteName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Existing remote name (see list_rclone_remotes).")
-                    })
-                    put("parameters", JSONObject().apply {
-                        put("type", "object")
-                        put("description", "Option→value map of fields to change, e.g. {\"host\":\"…\"}.")
-                    })
-                })
-                put("required", JSONArray().put("remoteName").put("parameters"))
+            inputSchema = objectSchema {
+                string("remoteName", "Existing remote name (see list_rclone_remotes).", required = true)
+                property(
+                    "parameters",
+                    JSONObject().put("type", "object").put("description", "Option→value map of fields to change, e.g. {\"host\":\"…\"}."),
+                    required = true,
+                )
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Update rclone remote \"${args.optString("remoteName")}\"?" },
@@ -137,50 +101,24 @@ internal class RcloneToolProvider(
 
         "list_rclone_directory" to ToolHandler(
             description = "DEPRECATED: prefer list_directory(profileId=..., path=...). List files and subdirectories at a given path on an rclone remote. Returns name, isDir, size, mimeType, and modTime for each entry.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("remote", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Name of the rclone remote, e.g. 'gdrive'.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Path within the remote, relative to the remote root. Use '' for the root.")
-                    })
-                })
-                put("required", JSONArray().put("remote"))
+            inputSchema = objectSchema {
+                string("remote", "Name of the rclone remote, e.g. 'gdrive'.", required = true)
+                string("path", "Path within the remote, relative to the remote root. Use '' for the root.")
             },
         ) { args -> listRcloneDirectory(args) },
 
         "start_rclone_sync" to ToolHandler(
             description = "Start an async rclone transfer between two remote paths. mode=copy adds new/updated files (no deletes); mode=sync (a.k.a. \"Mirror\" in the UI) makes destination identical to source and deletes extras; mode=move copies then removes source files. srcFs/dstFs use rclone's remote-prefixed notation, e.g. \"gdrive:Backup/Photos\" or \"gdrive:\" for the remote root. Returns { jobId, mode } — poll get_rclone_sync_status to read finished/success and the transfer/delete counters. Honours the same optional filter and dryRun fields the SFTP sync dialog exposes.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("srcFs", JSONObject().apply { put("type", "string"); put("description", "Source remote path, e.g. \"gdrive:Backup/Photos\".") })
-                    put("dstFs", JSONObject().apply { put("type", "string"); put("description", "Destination remote path, e.g. \"gdrive:Mirror/Photos\".") })
-                    put("mode", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().put("copy").put("sync").put("move"))
-                        put("description", "copy = add/update only, sync = mirror (deletes extras in dst), move = copy then delete from src.")
-                    })
-                    put("dryRun", JSONObject().apply { put("type", "boolean"); put("description", "If true, simulate without writing.") })
-                    put("includePatterns", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                        put("description", "Optional include globs, e.g. [\"*.jpg\"].")
-                    })
-                    put("excludePatterns", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                        put("description", "Optional exclude globs.")
-                    })
-                    put("minSize", JSONObject().apply { put("type", "string"); put("description", "Optional minimum file size, e.g. \"1K\", \"5M\".") })
-                    put("maxSize", JSONObject().apply { put("type", "string"); put("description", "Optional maximum file size.") })
-                    put("bandwidthLimit", JSONObject().apply { put("type", "string"); put("description", "Optional bandwidth limit, e.g. \"10M\".") })
-                })
-                put("required", JSONArray().put("srcFs").put("dstFs").put("mode"))
+            inputSchema = objectSchema {
+                string("srcFs", "Source remote path, e.g. \"gdrive:Backup/Photos\".", required = true)
+                string("dstFs", "Destination remote path, e.g. \"gdrive:Mirror/Photos\".", required = true)
+                string("mode", "copy = add/update only, sync = mirror (deletes extras in dst), move = copy then delete from src.", enum = listOf("copy", "sync", "move"), required = true)
+                boolean("dryRun", "If true, simulate without writing.")
+                stringArray("includePatterns", "Optional include globs, e.g. [\"*.jpg\"].")
+                stringArray("excludePatterns", "Optional exclude globs.")
+                string("minSize", "Optional minimum file size, e.g. \"1K\", \"5M\".")
+                string("maxSize", "Optional maximum file size.")
+                string("bandwidthLimit", "Optional bandwidth limit, e.g. \"10M\".")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -194,21 +132,15 @@ internal class RcloneToolProvider(
 
         "get_rclone_sync_status" to ToolHandler(
             description = "Poll the status of an async rclone job started by start_rclone_sync. Returns finished/success/error plus live transfer stats: bytes, totalBytes, speed, transfers, totalTransfers, errors, deletes, deletedDirs. If jobId is omitted, reports on the most recently started job (or returns active=false if none).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("jobId", JSONObject().apply { put("type", "integer"); put("description", "Job id returned by start_rclone_sync. Optional — defaults to the active job.") })
-                })
+            inputSchema = objectSchema {
+                integer("jobId", "Job id returned by start_rclone_sync. Optional — defaults to the active job.")
             },
         ) { args -> getRcloneSyncStatus(args) },
 
         "cancel_rclone_sync" to ToolHandler(
             description = "Cancel a running rclone job started by start_rclone_sync. If jobId is omitted, cancels the active job. No-op if the job is already finished or never existed.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("jobId", JSONObject().apply { put("type", "integer"); put("description", "Job id to cancel. Optional — defaults to the active job.") })
-                })
+            inputSchema = objectSchema {
+                integer("jobId", "Job id to cancel. Optional — defaults to the active job.")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { _ -> "Cancel the running rclone sync job?" },
@@ -232,31 +164,17 @@ internal class RcloneToolProvider(
 
         "save_sync_profile" to ToolHandler(
             description = "Create or update a named rclone sync configuration (#159). Pass an `id` to overwrite an existing one; omit it to create. mode accepts copy/sync/move (or \"mirror\" as a sync alias). includePatterns/excludePatterns are arrays of glob strings. Returns the saved profile's id and the full resolved fields. Mutates Haven state, gated by EVERY_CALL consent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Existing profile id to overwrite. Omit to create a new one.") })
-                    put("name", JSONObject().apply { put("type", "string"); put("description", "Display name shown in the dropdown.") })
-                    put("srcFs", JSONObject().apply { put("type", "string"); put("description", "Source remote path, e.g. \"gdrive:Backup/Photos\".") })
-                    put("dstFs", JSONObject().apply { put("type", "string"); put("description", "Destination remote path.") })
-                    put("mode", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().put("copy").put("sync").put("move"))
-                        put("description", "copy/sync/move; \"mirror\" is accepted as a sync alias.")
-                    })
-                    put("includePatterns", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                    })
-                    put("excludePatterns", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                    })
-                    put("minSize", JSONObject().apply { put("type", "string") })
-                    put("maxSize", JSONObject().apply { put("type", "string") })
-                    put("bandwidthLimit", JSONObject().apply { put("type", "string") })
-                })
-                put("required", JSONArray().put("name").put("srcFs").put("dstFs").put("mode"))
+            inputSchema = objectSchema {
+                string("id", "Existing profile id to overwrite. Omit to create a new one.")
+                string("name", "Display name shown in the dropdown.", required = true)
+                string("srcFs", "Source remote path, e.g. \"gdrive:Backup/Photos\".", required = true)
+                string("dstFs", "Destination remote path.", required = true)
+                string("mode", "copy/sync/move; \"mirror\" is accepted as a sync alias.", enum = listOf("copy", "sync", "move"), required = true)
+                stringArray("includePatterns")
+                stringArray("excludePatterns")
+                string("minSize")
+                string("maxSize")
+                string("bandwidthLimit")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -269,12 +187,8 @@ internal class RcloneToolProvider(
 
         "delete_sync_profile" to ToolHandler(
             description = "Delete a saved rclone sync configuration by id. The dialog's dropdown updates immediately. EVERY_CALL consent because it's destructive (the user's saved config is gone after).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Profile id from list_saved_sync_profiles.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Profile id from list_saved_sync_profiles.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Delete saved sync configuration ${args.optString("id")}?" },

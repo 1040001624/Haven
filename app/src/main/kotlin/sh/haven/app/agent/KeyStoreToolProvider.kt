@@ -33,22 +33,10 @@ internal class KeyStoreToolProvider(
 
         "create_totp_secret" to ToolHandler(
             description = "Store an OATH-TOTP secret so it can auto-fill an SSH keyboard-interactive OTP prompt (#178). Pass `otpauth` (an `otpauth://totp/...` URI) OR `secret` (a raw base32 string) plus an optional `label`. Returns the new secret id; reference it via a `TOTP:<id>` token in create_connection's authMethods.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("otpauth", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "An otpauth://totp/Issuer:account?secret=...&... URI. Mutually exclusive with `secret`.")
-                    })
-                    put("secret", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "A raw base32 TOTP secret (SHA1, 6 digits, 30s period assumed). Use `otpauth` instead when you have the full URI.")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional user-facing label. Defaults to the otpauth issuer/account or 'Authenticator'.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("otpauth", "An otpauth://totp/Issuer:account?secret=...&... URI. Mutually exclusive with `secret`.")
+                string("secret", "A raw base32 TOTP secret (SHA1, 6 digits, 30s period assumed). Use `otpauth` instead when you have the full URI.")
+                string("label", "Optional user-facing label. Defaults to the otpauth issuer/account or 'Authenticator'.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -59,15 +47,8 @@ internal class KeyStoreToolProvider(
 
         "delete_totp_secret" to ToolHandler(
             description = "Delete a saved TOTP secret by id. Profiles referencing it via a TOTP auth element fall through to a manual OTP prompt on next connect. Irreversible.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("totpSecretId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "TOTP secret id from list_totp_secrets.")
-                    })
-                })
-                put("required", JSONArray().put("totpSecretId"))
+            inputSchema = objectSchema {
+                string("totpSecretId", "TOTP secret id from list_totp_secrets.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -84,14 +65,8 @@ internal class KeyStoreToolProvider(
 
         "create_age_identity" to ToolHandler(
             description = "Generate and store a new age X25519 encryption identity (VISION §2). Optional `label`. Returns the new id and its public `age1…` recipient. Tap-equivalent to Keys → + → Generate age identity.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional user-facing label. Defaults to 'age identity'.")
-                    })
-                })
+            inputSchema = objectSchema {
+                string("label", "Optional user-facing label. Defaults to 'age identity'.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -102,24 +77,10 @@ internal class KeyStoreToolProvider(
 
         "encrypt_file" to ToolHandler(
             description = "Encrypt the file at `path` on `profileId` to age recipients, producing `<name>.age` in the same folder (VISION §2 — works on every backend: local, SFTP, SMB, rclone). `recipients` (optional) is a list of `age1…` strings; omit it to encrypt to ALL of your stored age identities (so you can decrypt it back). Drives the file browser's Encrypt (age) action via the UI command bus — the user sees it run and the output appear. Non-destructive (the original is kept). Use list_age_identities for recipients and list_directory to find paths.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile id (or 'local'). From list_connections.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the file to encrypt.")
-                    })
-                    put("recipients", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "age1… recipients. Omit to encrypt to all stored identities.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile id (or 'local'). From list_connections.", required = true)
+                string("path", "Absolute path to the file to encrypt.", required = true)
+                stringArray("recipients", "age1… recipients. Omit to encrypt to all stored identities.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Encrypt \"${args.optString("path")}\" with age?" },
@@ -127,19 +88,9 @@ internal class KeyStoreToolProvider(
 
         "decrypt_file" to ToolHandler(
             description = "Decrypt the `.age` file at `path` on `profileId` in place (strips `.age`) using any stored age identity (VISION §2). Drives the file browser's Decrypt (age) action via the UI command bus — the user sees it run. Fails to produce output if no stored identity matches the file's recipients.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile id (or 'local').")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the .age file.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
+            inputSchema = objectSchema {
+                string("profileId", "Connection profile id (or 'local').", required = true)
+                string("path", "Absolute path to the .age file.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Decrypt \"${args.optString("path")}\" with age?" },

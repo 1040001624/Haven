@@ -43,26 +43,30 @@ internal class MailToolProvider(
     override fun tools(): Map<String, ToolHandler> = linkedMapOf(
         "list_mail_rules" to ToolHandler(
             description = "List inbound-email automation rules (Mail Rules). Returns each rule's id, name, enabled, orderIndex, accountProfileId (null=any), folderId, criteria, actions, lastFiredAt. Read-only.",
-            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { listMailRules() },
 
         "create_mail_rule" to ToolHandler(
             description = "Create an inbound-email automation rule: when a message in folderId (default INBOX) of accountProfileId (omit = any connected email account) matches `criteria`, run the ordered `actions`. criteria = {combinator:\"ALL\"|\"ANY\", conditions:[{type, op, value}]} where type is from|to|subject|is_unread|body|has_attachment|attachment_name|attachment_mime|header and op is CONTAINS|EQUALS|REGEX|GLOB. actions = an ordered array of {type, …}: save_attachments{destProfileId,destDir,nameGlob?,mimeGlob?} | run_command{template,background?} | send_to_agent{messageTemplate,targetSessionId?} | notify{titleTemplate,bodyTemplate} | imap_filter{op: MARK_READ|MARK_UNREAD|SET_FLAGGED|UNSET_FLAGGED|MOVE|DELETE, destFolderId?} | forward{to[],template?} | invoke_mcp_tool{toolName,argsTemplateJson}. Templates may use {from} {fromName} {subject} {to} {uid}. Creating + enabling a rule is your standing authorization for its actions (they fire without a per-call prompt); destructive actions (move/delete/forward/run-command, or a non-NEVER MCP tool) are queued for foreground approval when Haven is backgrounded. Turn the master switch on with set_preference mail_automation_enabled=true.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("name", JSONObject().apply { put("type", "string"); put("description", "Human label for the rule.") })
-                    put("accountProfileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL profile id to watch; omit for any connected email account.") })
-                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder to watch (default INBOX).") })
-                    put("criteria", JSONObject().apply { put("type", "object"); put("description", "{combinator, conditions:[…]} — see the tool description.") })
-                    put("actions", JSONObject().apply { put("type", "array"); put("description", "Ordered actions — see the tool description.") })
-                    put("enabled", JSONObject().apply { put("type", "boolean"); put("description", "Default true.") })
-                    put("orderIndex", JSONObject().apply { put("type", "integer"); put("description", "Evaluation order; lower runs first.") })
-                    put("stopOnMatch", JSONObject().apply { put("type", "boolean"); put("description", "Stop evaluating later rules when this one matches.") })
-                    put("notifyOnFire", JSONObject().apply { put("type", "boolean"); put("description", "Raise a notification each time the rule fires.") })
-                })
-                put("required", JSONArray().put("name").put("criteria").put("actions"))
+            inputSchema = objectSchema {
+                string("name", "Human label for the rule.", required = true)
+                string("accountProfileId", "EMAIL profile id to watch; omit for any connected email account.")
+                string("folderId", "Folder to watch (default INBOX).")
+                property(
+                    "criteria",
+                    JSONObject().put("type", "object").put("description", "{combinator, conditions:[…]} — see the tool description."),
+                    required = true,
+                )
+                property(
+                    "actions",
+                    JSONObject().put("type", "array").put("description", "Ordered actions — see the tool description."),
+                    required = true,
+                )
+                boolean("enabled", "Default true.")
+                integer("orderIndex", "Evaluation order; lower runs first.")
+                boolean("stopOnMatch", "Stop evaluating later rules when this one matches.")
+                boolean("notifyOnFire", "Raise a notification each time the rule fires.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Create mail rule \"${args.optString("name")}\" (grants standing authorization for its actions)?" },
@@ -70,12 +74,8 @@ internal class MailToolProvider(
 
         "delete_mail_rule" to ToolHandler(
             description = "Delete a Mail Rule by id (see list_mail_rules).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("id", JSONObject().apply { put("type", "string"); put("description", "Rule id from list_mail_rules.") })
-                })
-                put("required", JSONArray().put("id"))
+            inputSchema = objectSchema {
+                string("id", "Rule id from list_mail_rules.", required = true)
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args -> "Delete mail rule ${args.optString("id")}?" },
@@ -83,13 +83,13 @@ internal class MailToolProvider(
 
         "get_mail_automation_status" to ToolHandler(
             description = "Mail-Rules automation status: master switch, rule counts, recent firings (the audit log), and destructive actions queued for foreground approval. Read-only.",
-            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) { getMailAutomationStatus() },
 
         "poke_mail_watch" to ToolHandler(
             description = "Force a Mail-Rules poll cycle now instead of waiting for the periodic timer (for testing/immediacy). No-op when the master switch is off. Returns { poked }.",
-            inputSchema = JSONObject().apply { put("type", "object"); put("properties", JSONObject()) },
+            inputSchema = emptyObjectSchema(),
             consentLevel = ConsentLevel.NEVER,
         ) {
             mailWatchManager.pokeNow()
@@ -98,136 +98,54 @@ internal class MailToolProvider(
 
         "list_mail_folders" to ToolHandler(
             description = "List folders/labels for a connected EMAIL profile (IMAP/Gmail or Proton). Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, type, and role (inbox/sent/trash/…). Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> listMailFolders(args) },
 
         "list_mail_folders" to ToolHandler(
             description = "List folders/labels for a connected EMAIL profile (IMAP/Gmail or Proton). Pass profileId (from list_connections). The profile must already be connected (connect_profile first). Returns each folder's id, name, type, and role (inbox/sent/trash/…). Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> listMailFolders(args) },
 
         "list_mail_messages" to ToolHandler(
             description = "List message envelopes in a folder of a connected EMAIL profile. Pass profileId and folderId (default '0'/INBOX; see list_mail_folders). Returns id, subject, from, unread, time, numAttachments per message, newest first. Page with limit (default 100) + offset (skip from the newest end; offset = page*limit walks older). Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                    put("folderId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Folder/label id (default '0'/INBOX).")
-                    })
-                    put("limit", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Max envelopes to return (default 100, 1..500).")
-                    })
-                    put("offset", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Skip this many from the newest end (default 0) — page older with offset = page*limit.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("folderId", "Folder/label id (default '0'/INBOX).")
+                integer("limit", "Max envelopes to return (default 100, 1..500).")
+                integer("offset", "Skip this many from the newest end (default 0) — page older with offset = page*limit.")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> listMailMessages(args) },
 
         "read_mail_message" to ToolHandler(
             description = "Fetch one message from a connected EMAIL profile (IMAP/Gmail or Proton; Proton messages are decrypted), returning parsed headers (from, to[], cc[] — cc enables reply-all) and plain-text body (HTML is stripped; remote content is never loaded). Pass profileId and messageId (from list_mail_messages). Each attachment carries an { index, filename, mimeType, sizeBytes, isInline } — pass the index to save_mail_attachment to write its bytes to any connected filesystem. Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                    put("messageId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Message id from list_mail_messages.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("messageId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("messageId", "Message id from list_mail_messages.", required = true)
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readMailMessage(args) },
 
         "send_mail" to ToolHandler(
             description = "Send a plain-text email from a connected EMAIL profile. Pass profileId (from list_connections; connect_profile first), to (array of recipient addresses, at least one), subject, and body (plain text). Optional cc/bcc arrays. Optional attachments: an array of { profileId, path } files on any connected backend (\"local\" or a connected profile id) to attach. To reply in-thread, pass inReplyToMessageId (a messageId from list_mail_messages) — the engine sets In-Reply-To/References from that message so the reply threads (set your own \"Re: …\" subject). Returns { sent, messageId, appendedToSent }. IMAP/SMTP only — Proton send is not yet implemented and returns an error. Side-effectful: prompts for consent on every call and is recorded in the connection log.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                    put("to", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                        put("description", "Recipient email addresses (at least one).")
-                    })
-                    put("subject", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Subject line.")
-                    })
-                    put("body", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Plain-text message body.")
-                    })
-                    put("cc", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                        put("description", "Optional Cc addresses.")
-                    })
-                    put("bcc", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().put("type", "string"))
-                        put("description", "Optional Bcc addresses.")
-                    })
-                    put("inReplyToMessageId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional: messageId (from list_mail_messages) this is a reply to — threads via In-Reply-To/References.")
-                    })
-                    put("attachments", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply {
-                            put("type", "object")
-                            put("properties", JSONObject().apply {
-                                put("profileId", JSONObject().apply {
-                                    put("type", "string")
-                                    put("description", "Backend profile id holding the file, or \"local\".")
-                                })
-                                put("path", JSONObject().apply {
-                                    put("type", "string")
-                                    put("description", "Absolute path of the file to attach on that backend.")
-                                })
-                            })
-                            put("required", JSONArray().put("profileId").put("path"))
-                        })
-                        put("description", "Optional files to attach, each { profileId, path } on a connected backend.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("to").put("subject").put("body"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                stringArray("to", "Recipient email addresses (at least one).", required = true)
+                string("subject", "Subject line.", required = true)
+                string("body", "Plain-text message body.", required = true)
+                stringArray("cc", "Optional Cc addresses.")
+                stringArray("bcc", "Optional Bcc addresses.")
+                string("inReplyToMessageId", "Optional: messageId (from list_mail_messages) this is a reply to — threads via In-Reply-To/References.")
+                objectArray("attachments", "Optional files to attach, each { profileId, path } on a connected backend.") {
+                    string("profileId", "Backend profile id holding the file, or \"local\".", required = true)
+                    string("path", "Absolute path of the file to attach on that backend.", required = true)
+                }
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -241,35 +159,13 @@ internal class MailToolProvider(
 
         "save_mail_attachment" to ToolHandler(
             description = "Save one attachment from a message on a connected EMAIL profile to any connected filesystem (local, SFTP, SMB, rclone, Reticulum). Pass profileId + messageId + attachmentIndex (the index from read_mail_message), and the destination as destProfileId (\"local\" or any connected profile id) + destPath (a directory). Optional destFilename overrides the saved name. The file is named after the attachment (sanitised); a collision gets \" (1)\", \" (2)\", … Returns { saved, destProfileId, backend, destPath, filename, bytes }. Works for both IMAP and Proton. Writes a file — prompts for consent on every call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Source EMAIL connection profile id.")
-                    })
-                    put("messageId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Message id from list_mail_messages.")
-                    })
-                    put("attachmentIndex", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Attachment index from read_mail_message.")
-                    })
-                    put("destProfileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Destination backend profile id, or \"local\" for the device filesystem.")
-                    })
-                    put("destPath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Destination directory on the chosen backend.")
-                    })
-                    put("destFilename", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional name to save as (defaults to the attachment's own filename).")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("messageId").put("attachmentIndex").put("destProfileId").put("destPath"))
+            inputSchema = objectSchema {
+                string("profileId", "Source EMAIL connection profile id.", required = true)
+                string("messageId", "Message id from list_mail_messages.", required = true)
+                integer("attachmentIndex", "Attachment index from read_mail_message.", required = true)
+                string("destProfileId", "Destination backend profile id, or \"local\" for the device filesystem.", required = true)
+                string("destPath", "Destination directory on the chosen backend.", required = true)
+                string("destFilename", "Optional name to save as (defaults to the attachment's own filename).")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -280,27 +176,11 @@ internal class MailToolProvider(
 
         "modify_mail_message" to ToolHandler(
             description = "Mutate one message on a connected EMAIL profile: mark read/unread, flag/unflag (star), move to another folder, copy/apply-a-label, or delete. Pass profileId + messageId (from list_mail_messages) + op (mark_read | mark_unread | flag | unflag | move | copy | delete). op=move and op=copy also require destFolderId (a folder id from list_mail_folders). IMAP/Gmail only — the Proton engine returns 501. On Gmail: move relabels (removes the source label, adds dest); copy is additive — it applies the dest label and KEEPS the message in its current folders (use copy to label without archiving from Inbox); delete moves to Trash. Returns { ok, op, messageId }. Side-effectful — prompts for consent on every call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "EMAIL connection profile id.")
-                    })
-                    put("messageId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Message id from list_mail_messages.")
-                    })
-                    put("op", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "mark_read | mark_unread | flag | unflag | move | copy | delete")
-                    })
-                    put("destFolderId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Destination folder/label id (from list_mail_folders) — required when op=move or op=copy.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("messageId").put("op"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("messageId", "Message id from list_mail_messages.", required = true)
+                string("op", "mark_read | mark_unread | flag | unflag | move | copy | delete", required = true)
+                string("destFolderId", "Destination folder/label id (from list_mail_folders) — required when op=move or op=copy.")
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args ->
@@ -313,51 +193,35 @@ internal class MailToolProvider(
 
         "search_mail" to ToolHandler(
             description = "Server-side search of a folder on a connected EMAIL profile. Pass profileId, optional folderId (default INBOX; see list_mail_folders), and one or more criteria: from, to, subject, body (substring matches), unreadOnly (bool), sinceEpochSec / beforeEpochSec (Unix seconds, day granularity). Criteria are ANDed; at least one is required. Optional limit (default 100, 1..500). Returns the same envelope shape as list_mail_messages (newest first) — feed ids into read_mail_message / modify_mail_message. IMAP/Gmail only — Proton returns 501. Read-only.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
-                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder/label id to search (default INBOX).") })
-                    put("from", JSONObject().apply { put("type", "string"); put("description", "Match sender address/name (substring).") })
-                    put("to", JSONObject().apply { put("type", "string"); put("description", "Match a To recipient (substring).") })
-                    put("subject", JSONObject().apply { put("type", "string"); put("description", "Match subject (substring).") })
-                    put("body", JSONObject().apply { put("type", "string"); put("description", "Match body text (substring).") })
-                    put("unreadOnly", JSONObject().apply { put("type", "boolean"); put("description", "Only unread (no \\Seen) messages.") })
-                    put("sinceEpochSec", JSONObject().apply { put("type", "integer"); put("description", "On/after this Unix-seconds date (day granularity).") })
-                    put("beforeEpochSec", JSONObject().apply { put("type", "integer"); put("description", "On/before this Unix-seconds date (day granularity).") })
-                    put("limit", JSONObject().apply { put("type", "integer"); put("description", "Max results (default 100, 1..500).") })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("folderId", "Folder/label id to search (default INBOX).")
+                string("from", "Match sender address/name (substring).")
+                string("to", "Match a To recipient (substring).")
+                string("subject", "Match subject (substring).")
+                string("body", "Match body text (substring).")
+                boolean("unreadOnly", "Only unread (no \\Seen) messages.")
+                integer("sinceEpochSec", "On/after this Unix-seconds date (day granularity).")
+                integer("beforeEpochSec", "On/before this Unix-seconds date (day granularity).")
+                integer("limit", "Max results (default 100, 1..500).")
             },
             consentLevel = ConsentLevel.NEVER,
         ) { args -> searchMail(args) },
 
         "save_mail_draft" to ToolHandler(
             description = "Save a draft (NOT sent) to the account's Drafts folder on a connected EMAIL profile — use to compose a message for the user to review/send later. Same fields as send_mail (to/cc/bcc/subject/body, optional attachments, optional inReplyToMessageId to thread) but all are optional — a draft may be incomplete. Returns { saved, draftFolderId }. IMAP/Gmail only — Proton returns 501. Writes to the mailbox — prompts for consent on every call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
-                    put("to", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Recipient addresses (optional for a draft).") })
-                    put("subject", JSONObject().apply { put("type", "string"); put("description", "Subject line.") })
-                    put("body", JSONObject().apply { put("type", "string"); put("description", "Plain-text body.") })
-                    put("cc", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Optional Cc addresses.") })
-                    put("bcc", JSONObject().apply { put("type", "array"); put("items", JSONObject().put("type", "string")); put("description", "Optional Bcc addresses.") })
-                    put("inReplyToMessageId", JSONObject().apply { put("type", "string"); put("description", "Optional: messageId this draft replies to — threads via In-Reply-To/References.") })
-                    put("attachments", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply {
-                            put("type", "object")
-                            put("properties", JSONObject().apply {
-                                put("profileId", JSONObject().apply { put("type", "string"); put("description", "Backend profile id holding the file, or \"local\".") })
-                                put("path", JSONObject().apply { put("type", "string"); put("description", "Absolute path of the file on that backend.") })
-                            })
-                            put("required", JSONArray().put("profileId").put("path"))
-                        })
-                        put("description", "Optional files to attach, each { profileId, path }.")
-                    })
-                })
-                put("required", JSONArray().put("profileId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                stringArray("to", "Recipient addresses (optional for a draft).")
+                string("subject", "Subject line.")
+                string("body", "Plain-text body.")
+                stringArray("cc", "Optional Cc addresses.")
+                stringArray("bcc", "Optional Bcc addresses.")
+                string("inReplyToMessageId", "Optional: messageId this draft replies to — threads via In-Reply-To/References.")
+                objectArray("attachments", "Optional files to attach, each { profileId, path }.") {
+                    string("profileId", "Backend profile id holding the file, or \"local\".", required = true)
+                    string("path", "Absolute path of the file on that backend.", required = true)
+                }
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Save a draft to \"${ctx.profileLabel(args.optString("profileId"))}\" — \"${args.optString("subject")}\"?" },
@@ -365,13 +229,9 @@ internal class MailToolProvider(
 
         "create_mail_folder" to ToolHandler(
             description = "Create a new folder/label on a connected EMAIL profile (IMAP CREATE; on Gmail this is a new label). Pass profileId + name (use the server's hierarchy separator for nesting, e.g. \"Work/2026\"). Returns { created, folderId } — use folderId as a destination for modify_mail_message move/copy. Fails if it already exists. IMAP/Gmail only — Proton returns 501. Changes the mailbox — prompts for consent on every call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
-                    put("name", JSONObject().apply { put("type", "string"); put("description", "New folder/label name (e.g. \"Receipts\" or \"Work/2026\").") })
-                })
-                put("required", JSONArray().put("profileId").put("name"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("name", "New folder/label name (e.g. \"Receipts\" or \"Work/2026\").", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "Create mail folder/label \"${args.optString("name")}\" on \"${ctx.profileLabel(args.optString("profileId"))}\"?" },
@@ -379,13 +239,9 @@ internal class MailToolProvider(
 
         "delete_mail_folder" to ToolHandler(
             description = "Delete a folder/label on a connected EMAIL profile (IMAP DELETE). Pass profileId + folderId (from list_mail_folders). On Gmail this removes the LABEL — messages survive in All Mail; on a plain IMAP server it deletes the mailbox AND its messages (destructive). System folders (Inbox/Sent/Drafts/Trash/Spam/All Mail/…) are refused. Returns { deleted, folderId }. IMAP/Gmail only — Proton returns 501. Destructive — prompts for consent on every call.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply { put("type", "string"); put("description", "EMAIL connection profile id.") })
-                    put("folderId", JSONObject().apply { put("type", "string"); put("description", "Folder/label id to delete (from list_mail_folders). System folders are refused.") })
-                })
-                put("required", JSONArray().put("profileId").put("folderId"))
+            inputSchema = objectSchema {
+                string("profileId", "EMAIL connection profile id.", required = true)
+                string("folderId", "Folder/label id to delete (from list_mail_folders). System folders are refused.", required = true)
             },
             consentLevel = ConsentLevel.EVERY_CALL,
             summarise = { args -> "DELETE mail folder/label \"${args.optString("folderId")}\" on \"${ctx.profileLabel(args.optString("profileId"))}\"? (On Gmail removes the label; on other IMAP deletes the folder + its messages.)" },
