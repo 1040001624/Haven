@@ -442,12 +442,18 @@ wins land first, protocol churn last.
   `ToolResult` (`Structured` / `Image` / `Passthrough`) that the transport
   renders, so the reserved `__mcpContent` / `__imageBase64` keys are a
   McpTools-internal handler↔`callTyped` detail, no longer a handler↔server
-  contract. **Still to do:** the *physical* split of the 11.7k-line `McpTools`
-  God file into per-domain Hilt-multibound `ToolProvider`s + a `ToolRegistry`
-  (a large mechanical migration — deliberately its own reviewed change, not a
-  big-bang), a schema DSL to replace the inline `org.json` builders, deleting
-  the internal `__` keys at the ~6 handler sites once the provider split lets
-  handlers return `ToolResult` directly, and the whole of Layer F (§1b
+  contract. Then the *provider split* began: a `ToolProvider` seam plus the
+  first extraction — the key-store domain (TOTP + age identities) moved out of
+  the God file into `KeyStoreToolProvider`, which `McpTools` aggregates. The
+  seam is deliberately an *internal* decomposition: `McpTools`'s public surface
+  (`definitions`/`consentFor`/`capabilityDenial`/`call`/`callTyped`) is
+  unchanged, so the transport and every server test stay untouched — no
+  Hilt-multibinding rewire of `McpServer`'s constructor (which would cascade
+  into every server test builder). Each future domain is a mechanical repeat.
+  **Still to do:** extract the remaining domains (mail, rclone, usb, desktop,
+  tunnels, …) into providers the same way; a schema DSL to replace the inline
+  `org.json` builders; deleting the internal `__` keys at the ~6 handler sites
+  once handlers can return `ToolResult` directly; and the whole of Layer F (§1b
   Android-app MCP discovery via `<intent-filter>`/`meta-data`, a `ClientRegistry`,
   and SSE/`listChanged` server→client push).
 

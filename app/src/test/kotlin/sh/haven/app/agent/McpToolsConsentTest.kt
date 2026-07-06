@@ -416,4 +416,39 @@ class McpToolsConsentTest {
         // is why gating every tool through it doesn't perturb other tests.
         assertNull(runBlocking { newTools().capabilityDenial("list_connections") })
     }
+
+    // --- Key-store provider extraction (#mcp-backbone Stage 5, Layer E) ---
+
+    @Test
+    fun `key-store tools are aggregated into the registry with their consent levels intact`() {
+        // The TOTP + age tools now live in KeyStoreToolProvider, not McpTools'
+        // own map. This asserts the aggregation surfaces them unchanged —
+        // same names, same consent levels, still in definitions().
+        val tools = newTools()
+        val definitionNames = tools.definitions().map { it.getString("name") }.toSet()
+        val readOnly = listOf("list_totp_secrets", "list_age_identities")
+        val everyCall = listOf(
+            "create_totp_secret", "delete_totp_secret",
+            "create_age_identity", "encrypt_file", "decrypt_file",
+        )
+        for (name in readOnly) {
+            assertTrue("$name missing from definitions()", name in definitionNames)
+            assertEquals("$name must be NEVER", ConsentLevel.NEVER, tools.consentFor(name)!!.level)
+        }
+        for (name in everyCall) {
+            assertTrue("$name missing from definitions()", name in definitionNames)
+            assertEquals("$name must be EVERY_CALL", ConsentLevel.EVERY_CALL, tools.consentFor(name)!!.level)
+        }
+    }
+
+    @Test
+    fun `a provider tool dispatches through the aggregated call path`() {
+        // Proves the provider's handler is reachable via McpTools.call — the
+        // same entry point the transport uses — not just registered.
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        val tools = newTools(prefs)
+        val out = runBlocking { tools.call("list_totp_secrets", JSONObject()) }
+        // Relaxed TotpSecretRepository.getAll() returns an empty list.
+        assertEquals(0, out.getInt("count"))
+    }
 }

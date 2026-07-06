@@ -200,14 +200,25 @@ internal class McpTools(
     @Volatile
     private var installNotificationChannelEnsured = false
 
+    // Domain providers extracted from this file (#mcp-backbone Stage 5,
+    // Layer E). Each owns a cohesive slice of the registry and only the deps
+    // its tools need; McpTools aggregates them with its own not-yet-extracted
+    // tools below. Extracting domains here is what dismantles the God file.
+    private val keyStoreProvider = KeyStoreToolProvider(
+        totpSecretRepository = totpSecretRepository,
+        ageIdentityRepository = ageIdentityRepository,
+        agentUiCommandBus = agentUiCommandBus,
+    )
+
     /** Tool registry: name → handler. */
-    // The tool registry is split across several builder methods purely to
-    // keep each under the JVM's 64 KiB per-method bytecode limit — the whole
-    // registry in one initializer overflowed `<init>`. (A structural symptom
-    // of the God-file debt that #mcp-backbone Stage 5's provider split
-    // retires; this is the holding fix.)
+    // The not-yet-extracted tools are split across several builder methods
+    // purely to keep each under the JVM's 64 KiB per-method bytecode limit —
+    // the whole registry in one initializer overflowed `<init>`. (A structural
+    // symptom of the God-file debt the provider split above retires; this is
+    // the holding fix for the tools that haven't moved out yet.)
     private val tools: Map<String, ToolHandler> =
-        toolsPart1() + toolsPart2() + toolsPart3() + toolsPart4()
+        toolsPart1() + toolsPart2() + toolsPart3() + toolsPart4() +
+            keyStoreProvider.tools()
 
     private fun toolsPart1(): Map<String, ToolHandler> = linkedMapOf(
         "get_app_info" to ToolHandler(
@@ -3109,125 +3120,6 @@ internal class McpTools(
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
         ) { args -> setSnippet(args) },
-
-        "list_totp_secrets" to ToolHandler(
-            description = "List saved OATH-TOTP authenticator secrets (#178). Returns id, label, issuer, accountName, algorithm, digits, periodSeconds, and createdAt. The base32 secret itself is NEVER returned — it stays encrypted at rest. Reference an id as a `TOTP:<id>` token in create_connection's authMethods to auto-fill the SSH 'Verification code:' prompt.",
-            inputSchema = emptyObjectSchema(),
-        ) { _ -> listTotpSecrets() },
-
-        "create_totp_secret" to ToolHandler(
-            description = "Store an OATH-TOTP secret so it can auto-fill an SSH keyboard-interactive OTP prompt (#178). Pass `otpauth` (an `otpauth://totp/...` URI) OR `secret` (a raw base32 string) plus an optional `label`. Returns the new secret id; reference it via a `TOTP:<id>` token in create_connection's authMethods.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("otpauth", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "An otpauth://totp/Issuer:account?secret=...&... URI. Mutually exclusive with `secret`.")
-                    })
-                    put("secret", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "A raw base32 TOTP secret (SHA1, 6 digits, 30s period assumed). Use `otpauth` instead when you have the full URI.")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional user-facing label. Defaults to the otpauth issuer/account or 'Authenticator'.")
-                    })
-                })
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args ->
-                val l = args.optString("label").ifBlank { "(from otpauth)" }
-                "Store a TOTP authenticator secret \"$l\" in the Haven key store?"
-            },
-        ) { args -> createTotpSecret(args) },
-
-        "delete_totp_secret" to ToolHandler(
-            description = "Delete a saved TOTP secret by id. Profiles referencing it via a TOTP auth element fall through to a manual OTP prompt on next connect. Irreversible.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("totpSecretId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "TOTP secret id from list_totp_secrets.")
-                    })
-                })
-                put("required", JSONArray().put("totpSecretId"))
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args ->
-                val id = args.optString("totpSecretId")
-                val label = runBlocking { totpSecretRepository.getById(id)?.label } ?: id.take(8) + "…"
-                "Delete TOTP secret \"$label\"? Cannot be undone."
-            },
-        ) { args -> deleteTotpSecret(args) },
-
-        "list_age_identities" to ToolHandler(
-            description = "List saved age file-encryption identities (VISION §2). Returns id, label, the public `age1…` recipient (encrypt to this with encrypt_file or the file browser's Encrypt action), and createdAt. The private key (AGE-SECRET-KEY-1…) is NEVER returned — it stays encrypted at rest.",
-            inputSchema = emptyObjectSchema(),
-        ) { _ -> listAgeIdentities() },
-
-        "create_age_identity" to ToolHandler(
-            description = "Generate and store a new age X25519 encryption identity (VISION §2). Optional `label`. Returns the new id and its public `age1…` recipient. Tap-equivalent to Keys → + → Generate age identity.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional user-facing label. Defaults to 'age identity'.")
-                    })
-                })
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args ->
-                val l = args.optString("label").ifBlank { "age identity" }
-                "Generate a new age encryption identity \"$l\" in the Haven key store?"
-            },
-        ) { args -> createAgeIdentity(args) },
-
-        "encrypt_file" to ToolHandler(
-            description = "Encrypt the file at `path` on `profileId` to age recipients, producing `<name>.age` in the same folder (VISION §2 — works on every backend: local, SFTP, SMB, rclone). `recipients` (optional) is a list of `age1…` strings; omit it to encrypt to ALL of your stored age identities (so you can decrypt it back). Drives the file browser's Encrypt (age) action via the UI command bus — the user sees it run and the output appear. Non-destructive (the original is kept). Use list_age_identities for recipients and list_directory to find paths.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile id (or 'local'). From list_connections.")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the file to encrypt.")
-                    })
-                    put("recipients", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "age1… recipients. Omit to encrypt to all stored identities.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args -> "Encrypt \"${args.optString("path")}\" with age?" },
-        ) { args -> encryptFileViaAgent(args) },
-
-        "decrypt_file" to ToolHandler(
-            description = "Decrypt the `.age` file at `path` on `profileId` in place (strips `.age`) using any stored age identity (VISION §2). Drives the file browser's Decrypt (age) action via the UI command bus — the user sees it run. Fails to produce output if no stored identity matches the file's recipients.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("profileId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Connection profile id (or 'local').")
-                    })
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Absolute path to the .age file.")
-                    })
-                })
-                put("required", JSONArray().put("profileId").put("path"))
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args -> "Decrypt \"${args.optString("path")}\" with age?" },
-        ) { args -> decryptFileViaAgent(args) },
 
         "list_tunnels" to ToolHandler(
             description = "List saved WireGuard / Tailscale tunnel configs available for Route-through on connection profiles. Returns id, label, type (WIREGUARD or TAILSCALE), and createdAt for each. The encrypted configText (wg-quick payload or Tailscale authkey blob) is NOT returned.",
@@ -9039,138 +8931,6 @@ internal class McpTools(
         }
     }
 
-    private suspend fun listTotpSecrets(): JSONObject {
-        val secrets = totpSecretRepository.getAll()
-        val arr = JSONArray()
-        for (s in secrets) {
-            arr.put(JSONObject().apply {
-                put("id", s.id)
-                put("label", s.label)
-                put("issuer", s.issuer ?: JSONObject.NULL)
-                put("accountName", s.accountName ?: JSONObject.NULL)
-                put("algorithm", s.algorithm)
-                put("digits", s.digits)
-                put("periodSeconds", s.periodSeconds)
-                put("createdAt", s.createdAt)
-            })
-        }
-        return JSONObject().apply {
-            put("count", secrets.size)
-            put("secrets", arr)
-        }
-    }
-
-    private suspend fun listAgeIdentities(): JSONObject {
-        val ids = ageIdentityRepository.getAll()
-        val arr = JSONArray()
-        for (i in ids) {
-            arr.put(JSONObject().apply {
-                put("id", i.id)
-                put("label", i.label)
-                put("recipient", i.recipient)
-                put("createdAt", i.createdAt)
-            })
-        }
-        return JSONObject().apply {
-            put("count", ids.size)
-            put("identities", arr)
-        }
-    }
-
-    private suspend fun createAgeIdentity(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val label = args.optString("label").takeIf { it.isNotBlank() } ?: "age identity"
-        val row = ageIdentityRepository.create(label)
-        JSONObject().apply {
-            put("id", row.id)
-            put("label", row.label)
-            put("recipient", row.recipient)
-        }
-    }
-
-    private suspend fun encryptFileViaAgent(args: JSONObject): JSONObject {
-        val profileId = args.optString("profileId").ifBlank { throw IllegalArgumentException("profileId required") }
-        val path = args.optString("path").ifBlank { throw IllegalArgumentException("path required") }
-        val recipientsArg = args.optJSONArray("recipients")
-        val recipients = if (recipientsArg != null && recipientsArg.length() > 0) {
-            (0 until recipientsArg.length()).map { recipientsArg.getString(it) }
-        } else {
-            ageIdentityRepository.getAll().map { it.recipient }
-        }
-        if (recipients.isEmpty()) {
-            throw IllegalArgumentException(
-                "No recipients given and no stored age identities — create one with create_age_identity or pass recipients.",
-            )
-        }
-        val delivered = agentUiCommandBus.emit(
-            sh.haven.core.data.agent.AgentUiCommand.EncryptFile(profileId, path, recipients),
-        )
-        return JSONObject().apply {
-            put("dispatched", delivered)
-            put("path", path)
-            put("output", "$path.age")
-            put("recipientCount", recipients.size)
-            put("note", "Encrypting in the file browser; confirm with list_directory once it completes.")
-        }
-    }
-
-    private suspend fun decryptFileViaAgent(args: JSONObject): JSONObject {
-        val profileId = args.optString("profileId").ifBlank { throw IllegalArgumentException("profileId required") }
-        val path = args.optString("path").ifBlank { throw IllegalArgumentException("path required") }
-        val delivered = agentUiCommandBus.emit(
-            sh.haven.core.data.agent.AgentUiCommand.DecryptFile(profileId, path),
-        )
-        return JSONObject().apply {
-            put("dispatched", delivered)
-            put("path", path)
-            put("output", path.removeSuffix(".age"))
-            put("note", "Decrypting in the file browser; confirm with list_directory once it completes.")
-        }
-    }
-
-    private suspend fun createTotpSecret(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val otpauth = args.optString("otpauth").takeIf { it.isNotBlank() }
-        val rawSecret = args.optString("secret").takeIf { it.isNotBlank() }
-        val input = otpauth ?: rawSecret
-            ?: throw IllegalArgumentException("Pass either `otpauth` or `secret`")
-        val parsed = sh.haven.core.security.OtpAuthUri.parse(input)
-            ?: throw IllegalArgumentException("Not a valid otpauth:// URI or base32 secret")
-        val labelOverride = args.optString("label").takeIf { it.isNotBlank() }
-        val entity = sh.haven.core.data.db.entities.TotpSecret(
-            label = labelOverride ?: parsed.label,
-            secret = parsed.secret,
-            issuer = parsed.issuer,
-            accountName = parsed.accountName,
-            algorithm = parsed.algorithm.name,
-            digits = parsed.digits,
-            periodSeconds = parsed.periodSeconds,
-        )
-        totpSecretRepository.save(entity)
-        JSONObject().apply {
-            put("id", entity.id)
-            put("label", entity.label)
-            put("issuer", entity.issuer ?: JSONObject.NULL)
-            put("accountName", entity.accountName ?: JSONObject.NULL)
-            put("algorithm", entity.algorithm)
-            put("digits", entity.digits)
-            put("periodSeconds", entity.periodSeconds)
-            put("authMethodToken", "TOTP:${entity.id}")
-        }
-    }
-
-    private suspend fun deleteTotpSecret(args: JSONObject): JSONObject {
-        val id = args.optString("totpSecretId").ifBlank {
-            throw IllegalArgumentException("totpSecretId required")
-        }
-        val existing = totpSecretRepository.getById(id)
-            ?: throw IllegalArgumentException("No TOTP secret with id $id")
-        totpSecretRepository.delete(id)
-        return JSONObject().apply {
-            put("deleted", true)
-            put("id", id)
-            put("label", existing.label)
-        }
-    }
-
     private suspend fun listLiveTunnels(): JSONObject {
         val live = tunnelManager.liveSnapshot()
         val arr = JSONArray()
@@ -11693,7 +11453,7 @@ internal data class ToolConsent(
     val summary: (JSONObject) -> String,
 )
 
-private class ToolHandler(
+internal class ToolHandler(
     val description: String,
     val inputSchema: JSONObject,
     /** Consent level the dispatcher applies before invoking [invoke]. */
@@ -11753,7 +11513,7 @@ internal sealed interface ToolResult {
 }
 
 /** JSON Schema for tools that take no arguments. */
-private fun emptyObjectSchema(): JSONObject = JSONObject().apply {
+internal fun emptyObjectSchema(): JSONObject = JSONObject().apply {
     put("type", "object")
     put("properties", JSONObject())
 }
