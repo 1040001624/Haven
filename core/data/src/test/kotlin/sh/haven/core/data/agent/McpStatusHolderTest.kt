@@ -45,15 +45,17 @@ class McpStatusHolderTest {
     }
 
     @Test
-    fun `error is recorded as tool colon message and survives a clean call`() {
+    fun `error is recorded as tool colon message and cleared by the next clean call`() {
         val h = McpStatusHolder()
         h.callStarted("run_in_proot")
         h.callFinished("run_in_proot", "boom")
         assertEquals("run_in_proot: boom", h.activity.value.lastError)
-        // A subsequent successful call does not clear the last error.
+        // A subsequent successful call clears it — otherwise the always-on
+        // FGS notification pins "MCP idle · last error: …" forever after one
+        // malformed call, reading as a stuck error state (user-reported).
         h.callStarted("list_distros")
         h.callFinished("list_distros")
-        assertEquals("run_in_proot: boom", h.activity.value.lastError)
+        assertNull(h.activity.value.lastError)
     }
 
     @Test

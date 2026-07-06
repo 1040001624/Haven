@@ -89,11 +89,17 @@ class McpStatusHolder @Inject constructor() {
         it.copy(inFlight = it.inFlight + 1, lastTool = tool, callCount = it.callCount + 1)
     }
 
-    /** A `tools/call` dispatch finished; [error] non-null records the failure. */
+    /**
+     * A `tools/call` dispatch finished; [error] non-null records the failure.
+     * A SUCCESSFUL call clears a previous failure — the error line exists so a
+     * backgrounded agent's failure is visible, not to pin a long-recovered
+     * error in the always-on notification forever ("MCP idle · last error: …"
+     * hours after one malformed call reads as a stuck error state).
+     */
     fun callFinished(tool: String, error: String? = null) = _activity.update {
         it.copy(
             inFlight = (it.inFlight - 1).coerceAtLeast(0),
-            lastError = error?.let { e -> "$tool: ${e.take(140)}" } ?: it.lastError,
+            lastError = error?.let { e -> "$tool: ${e.take(140)}" },
         )
     }
 }
