@@ -1524,49 +1524,25 @@ class McpServer @Inject constructor(
             .ifEmpty { throw McpError(-32602, "Missing tool name") }
         val arguments = params.optJSONObject("arguments") ?: JSONObject()
 
-        // Pre-consent capability gate. Some tools live behind an
-        // additional toggle in Settings on top of the global agent
-        // endpoint. Failing here means the user doesn't see a consent
-        // prompt for a tool that would then error anyway, and the
-        // audit log records the denial cleanly. Currently only
-        // `serve_file` (raw bytes off-device) is gated this way.
-        if (name == "serve_file") {
-            val allowed = runBlocking {
-                preferencesRepository.agentAllowFileRead.first()
-            }
-            if (!allowed) {
-                throw McpError(
-                    -32011,
-                    "agent file read is disabled — enable in Settings → Agent endpoint",
-                )
-            }
-        }
-        // queue_terminal_input (and its deprecated alias
-        // queue_self_message) is a keystroke-injection capability —
-        // gated by a separate power-user toggle on top of the
-        // endpoint switch, in the same shape as serve_file's gate
-        // above. (#161)
-        if (name == "queue_terminal_input" || name == "queue_self_message") {
-            val allowed = runBlocking {
-                preferencesRepository.agentAllowTerminalInputQueue.first()
-            }
-            if (!allowed) {
-                throw McpError(
-                    -32011,
-                    "queue_terminal_input is disabled — enable in Settings → Agent endpoint → " +
-                        "Allow agents to queue terminal input",
-                )
-            }
-        }
+        // Pre-consent capability gate (#mcp-backbone Stage 5). Some tools
+        // (serve_file, queue_terminal_input) live behind an extra Settings
+        // toggle on top of the global agent endpoint. Failing here means the
+        // user doesn't see a consent prompt for a tool that would then error
+        // anyway, and the audit log records the denial cleanly. The gate is
+        // now declared on the tool (ToolHandler.capability) — the transport
+        // gates by that property, not by matching tool names, so a new gated
+        // tool is a field, not another branch here. Capability gates are
+        // feature on/off toggles, not consent, so they hold regardless of
+        // loopback auto-trust (#214).
+        runBlocking { tools.capabilityDenial(name) }?.let { throw McpError(-32011, it) }
 
         // Look up consent metadata before invoking the handler. Unknown
         // tools fall through to tools.call() which will throw the right
         // error; treating them as NEVER avoids prompting on a typo.
         //
         // Loopback auto-trust (#214) bypasses the per-action consent
-        // prompt — but NOT the capability gates above (serve_file /
-        // queue_terminal_input), which are explicit feature on/off
-        // toggles, not consent, and stay regardless of origin.
+        // prompt — but NOT the capability gate above, which is an explicit
+        // feature on/off toggle, not consent, and stays regardless of origin.
         val consent = tools.consentFor(name)
         // Tier-3 standing policy: a user-installed, scoped, rate-capped,
         // expiring grant covers this exact (client, tool, args) — skip the
@@ -1620,8 +1596,8 @@ class McpServer @Inject constructor(
             }
         }
         mcpStatusHolder.callStarted(name)
-        val content = try {
-            runBlocking { tools.call(name, arguments, lastClientHint) }
+        val result = try {
+            runBlocking { tools.callTyped(name, arguments, lastClientHint) }
         } catch (e: McpError) {
             mcpStatusHolder.callFinished(name, e.message)
             throw e
@@ -1631,44 +1607,48 @@ class McpServer @Inject constructor(
             throw McpError(-32603, "Tool failed: ${e.message}")
         }
         mcpStatusHolder.callFinished(name)
-        // A proxied guest-MCP tool (McpTools aggregation) returns the guest
-        // server's own MCP content array under the reserved key __mcpContent.
-        // Forward it verbatim so the guest's text/image blocks reach the
-        // agent unchanged, instead of being re-serialised as nested JSON text.
-        content.optJSONArray("__mcpContent")?.let { passthrough ->
-            content.remove("__mcpContent")
-            return JSONObject().apply {
-                put("content", passthrough)
-                if (content.length() > 0) put("structuredContent", content)
-            }
+        return renderToolResult(result)
+    }
+
+    /**
+     * Render a typed [ToolResult] to the MCP `tools/call` response
+     * (#mcp-backbone Stage 5). The transport now maps a type to content
+     * blocks instead of sniffing reserved `__`-prefixed keys out of a
+     * JSONObject:
+     * - [ToolResult.Passthrough]: the guest server's own content array,
+     *   forwarded verbatim so its text/image blocks reach the agent
+     *   unchanged; structuredContent only when there's a structured echo.
+     * - [ToolResult.Image]: an `image` content block (so the agent sees the
+     *   picture directly — no second port, no download) plus the structured
+     *   text echo, with the base64 kept out of that echo so it isn't
+     *   duplicated.
+     * - [ToolResult.Structured]: the ordinary structured-text case.
+     */
+    private fun renderToolResult(result: ToolResult): JSONObject = when (result) {
+        is ToolResult.Passthrough -> JSONObject().apply {
+            put("content", result.content)
+            if (result.structured.length() > 0) put("structuredContent", result.structured)
         }
-        // A tool can return an inline image by setting the reserved keys
-        // __imageBase64 + __mimeType (see McpTools.captureDesktop). Lift
-        // them into a proper MCP `image` content block so the agent sees
-        // the picture directly over the existing channel — no second port,
-        // no file download — and strip them from the text echo /
-        // structuredContent so the giant base64 blob isn't duplicated.
-        val imageB64 = content.optString("__imageBase64", null)
-        val imageMime = content.optString("__mimeType", null)
-        if (imageB64 != null) {
-            content.remove("__imageBase64")
-            content.remove("__mimeType")
-        }
-        return JSONObject().apply {
+        is ToolResult.Image -> JSONObject().apply {
             put("content", JSONArray().apply {
-                if (imageB64 != null) {
-                    put(JSONObject().apply {
-                        put("type", "image")
-                        put("data", imageB64)
-                        put("mimeType", imageMime ?: "image/png")
-                    })
-                }
+                put(JSONObject().apply {
+                    put("type", "image")
+                    put("data", result.base64)
+                    put("mimeType", result.mimeType)
+                })
                 put(JSONObject().apply {
                     put("type", "text")
-                    put("text", content.toString(2))
+                    put("text", result.structured.toString(2))
                 })
             })
-            put("structuredContent", content)
+            put("structuredContent", result.structured)
+        }
+        is ToolResult.Structured -> JSONObject().apply {
+            put("content", JSONArray().put(JSONObject().apply {
+                put("type", "text")
+                put("text", result.structured.toString(2))
+            }))
+            put("structuredContent", result.structured)
         }
     }
 

@@ -2,7 +2,10 @@ package sh.haven.app.agent
 
 import android.content.Context
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,7 +41,9 @@ import sh.haven.feature.sftp.SftpStreamServer
  */
 class McpToolsConsentTest {
 
-    private fun newTools(): McpTools {
+    private fun newTools(
+        preferencesRepository: UserPreferencesRepository = mockk(relaxed = true),
+    ): McpTools {
         val connectionRepository = mockk<ConnectionRepository>(relaxed = true)
         // profileLabel(...) hits this; return a stable label so the
         // summary templates that interpolate it are predictable.
@@ -60,7 +65,7 @@ class McpToolsConsentTest {
             sftpStreamServer = mockk<SftpStreamServer>(relaxed = true),
             hlsStreamServer = mockk<HlsStreamServer>(relaxed = true),
             ffmpegExecutor = mockk<FfmpegExecutor>(relaxed = true),
-            preferencesRepository = mockk<UserPreferencesRepository>(relaxed = true),
+            preferencesRepository = preferencesRepository,
             terminalFontInstaller = mockk<TerminalFontInstaller>(relaxed = true),
             localSessionManager = mockk<LocalSessionManager>(relaxed = true),
             agentUiCommandBus = sh.haven.core.data.agent.AgentUiCommandBus(),
@@ -373,5 +378,42 @@ class McpToolsConsentTest {
         // is the highest-risk verb in the registry.
         assertTrue("got: $s", s.contains("APK") || s.contains("install"))
         assertTrue("got: $s", s.contains("example.com") || s.contains("trusted"))
+    }
+
+    // --- Declarative capability gate (#mcp-backbone Stage 5) ---
+
+    @Test
+    fun `serve_file capability denial is null when file read is enabled`() {
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        every { prefs.agentAllowFileRead } returns flowOf(true)
+        assertNull(runBlocking { newTools(prefs).capabilityDenial("serve_file") })
+    }
+
+    @Test
+    fun `serve_file is denied with a Settings-pointing message when file read is off`() {
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        every { prefs.agentAllowFileRead } returns flowOf(false)
+        val msg = runBlocking { newTools(prefs).capabilityDenial("serve_file") }
+        assertNotNull("serve_file must be gated when the toggle is off", msg)
+        assertTrue("got: $msg", msg!!.contains("file read is disabled"))
+    }
+
+    @Test
+    fun `queue_terminal_input and its deprecated alias share the terminal-input capability`() {
+        val prefs = mockk<UserPreferencesRepository>(relaxed = true)
+        every { prefs.agentAllowTerminalInputQueue } returns flowOf(false)
+        for (name in listOf("queue_terminal_input", "queue_self_message")) {
+            val msg = runBlocking { newTools(prefs).capabilityDenial(name) }
+            assertNotNull("$name should be gated", msg)
+            assertTrue("got: $msg", msg!!.contains("queue_terminal_input is disabled"))
+        }
+    }
+
+    @Test
+    fun `an ungated tool returns no denial without ever reading a pref`() {
+        // No pref stubs on the relaxed mock: capabilityDenial must short-
+        // circuit on the null capability BEFORE touching preferences, which
+        // is why gating every tool through it doesn't perturb other tests.
+        assertNull(runBlocking { newTools().capabilityDenial("list_connections") })
     }
 }

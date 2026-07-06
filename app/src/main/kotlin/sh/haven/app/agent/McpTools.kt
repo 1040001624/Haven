@@ -201,7 +201,15 @@ internal class McpTools(
     private var installNotificationChannelEnsured = false
 
     /** Tool registry: name → handler. */
-    private val tools: Map<String, ToolHandler> = linkedMapOf(
+    // The tool registry is split across several builder methods purely to
+    // keep each under the JVM's 64 KiB per-method bytecode limit — the whole
+    // registry in one initializer overflowed `<init>`. (A structural symptom
+    // of the God-file debt that #mcp-backbone Stage 5's provider split
+    // retires; this is the holding fix.)
+    private val tools: Map<String, ToolHandler> =
+        toolsPart1() + toolsPart2() + toolsPart3() + toolsPart4()
+
+    private fun toolsPart1(): Map<String, ToolHandler> = linkedMapOf(
         "get_app_info" to ToolHandler(
             description = "Return Haven version, which optional features are available in this build, and mcpCarriers — which MCP transports are actually open right now (a WireGuard-collision warning if the WG carrier is shadowed by a system VPN, and whether the near/SSH carrier is currently riding a connected interactive session — see McpNearCarrier).",
             inputSchema = emptyObjectSchema(),
@@ -844,6 +852,7 @@ internal class McpTools(
                 put("required", JSONArray().put("text"))
             },
             consentLevel = ConsentLevel.EVERY_CALL,
+            capability = AgentCapability.TERMINAL_INPUT_QUEUE,
             summarise = { args ->
                 val text = args.optString("text", "").take(80)
                 "Queue \"$text\" to be typed into the SSH session at the next prompt?"
@@ -868,6 +877,7 @@ internal class McpTools(
                 put("required", JSONArray().put("text"))
             },
             consentLevel = ConsentLevel.EVERY_CALL,
+            capability = AgentCapability.TERMINAL_INPUT_QUEUE,
             summarise = { args ->
                 val text = args.optString("text", "").take(80)
                 "Queue \"$text\" to be typed into the SSH session at the next prompt?"
@@ -940,6 +950,7 @@ internal class McpTools(
                 put("required", JSONArray().put("profileId").put("path"))
             },
             consentLevel = ConsentLevel.EVERY_CALL,
+            capability = AgentCapability.FILE_READ,
             summarise = { args ->
                 val pid = args.optString("profileId")
                 val p = args.optString("path")
@@ -1005,6 +1016,9 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { args -> presentMedia(args) },
 
+    )
+
+    private fun toolsPart2(): Map<String, ToolHandler> = linkedMapOf(
         "present_web" to ToolHandler(
             description = "Show the user HTML, an SVG, or a PDF inline in an in-app WebView — the interactive rung between present_media (a static image) and present_app (a full live VNC app). Pass a `url` (e.g. a serve_file loopback URL or any web page), or reference a file with `profileId` (\"local\" for the device / proot-guest cache, or an SSH/SMB/rclone profile id) + `path`, which Haven serves over a loopback URL. A PDF is paged; HTML/SVG render live (pinch-zoom + pan). Floats in a bottom sheet over whatever screen the user is on; bytes never pass through the agent context. Returns immediately: a `url` acks with { presented, id, url }; a file reference acks with { presented } and is staged/shown in the background (a staging failure is logged, not returned). The user dismisses it at their leisure.",
             inputSchema = JSONObject().apply {
@@ -1847,6 +1861,9 @@ internal class McpTools(
             summarise = { args -> "Grant the agent access to USB device ${usbLabel(args.optString("deviceName"))}?" },
         ) { args -> requestUsbPermission(args) },
 
+    )
+
+    private fun toolsPart3(): Map<String, ToolHandler> = linkedMapOf(
         "usb_control_transfer" to ToolHandler(
             description = "Perform a USB endpoint-0 control transfer on an opened device. Args: deviceName, requestType (bmRequestType, int — bit 7 set = device-to-host/IN), request (bRequest), value (wValue), index (wIndex), dataBase64 (OUT payload, omit for IN), length (IN read length), timeoutMs (default 1000). Returns bytesTransferred and, for IN transfers, dataBase64. The device must already be opened via request_usb_permission.",
             inputSchema = JSONObject().apply {
@@ -2729,6 +2746,9 @@ internal class McpTools(
             consentLevel = ConsentLevel.NEVER,
         ) { args -> readGuestFile(args) },
 
+    )
+
+    private fun toolsPart4(): Map<String, ToolHandler> = linkedMapOf(
         "write_guest_file" to ToolHandler(
             description = "Write a file into the ACTIVE proot guest. Supply `content` (UTF-8 text); for binary prefer upload_file (stages a device-cache file into the guest) over `contentBase64`. Parent directories are created by default. The reliable way to push agent-authored text files (scripts, generators, configs) into the guest without a terminal heredoc. For large files, send in ordered chunks: first chunk {append:false, final:false}, middle chunks {append:true, final:false}, last chunk {append:true, final:true} — the file lands in the guest only on the final chunk.",
             inputSchema = JSONObject().apply {
@@ -3696,6 +3716,31 @@ internal class McpTools(
     }
 
     /**
+     * If tool [name] sits behind a Settings capability toggle that is
+     * currently OFF, the error message to return; otherwise null
+     * (#mcp-backbone Stage 5). Evaluated before consent so a disabled tool
+     * fails cleanly without prompting. Driven by [ToolHandler.capability],
+     * so the transport no longer matches tool names — a new gated tool sets
+     * the field and, only if it needs a brand-new capability, adds one arm
+     * here. Guest-proxied tools are never capability-gated.
+     */
+    suspend fun capabilityDenial(name: String): String? {
+        val cap = tools[name]?.capability ?: return null
+        val enabled = when (cap) {
+            AgentCapability.FILE_READ -> preferencesRepository.agentAllowFileRead.first()
+            AgentCapability.TERMINAL_INPUT_QUEUE -> preferencesRepository.agentAllowTerminalInputQueue.first()
+        }
+        if (enabled) return null
+        return when (cap) {
+            AgentCapability.FILE_READ ->
+                "agent file read is disabled — enable in Settings → Agent endpoint"
+            AgentCapability.TERMINAL_INPUT_QUEUE ->
+                "queue_terminal_input is disabled — enable in Settings → Agent endpoint → " +
+                    "Allow agents to queue terminal input"
+        }
+    }
+
+    /**
      * Look up the consent gating metadata for a tool. Returns null for an
      * unknown tool (the dispatcher will surface that as an MCP error
      * regardless). Exposed to [McpServer] so consent prompting happens
@@ -3760,7 +3805,8 @@ internal class McpTools(
         tools[name]?.let { return it.handle(arguments) }
 
         // Proxied guest-MCP tool: forward to the guest server and pass its
-        // content array back through the __mcpContent reserved key.
+        // content array back through the __mcpContent reserved key (an
+        // internal channel [callTyped] converts to ToolResult.Passthrough).
         val ref = guestToolCache[name] ?: guestTools()[name]
             ?: throw McpError(-32602, "Unknown tool: $name")
         val client = guestClients[ref.serviceId]
@@ -3781,6 +3827,34 @@ internal class McpTools(
         } else {
             result
         }
+    }
+
+    /**
+     * Call a tool and return its result as a typed [ToolResult]
+     * (#mcp-backbone Stage 5, Layer E) — the transport-facing entry point.
+     * The `__`-prefixed reserved keys some handlers still emit are decoded
+     * here, so they are a McpTools-internal handler↔[callTyped] detail
+     * rather than a contract the transport has to know. (Deleting the keys
+     * at the handler sites needs the per-domain provider split — later in
+     * Stage 5; this narrows the contract without that churn.)
+     */
+    suspend fun callTyped(name: String, arguments: JSONObject, clientHint: String? = null): ToolResult =
+        call(name, arguments, clientHint).toToolResult()
+
+    /** Decode a handler's JSONObject (with any reserved `__` keys) to a [ToolResult]. */
+    private fun JSONObject.toToolResult(): ToolResult {
+        optJSONArray("__mcpContent")?.let { passthrough ->
+            remove("__mcpContent")
+            return ToolResult.Passthrough(passthrough, this)
+        }
+        val imageB64 = optString("__imageBase64", null)
+        if (imageB64 != null) {
+            val mime = optString("__mimeType", null) ?: "image/png"
+            remove("__imageBase64")
+            remove("__mimeType")
+            return ToolResult.Image(imageB64, mime, this)
+        }
+        return ToolResult.Structured(this)
     }
 
     /** The connection a tool call targets: an explicit profileId arg, else the profile behind a sessionId. */
@@ -11625,6 +11699,14 @@ private class ToolHandler(
     /** Consent level the dispatcher applies before invoking [invoke]. */
     val consentLevel: ConsentLevel = ConsentLevel.NEVER,
     /**
+     * An extra Settings capability toggle this tool sits behind, on top of
+     * the global agent-endpoint switch and per-action consent, or null for
+     * an ungated tool. Declared here so the dispatcher gates by a tool
+     * PROPERTY, not by matching tool names in the transport layer
+     * (#mcp-backbone Stage 5, Layer E). See [McpTools.capabilityDenial].
+     */
+    val capability: AgentCapability? = null,
+    /**
      * Builds the human-readable one-liner shown in the consent prompt
      * for non-NEVER tools. Default is just the tool name; per-tool
      * registrations should override with something specific so the user
@@ -11634,6 +11716,40 @@ private class ToolHandler(
     private val invoke: suspend (JSONObject) -> JSONObject,
 ) {
     suspend fun handle(args: JSONObject): JSONObject = invoke(args)
+}
+
+/**
+ * An on/off Settings capability a tool can sit behind, evaluated before
+ * consent (#mcp-backbone Stage 5). A tool declares one via
+ * [ToolHandler.capability] instead of the dispatcher special-casing its name.
+ */
+internal enum class AgentCapability { FILE_READ, TERMINAL_INPUT_QUEUE }
+
+/**
+ * A tool invocation's result as a typed value (#mcp-backbone Stage 5, Layer E),
+ * so the transport renders MCP content from a type instead of sniffing reserved
+ * `__`-prefixed keys out of a JSONObject. [structured] is the tool's structured
+ * payload, present on every variant (the audit summariser and the mail-rules
+ * executor read it uniformly).
+ */
+internal sealed interface ToolResult {
+    val structured: JSONObject
+
+    /** The ordinary case: a structured JSON result. */
+    data class Structured(override val structured: JSONObject) : ToolResult
+
+    /** An inline image plus its structured echo (capture_* tools). */
+    data class Image(
+        val base64: String,
+        val mimeType: String,
+        override val structured: JSONObject,
+    ) : ToolResult
+
+    /** A proxied guest-MCP tool's own content array, forwarded verbatim. */
+    data class Passthrough(
+        val content: JSONArray,
+        override val structured: JSONObject,
+    ) : ToolResult
 }
 
 /** JSON Schema for tools that take no arguments. */

@@ -434,10 +434,29 @@ wins land first, protocol churn last.
   idle keep-alive peer would pin an IO thread.
 - **Stage 5 — tool registry + §1b plugin bus.** Split `McpTools` into providers
   (Layer E); build Android-app MCP discovery on the shared client core (Layer F).
+  **In progress** — the *declarative tool contract* landed first (the part of
+  Layer E that removes special-casing from the transport): the two capability
+  gates (`serve_file`, `queue_terminal_input`) are now a `ToolHandler.capability`
+  field the dispatcher reads via `McpTools.capabilityDenial(name)` instead of
+  matching tool names in `handleToolsCall`; and tool results are a typed
+  `ToolResult` (`Structured` / `Image` / `Passthrough`) that the transport
+  renders, so the reserved `__mcpContent` / `__imageBase64` keys are a
+  McpTools-internal handler↔`callTyped` detail, no longer a handler↔server
+  contract. **Still to do:** the *physical* split of the 11.7k-line `McpTools`
+  God file into per-domain Hilt-multibound `ToolProvider`s + a `ToolRegistry`
+  (a large mechanical migration — deliberately its own reviewed change, not a
+  big-bang), a schema DSL to replace the inline `org.json` builders, deleting
+  the internal `__` keys at the ~6 handler sites once the provider split lets
+  handlers return `ToolResult` directly, and the whole of Layer F (§1b
+  Android-app MCP discovery via `<intent-filter>`/`meta-data`, a `ClientRegistry`,
+  and SSE/`listChanged` server→client push).
 
 Stages 0–2 are the ones that make the moat defensible and are worth prioritizing;
 3–5 are the ones that make it *architecturally* first-class and unlock the
 bidirectional vision.
+
+**Status (2026-07-06):** Stages 0–4 shipped; Stage 5's declarative tool
+contract shipped, its provider split + §1b plugin bus remain.
 
 ---
 
