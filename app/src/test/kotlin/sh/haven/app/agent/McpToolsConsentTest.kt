@@ -451,4 +451,32 @@ class McpToolsConsentTest {
         // Relaxed TotpSecretRepository.getAll() returns an empty list.
         assertEquals(0, out.getInt("count"))
     }
+
+    // --- Tunnel provider extraction (#mcp-backbone Stage 5, Layer E) ---
+
+    @Test
+    fun `tunnel-config tools are aggregated with their consent levels intact`() {
+        // list_tunnels/list_live_tunnels/create_tunnel/delete_tunnel moved to
+        // TunnelToolProvider; set_profile_routing stayed in McpTools (it edits
+        // a connection profile, not a tunnel config). Assert both facts.
+        val tools = newTools()
+        val definitionNames = tools.definitions().map { it.getString("name") }.toSet()
+        for (name in listOf("list_tunnels", "list_live_tunnels")) {
+            assertTrue("$name missing from definitions()", name in definitionNames)
+            assertEquals("$name must be NEVER", ConsentLevel.NEVER, tools.consentFor(name)!!.level)
+        }
+        assertEquals("create_tunnel must be EVERY_CALL", ConsentLevel.EVERY_CALL, tools.consentFor("create_tunnel")!!.level)
+        assertEquals("delete_tunnel must be ONCE_PER_SESSION", ConsentLevel.ONCE_PER_SESSION, tools.consentFor("delete_tunnel")!!.level)
+        // set_profile_routing is NOT in the tunnel provider — still registered by McpTools.
+        assertTrue("set_profile_routing must remain registered", "set_profile_routing" in definitionNames)
+        assertEquals(ConsentLevel.ONCE_PER_SESSION, tools.consentFor("set_profile_routing")!!.level)
+    }
+
+    @Test
+    fun `list_tunnels dispatches through the aggregated call path`() {
+        val tools = newTools(mockk(relaxed = true))
+        val out = runBlocking { tools.call("list_tunnels", JSONObject()) }
+        // Relaxed TunnelConfigRepository.getAll() returns an empty list.
+        assertEquals(0, out.getInt("count"))
+    }
 }
