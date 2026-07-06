@@ -473,17 +473,68 @@ class McpToolsConsentTest {
                 gate = runBlocking { tools.capabilityDenial(name) },
             )
         }
-        val groups = listOf(
-            Triple(ConsentLevel.EVERY_CALL, "Asks every call",
-                "Side-effectful or sensitive actions. Haven shows a consent sheet describing the " +
-                    "specific action (paths, recipients, commands) and waits for your tap on every single call."),
-            Triple(ConsentLevel.ONCE_PER_SESSION, "Asks once per session",
-                "Reversible actions and screen-reading. Haven prompts the first time an agent session " +
-                    "uses the tool; further calls in the same session proceed without re-prompting."),
-            Triple(ConsentLevel.NEVER, "No per-call prompt",
-                "Read-only queries and tap-equivalent UI actions with no destructive effect. These still " +
-                    "sit behind the endpoint being enabled and the client being paired."),
+        // Functional sections form the page's tree. Each tool is filed into
+        // the FIRST section (by [Section.priority], specific-domain-first) whose
+        // keyword is a substring of its name — so a generic word like "file" or
+        // "session" can't poach a domain tool (e.g. read_guest_file → Linux
+        // guest, not Files). Sections render in list order; matching walks
+        // priority order. A tool that matches nothing fails this test — add a
+        // keyword when you add a tool.
+        data class Section(
+            val slug: String, val title: String, val priority: Int,
+            val blurb: String, val keywords: List<String>,
         )
+        val sections = listOf(
+            Section("connections", "Connections & profiles", 9,
+                "The saved SSH/SFTP/RDP/VNC/… connection profiles and their live connect/disconnect state.",
+                listOf("connection", "connect_profile", "disconnect_profile")),
+            Section("terminal", "Terminal, selection & sessions", 8,
+                "Reading and driving terminal sessions: input, scrollback, text selection, snippets, and workspace layouts.",
+                listOf("terminal", "selection", "snippet", "list_sessions", "auth_prompt", "session_picker", "workspace", "compose", "open_local_shell")),
+            Section("files", "Files, media & clipboard", 10,
+                "The unified file browser (local and SFTP), format conversion, media playback/streaming, encryption, and the clipboard.",
+                listOf("file", "directory", "sftp", "convert", "play_", "stream", "editor", "serve_", "encrypt", "decrypt", "clipboard", "view_file")),
+            Section("rclone", "Cloud storage (rclone)", 4,
+                "rclone remotes and the saved sync jobs that run between them.",
+                listOf("rclone", "sync_profile")),
+            Section("email", "Email", 3,
+                "Mailboxes, messages, drafts, and inbound Mail Rules automation.",
+                listOf("mail")),
+            Section("linux", "Linux guest (proot) & desktops", 2,
+                "The on-device Linux distros, their desktop environments and windows, guest services, the audio bridge, and guest-file access.",
+                listOf("proot", "distro", "desktop", "guest", "audio_bridge", "gl_smoke", "custom_binds", "app_window", "launch_app_in_desktop", "inspect_proot")),
+            Section("networking", "Networking — tunnels & port forwarding", 5,
+                "SSH tunnels, port forwards, and the port-knock / single-packet-auth gates.",
+                listOf("tunnel", "port_forward", "_forward", "port_knock", "knock", "_spa", "profile_routing")),
+            // Priority 1 (ahead of Linux guest) so usb_attach_to_guest files
+            // here by its usb_ prefix, not under "guest".
+            Section("usb", "USB & host-device brokers", 1,
+                "USB devices and drives, USB/IP export, and the adb-over-VPN bridge.",
+                listOf("usb", "adb", "bridges")),
+            Section("security", "Security — SSH keys, TOTP & age", 6,
+                "The SSH key store, TOTP secrets, and age encryption identities.",
+                listOf("ssh_key", "totp", "age_identit")),
+            Section("agent-you", "Agent ↔ you (attention & self-drive)", 7,
+                "How an agent reaches your attention (present_*, notifications, the agent-to-agent turn tools) and drives Haven's own UI.",
+                listOf("present_", "haven_ui", "raise_notification", "self_message", "send_to_agent", "await_turn", "read_last_turn")),
+            Section("agent-endpoint", "Agent endpoint, device & diagnostics", 11,
+                "Pairing, standing policies, app info/update, preferences, and device diagnostics.",
+                listOf("standing_polic", "pair", "install_apk", "app_info", "preference", "developer_settings", "logcat", "notification")),
+        )
+        val byPriority = sections.sortedBy { it.priority }
+        fun sectionOf(name: String): Section? =
+            byPriority.firstOrNull { s -> s.keywords.any { it in name } }
+        val uncategorized = docs.map { it.name }.filter { sectionOf(it) == null }.sorted()
+        if (uncategorized.isNotEmpty()) {
+            throw AssertionError(
+                "MCP tools with no doc section: $uncategorized — add a keyword to a Section in renderToolDocs().",
+            )
+        }
+        fun consentLabel(level: ConsentLevel): String = when (level) {
+            ConsentLevel.EVERY_CALL -> "asks every call"
+            ConsentLevel.ONCE_PER_SESSION -> "asks once per session"
+            ConsentLevel.NEVER -> "no per-call prompt"
+        }
         fun typeName(p: JSONObject): String = when (val t = p.optString("type")) {
             "array" -> when (p.optJSONObject("items")?.optString("type")) {
                 "string" -> "string[]"
@@ -523,9 +574,10 @@ class McpToolsConsentTest {
             appendLine("   SHA-256. Unpairing (Settings → Agent endpoint → Paired clients) revokes it.")
             appendLine("4. **Capability switches.** File reading and terminal-input queuing have their own")
             appendLine("   Settings toggles on top of everything else; tools behind them are marked below.")
-            appendLine("5. **Per-call consent.** Every tool carries one of the three consent levels this page")
-            appendLine("   is grouped by. Consent sheets are rendered by Haven itself, and agent-injected taps")
-            appendLine("   are refused while one is showing — an agent cannot approve its own prompt.")
+            appendLine("5. **Per-call consent.** Every tool carries one of three consent levels — *asks every")
+            appendLine("   call*, *asks once per session*, or *no per-call prompt* — shown as a tag on each tool")
+            appendLine("   below. Consent sheets are rendered by Haven itself, and agent-injected taps are")
+            appendLine("   refused while one is showing — an agent cannot approve its own prompt.")
             appendLine("6. **Standing policies.** An agent may request a time-boxed, rate-limited pre-approval")
             appendLine("   for named tools (create_standing_policy) — it is itself consent-gated on every call,")
             appendLine("   shows exactly what would be allowed, and has a kill-switch on the Agent activity screen.")
@@ -533,21 +585,43 @@ class McpToolsConsentTest {
             appendLine("   arguments redacted (Settings → Agent activity — the same screen that lists and")
             appendLine("   revokes standing policies). Haven is the dashboard, not a black box.")
             appendLine()
-            appendLine("## Tool count by consent level")
+            appendLine("## How to read this page")
             appendLine()
-            for ((level, title, _) in groups) {
-                appendLine("- **$title**: ${docs.count { it.level == level }} tools")
+            appendLine("Tools are grouped into sections by what they touch, and each tool is collapsed —")
+            appendLine("expand one for its description and arguments. The tag after each name is its")
+            appendLine("consent level:")
+            appendLine()
+            appendLine("- **asks every call** — side-effectful or sensitive; a consent sheet describing the " +
+                "specific action on every call (${docs.count { it.level == ConsentLevel.EVERY_CALL }} tools).")
+            appendLine("- **asks once per session** — reversible actions and screen-reading; prompts the first " +
+                "time each session, then proceeds (${docs.count { it.level == ConsentLevel.ONCE_PER_SESSION }} tools).")
+            appendLine("- **no per-call prompt** — read-only queries and tap-equivalent UI actions; still behind " +
+                "the endpoint being enabled and the client paired (${docs.count { it.level == ConsentLevel.NEVER }} tools).")
+            appendLine()
+            appendLine("## Sections")
+            appendLine()
+            for (s in sections) {
+                val n = docs.count { sectionOf(it.name) === s }
+                appendLine("- [**${s.title}**](#sec-${s.slug}) — $n tools")
             }
-            for ((level, title, blurb) in groups) {
+            for (s in sections) {
+                // Byte-stable: sections in list order, tools sorted by name.
+                val secDocs = docs.filter { sectionOf(it.name) === s }.sortedBy { it.name }
                 appendLine()
-                appendLine("## $title")
+                appendLine("<a id=\"sec-${s.slug}\"></a>")
                 appendLine()
-                appendLine(blurb)
-                for (d in docs.filter { it.level == level }.sortedBy { it.name }) {
+                appendLine("## ${s.title} (${secDocs.size})")
+                appendLine()
+                appendLine(s.blurb)
+                for (d in secDocs) {
                     appendLine()
-                    appendLine("### `${d.name}`")
+                    // markdown="1" so kramdown (Jekyll) parses the inner
+                    // markdown; GitHub parses it regardless given the blank
+                    // line after <summary>.
+                    appendLine("<details markdown=\"1\">")
+                    appendLine("<summary><code>${d.name}</code> · ${consentLabel(d.level)}</summary>")
                     appendLine()
-                    d.gate?.let { appendLine("*Extra capability switch — off by default: $it.*") ; appendLine() }
+                    d.gate?.let { appendLine("*Extra capability switch — off by default: $it.*"); appendLine() }
                     appendLine(d.description)
                     val props = d.schema.getJSONObject("properties")
                     val required = d.schema.optJSONArray("required")
@@ -572,6 +646,8 @@ class McpToolsConsentTest {
                             appendLine("- `$p` (${bits.joinToString(", ")})${if (desc.isNotEmpty()) " — $desc" else ""}")
                         }
                     }
+                    appendLine()
+                    appendLine("</details>")
                 }
             }
         }
