@@ -118,7 +118,7 @@ class HavenApp : Application(), Configuration.Provider {
                     // Watch for the same endpoint profile's *interactive*
                     // session and ride it for MCP instead of a separate
                     // authenticated connection — see McpNearCarrier's kdoc.
-                    mcpNearCarrier.start(mcpServer.port)
+                    mcpNearCarrier.start(mcpServer.port, mcpServer.tunneledPort)
                     // Bind the MCP HTTP listener to the foreground
                     // service's lifecycle. Without this, the OS reclaims
                     // the app process within seconds of backgrounding

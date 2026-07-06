@@ -58,8 +58,16 @@ class McpNearCarrier @Inject constructor(
     // unrelated `sessions` emission once already up for the live session.
     private var appliedSessionId: String? = null
 
-    /** Start (or restart) watching for the configured endpoint's interactive session. */
-    fun start(mcpPort: Int) {
+    /**
+     * Start (or restart) watching for the configured endpoint's interactive
+     * session. [mcpPort] is the *remote-side* bind (what clients on the far
+     * host dial — unchanged contract, 8730–8739); [tunneledPort] is the
+     * phone-side target: the MCP server's dedicated tunneled-origin listener,
+     * NOT the device-trusted loopback binder, so traffic arriving through the
+     * `-R` forward can never inherit loopback auto-trust (#mcp-backbone
+     * Stage 2).
+     */
+    fun start(mcpPort: Int, tunneledPort: Int) {
         job?.cancel()
         appliedSessionId = null
         job = scope.launch {
@@ -68,7 +76,9 @@ class McpNearCarrier @Inject constructor(
                 sshSessionManager.sessions,
             ) { profileId, sessions -> profileId to sessions }
                 .distinctUntilChanged()
-                .collectLatest { (profileId, sessions) -> reconcile(profileId, sessions, mcpPort) }
+                .collectLatest { (profileId, sessions) ->
+                    reconcile(profileId, sessions, mcpPort, tunneledPort)
+                }
         }
     }
 
@@ -83,6 +93,7 @@ class McpNearCarrier @Inject constructor(
         profileId: String?,
         sessions: Map<String, SshSessionManager.SessionState>,
         mcpPort: Int,
+        tunneledPort: Int,
     ) {
         when (val decision = decideNearCarrier(profileId, sessions, appliedSessionId)) {
             is NearCarrierDecision.NoProfileConfigured -> {
@@ -105,7 +116,9 @@ class McpNearCarrier @Inject constructor(
                     bindAddress = "127.0.0.1",
                     bindPort = mcpPort,
                     targetHost = "127.0.0.1",
-                    targetPort = mcpPort,
+                    // The tunneled-origin listener, NOT the device-trusted
+                    // loopback binder (#mcp-backbone Stage 2).
+                    targetPort = tunneledPort,
                     critical = false,
                     selfHealOnBindFailure = true,
                 )

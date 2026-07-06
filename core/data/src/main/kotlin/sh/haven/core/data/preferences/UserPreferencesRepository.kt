@@ -695,12 +695,16 @@ class UserPreferencesRepository @Inject constructor(
 
     /**
      * Whether loopback (127.0.0.1) MCP clients auto-trust: skip both the
-     * pairing prompt and per-action consent. On by default — a local
-     * client is already as trusted as the device. LAN / WireGuard clients
-     * are unaffected and always run the full gate. (#214)
+     * pairing prompt and per-action consent. OFF by default (#mcp-backbone
+     * Stage 2): on stock Android any co-resident app with the INTERNET
+     * permission can dial another app's loopback listener, so loopback
+     * reachability alone is not proof of being this device's user. An
+     * explicit opt-in for users whose on-device agents need frictionless
+     * access. LAN / WireGuard / reverse-tunneled clients are unaffected and
+     * always run the full gate. (#214)
      */
     val trustLoopbackMcpClients: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[trustLoopbackMcpClientsKey] ?: true
+        prefs[trustLoopbackMcpClientsKey] ?: false
     }
 
     suspend fun setTrustLoopbackMcpClients(enabled: Boolean) {

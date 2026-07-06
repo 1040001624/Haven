@@ -25,17 +25,18 @@ import sh.haven.core.ssh.SshSessionManager
 import sh.haven.feature.sftp.SftpStreamServer
 
 /**
- * #214 — loopback auto-trust. A client arriving on the loopback binder
- * (peer is a loopback address — `adb forward` / on-device) skips BOTH the
- * pairing prompt and per-action consent when [UserPreferencesRepository
- * .trustLoopbackMcpClients] is on (the default). LAN / WireGuard clients
- * (isLoopback=false) are unaffected and keep the full gate.
+ * #214 / #mcp-backbone Stage 2 — origin-tagged loopback auto-trust. A client
+ * arriving on the DEVICE-origin binder (`adb forward` / on-device) skips
+ * BOTH the pairing prompt and per-action consent, but ONLY when the user has
+ * opted in via [UserPreferencesRepository.trustLoopbackMcpClients] (default
+ * OFF). TUNNELED / LAN / WireGuard origins keep the full gate regardless —
+ * including reverse-tunneled traffic that physically arrives on 127.0.0.1.
  *
  * The decisive setup: an EMPTY allowlist + a default [AgentConsentManager]
  * with foreground=false. In that state the normal gate FAILS CLOSED —
  * pairing a new client returns DENY (→ -32001) and any non-NEVER tool
- * returns DENY (→ -32000). So a *successful* loopback call proves the gate
- * was bypassed; the same call over non-loopback still fails closed.
+ * returns DENY (→ -32000). So a *successful* DEVICE-origin call proves the
+ * gate was bypassed; the same call over any other origin still fails closed.
  */
 class McpLoopbackTrustTest {
 
@@ -119,12 +120,13 @@ class McpLoopbackTrustTest {
             .toString()
 
     @Test
-    fun `loopback initialize auto-trusts a brand-new client without prompting`() {
+    fun `device-origin initialize auto-trusts a brand-new client when opted in`() {
         // foreground=false + empty allowlist → the normal path would DENY.
         val consentManager = AgentConsentManager()
         val server = newServer(consentManager = consentManager, pairedClients = emptySet())
+        server.setTrustLoopbackEnabled(true) // the user's explicit opt-in
 
-        val outcome = server.handleJsonRpc(initBody("fresh-loopback"), requestSessionId = null, isLoopback = true)
+        val outcome = server.handleJsonRpc(initBody("fresh-loopback"), requestSessionId = null, origin = McpOrigin.DEVICE)
 
         val obj = JSONObject(outcome.body)
         assertNull(
@@ -141,9 +143,10 @@ class McpLoopbackTrustTest {
     @Test
     fun `non-loopback initialize still gates a brand-new client`() {
         val server = newServer(consentManager = AgentConsentManager(), pairedClients = emptySet())
+        server.setTrustLoopbackEnabled(true)
 
         // Same brand-new client, but arriving over a remote (LAN/WG) path.
-        val outcome = server.handleJsonRpc(initBody("fresh-remote"), requestSessionId = null, isLoopback = false)
+        val outcome = server.handleJsonRpc(initBody("fresh-remote"), requestSessionId = null, origin = McpOrigin.LAN)
 
         val error = JSONObject(outcome.body).optJSONObject("error")
             ?: error("expected pairing error for a remote new client, got: ${outcome.body}")
@@ -151,17 +154,33 @@ class McpLoopbackTrustTest {
     }
 
     @Test
-    fun `loopback bypasses per-call consent for a non-NEVER tool`() {
-        // disconnect_profile is non-NEVER; with foreground=false the normal
-        // gate returns -32000. Over loopback it must skip consent and reach
-        // the handler (which may then succeed or fail for its own reasons —
-        // either way it is NOT a consent denial).
+    fun `tunneled origin is never auto-trusted even with loopback trust on`() {
+        // The Stage-2 hole: a reverse-tunnel (-R) carrier lands REMOTE
+        // traffic on the phone's 127.0.0.1. It must run the full gate no
+        // matter what the loopback-trust pref says.
         val server = newServer(consentManager = AgentConsentManager(), pairedClients = emptySet())
+        server.setTrustLoopbackEnabled(true)
+
+        val outcome = server.handleJsonRpc(initBody("remote-through-tunnel"), requestSessionId = null, origin = McpOrigin.TUNNELED)
+
+        val error = JSONObject(outcome.body).optJSONObject("error")
+            ?: error("expected pairing error for a tunneled new client, got: ${outcome.body}")
+        assertEquals(-32001, error.optInt("code"))
+    }
+
+    @Test
+    fun `device origin bypasses per-call consent for a non-NEVER tool when opted in`() {
+        // disconnect_profile is non-NEVER; with foreground=false the normal
+        // gate returns -32000. Over the trusted device origin it must skip
+        // consent and reach the handler (which may then succeed or fail for
+        // its own reasons — either way it is NOT a consent denial).
+        val server = newServer(consentManager = AgentConsentManager(), pairedClients = emptySet())
+        server.setTrustLoopbackEnabled(true)
 
         val outcome = server.handleJsonRpc(
             toolsCallBody("disconnect_profile", JSONObject().put("profileId", "p1")),
             requestSessionId = null,
-            isLoopback = true,
+            origin = McpOrigin.DEVICE,
         )
 
         val error = JSONObject(outcome.body).optJSONObject("error")
@@ -171,14 +190,15 @@ class McpLoopbackTrustTest {
     }
 
     @Test
-    fun `disabling loopback trust restores the full gate for loopback clients`() {
+    fun `loopback trust is OFF by default — device origin runs the full gate`() {
+        // No opt-in call: the server's default must fail closed even for a
+        // genuine on-device client (#mcp-backbone Stage 2).
         val server = newServer(consentManager = AgentConsentManager(), pairedClients = emptySet())
-        server.setTrustLoopbackEnabled(false)
 
-        val outcome = server.handleJsonRpc(initBody("fresh-loopback"), requestSessionId = null, isLoopback = true)
+        val outcome = server.handleJsonRpc(initBody("fresh-loopback"), requestSessionId = null, origin = McpOrigin.DEVICE)
 
         val error = JSONObject(outcome.body).optJSONObject("error")
-            ?: error("expected pairing error once loopback trust is off, got: ${outcome.body}")
+            ?: error("expected pairing error with loopback trust at its default, got: ${outcome.body}")
         assertEquals(-32001, error.optInt("code"))
     }
 }

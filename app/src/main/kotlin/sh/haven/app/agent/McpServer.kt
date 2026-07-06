@@ -179,6 +179,25 @@ internal fun isLoopbackOrigin(origin: String): Boolean {
     return host == "localhost" || host == "::1" || host.startsWith("127.")
 }
 
+/**
+ * The trust origin of an accepted MCP connection, tagged **at bind time** by
+ * the listener that accepted it — never inferred from the peer address
+ * (#mcp-backbone Stage 2). The old inference (`peer.isLoopbackAddress ⇒
+ * device-trusted`) failed in two directions: a reverse-tunnel (`-R`) carrier
+ * delivers *remote* traffic to the phone's 127.0.0.1, and any co-resident app
+ * with INTERNET can dial another app's loopback listener. Each binder now
+ * declares what its sockets actually are:
+ *
+ * - [DEVICE] — the plain loopback binder (8730–8739): an on-device process
+ *   (in-proot agent, adb forward, curl). The only origin eligible for the
+ *   `trustLoopbackMcpClients` auto-trust opt-in.
+ * - [TUNNELED] — the dedicated loopback binder the SSH `-R` carriers target
+ *   ([McpNearCarrier]): the far end is a remote host, so it is NEVER
+ *   device-trusted and always runs the full pairing + consent gate.
+ * - [LAN] / [WIREGUARD] — networked peers; always the full gate.
+ */
+internal enum class McpOrigin { DEVICE, TUNNELED, LAN, WIREGUARD }
+
 /** The one MCP resources/read resource: a live snapshot of Haven's own rendered UI.
  *  The file-shaped sibling of the `capture_haven_ui` tool — an agent reads it to
  *  see the current screen without a tool call (VISION.md §1a). (Don't write the
@@ -232,15 +251,17 @@ private const val WG_RETRY_MS: Long = 5_000L
  * - `tools/list` — returns the available tool definitions
  * - `tools/call` — dispatches to a named tool, passing arguments
  *
- * ### Security model (v1)
+ * ### Security model
  *
- * Loopback-only binding is the entire security story in v1. Anyone
- * who can open a TCP socket to 127.0.0.1 on this device can call
- * every exposed tool. This is acceptable for a read-only v1 on
- * Android because all local processes on Android already have at
- * least as much access to this app's data as they do through normal
- * IPC. Write operations (upload, delete, disconnect, etc.) will
- * require per-action consent before they land in v2.
+ * Trust is decided by the connection's [McpOrigin] (tagged at bind time by
+ * the accepting listener) plus pairing + per-action consent. Only
+ * [McpOrigin.DEVICE] (the plain loopback binder) can skip the gate, and only
+ * when the user has opted in via `trustLoopbackMcpClients` (default OFF —
+ * on stock Android any co-resident app with INTERNET can reach another
+ * app's loopback listener, so loopback reachability is NOT proof of being
+ * this device's user). Reverse-tunneled (`-R`) traffic lands on a separate
+ * [McpOrigin.TUNNELED] listener and always runs the full gate, as do LAN
+ * and WireGuard peers. (#mcp-backbone Stage 2)
  */
 @Singleton
 class McpServer @Inject constructor(
@@ -344,20 +365,19 @@ class McpServer @Inject constructor(
     private var allowedClients: Set<String> = emptySet()
 
     /**
-     * When true (the default), MCP clients arriving on the **loopback**
-     * binder (peer address is a loopback address — `adb forward`, an
-     * on-device agent) skip both the pairing prompt and per-action
-     * consent. This matches the v1 threat model: anyone who can open a
-     * socket to 127.0.0.1 is already as trusted as the device itself
-     * (see the class kdoc), so prompting there is friction with no
-     * security benefit. The LAN and WireGuard binders are the genuinely
-     * remote paths and ALWAYS keep the full pairing + consent gate
-     * regardless of this flag. Mirrors [UserPreferencesRepository
+     * When true (an explicit opt-in, default OFF), MCP clients arriving on
+     * the plain **loopback** binder ([McpOrigin.DEVICE] — `adb forward`, an
+     * on-device agent) skip both the pairing prompt and per-action consent.
+     * Off by default because loopback reachability is not proof of being
+     * this device's user: any co-resident app with INTERNET can dial
+     * 127.0.0.1 (#mcp-backbone Stage 2). The TUNNELED / LAN / WireGuard
+     * origins are genuinely remote and ALWAYS keep the full pairing +
+     * consent gate regardless of this flag. Mirrors [UserPreferencesRepository
      * .trustLoopbackMcpClients]; seeded in [start] and updated at
      * runtime via [setTrustLoopbackEnabled]. (#214)
      */
     @Volatile
-    private var trustLoopbackEnabled: Boolean = true
+    private var trustLoopbackEnabled: Boolean = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -371,12 +391,29 @@ class McpServer @Inject constructor(
     private var serverSocket: ServerSocket? = null
     private var serverThread: Thread? = null
 
+    /**
+     * Dedicated loopback listener for reverse-tunneled (`-R`) carriers
+     * (#mcp-backbone Stage 2). [McpNearCarrier] points its forward's
+     * targetPort here instead of at [port], so traffic arriving from the
+     * remote end of an SSH tunnel is tagged [McpOrigin.TUNNELED] and can
+     * never inherit the loopback auto-trust the plain binder's
+     * [McpOrigin.DEVICE] sockets are eligible for. A co-resident app that
+     * dials this port directly just gets the *stricter* tag — full gate.
+     */
+    private var tunneledServerSocket: ServerSocket? = null
+    private var tunneledServerThread: Thread? = null
+
     @Volatile
     var isRunning: Boolean = false
         private set
 
     @Volatile
     var port: Int = 0
+        private set
+
+    /** Port of the tunneled-origin loopback listener; 0 when not running. */
+    @Volatile
+    var tunneledPort: Int = 0
         private set
 
     private val _endpointUrl = MutableStateFlow<String?>(null)
@@ -547,30 +584,16 @@ class McpServer @Inject constructor(
         trustLoopbackEnabled = runBlocking { preferencesRepository.trustLoopbackMcpClients.first() }
         Log.i(TAG, "MCP server listening on ${_endpointUrl.value} (paired clients: ${allowedClients.size}, trustLoopback=$trustLoopbackEnabled)")
 
-        serverThread = thread(name = "mcp-http", isDaemon = true) {
-            while (isRunning && !ss.isClosed) {
-                try {
-                    val client = ss.accept()
-                    thread(name = "mcp-client", isDaemon = true) {
-                        try {
-                            handleClient(client)
-                        } catch (e: Throwable) {
-                            // Last-resort guard so one bad request can
-                            // never kill a worker thread silently and
-                            // leave the peer socket in CLOSE_WAIT.
-                            Log.w(TAG, "worker crashed: ${e.message}")
-                            try { client.close() } catch (_: Exception) {}
-                        }
-                    }
-                } catch (_: IOException) {
-                    // Socket closed by stop() — expected on shutdown
-                    break
-                } catch (e: Exception) {
-                    Log.w(TAG, "accept failed: ${e.message}")
-                }
-            }
-            Log.i(TAG, "MCP accept loop exited")
-        }
+        serverThread = acceptThread(ss, "mcp-http", McpOrigin.DEVICE)
+
+        // Dedicated tunneled-origin listener the `-R` carriers target
+        // (#mcp-backbone Stage 2). Bound whenever the endpoint runs so the
+        // near carrier always has a target.
+        val tss = bindTunneled()
+        tunneledServerSocket = tss
+        tunneledPort = tss.localPort
+        tunneledServerThread = acceptThread(tss, "mcp-http-tunneled", McpOrigin.TUNNELED)
+        Log.i(TAG, "MCP tunneled-origin listener on 127.0.0.1:$tunneledPort")
 
         // Optionally also expose the endpoint on the active WireGuard tunnel.
         if (runBlocking { preferencesRepository.mcpWireguardEnabled.first() }) {
@@ -655,27 +678,40 @@ class McpServer @Inject constructor(
         lanServerSocket = lanSs
         _lanEndpointUrl.value = "http://${lanSs.inetAddress.hostAddress}:$boundPort/mcp"
         Log.i(TAG, "MCP also listening on LAN ${_lanEndpointUrl.value}")
-        lanServerThread = thread(name = "mcp-http-lan", isDaemon = true) {
-            while (isRunning && !lanSs.isClosed) {
+        lanServerThread = acceptThread(lanSs, "mcp-http-lan", McpOrigin.LAN)
+    }
+
+    /**
+     * Spawn the accept loop for [ss], tagging every accepted connection with
+     * [origin] — the bind-time trust tag (#mcp-backbone Stage 2). One shape
+     * shared by the DEVICE, TUNNELED, and LAN binders so their handling can't
+     * drift; the WireGuard netstack path has its own coroutine loop.
+     */
+    private fun acceptThread(ss: ServerSocket, name: String, origin: McpOrigin): Thread =
+        thread(name = name, isDaemon = true) {
+            while (isRunning && !ss.isClosed) {
                 try {
-                    val client = lanSs.accept()
-                    thread(name = "mcp-client-lan", isDaemon = true) {
+                    val client = ss.accept()
+                    thread(name = "$name-client", isDaemon = true) {
                         try {
-                            handleClient(client)
+                            handleClient(client, origin)
                         } catch (e: Throwable) {
-                            Log.w(TAG, "LAN worker crashed: ${e.message}")
+                            // Last-resort guard so one bad request can
+                            // never kill a worker thread silently and
+                            // leave the peer socket in CLOSE_WAIT.
+                            Log.w(TAG, "$name worker crashed: ${e.message}")
                             try { client.close() } catch (_: Exception) {}
                         }
                     }
                 } catch (_: IOException) {
+                    // Socket closed by stop() — expected on shutdown
                     break
                 } catch (e: Exception) {
-                    Log.w(TAG, "LAN accept failed: ${e.message}")
+                    Log.w(TAG, "$name accept failed: ${e.message}")
                 }
             }
-            Log.i(TAG, "MCP LAN accept loop exited")
+            Log.i(TAG, "$name accept loop exited")
         }
-    }
 
     /** Must hold [lifecycleLock]. Idempotent. */
     private fun stopLanBinderLocked() {
@@ -757,7 +793,7 @@ class McpServer @Inject constructor(
                             try {
                                 // WireGuard peers are always remote (a WG
                                 // tunnel IP) — never loopback-trusted. (#214)
-                                handleConnection(conn.inputStream, conn.outputStream, isLoopback = false)
+                                handleConnection(conn.inputStream, conn.outputStream, McpOrigin.WIREGUARD)
                             } catch (e: Throwable) {
                                 Log.w(TAG, "WG worker crashed: ${e.message}")
                             } finally {
@@ -881,21 +917,27 @@ class McpServer @Inject constructor(
         try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
         serverThread = null
+        try { tunneledServerSocket?.close() } catch (_: Exception) {}
+        tunneledServerSocket = null
+        tunneledServerThread = null
+        tunneledPort = 0
         port = 0
         _endpointUrl.value = null
     }
 
     /**
-     * True iff the server is running AND the listener socket is still
-     * bound AND the accept thread is still alive. Used by [start] to
-     * distinguish a healthy instance from a process-suspend zombie.
+     * True iff the server is running AND both loopback listeners (device +
+     * tunneled origins) are still bound with live accept threads. Used by
+     * [start] to distinguish a healthy instance from a process-suspend
+     * zombie; a dead tunneled listener alone counts as unhealthy so the
+     * Stage-1 revive hook heals the near-carrier path too.
      */
     private fun isHealthy(): Boolean {
         if (!isRunning) return false
-        val ss = serverSocket ?: return false
-        if (ss.isClosed) return false
-        val t = serverThread ?: return false
-        if (!t.isAlive) return false
+        if (serverSocket?.isClosed != false) return false
+        if (serverThread?.isAlive != true) return false
+        if (tunneledServerSocket?.isClosed != false) return false
+        if (tunneledServerThread?.isAlive != true) return false
         return true
     }
 
@@ -918,6 +960,24 @@ class McpServer @Inject constructor(
             }
         }
         // All preferred ports busy — let the OS pick one
+        return ServerSocket(0, 10, loopback).apply { reuseAddress = true }
+    }
+
+    /**
+     * Bind the tunneled-origin loopback listener on the first free port in
+     * [8740..8749] — deterministic, like [bindLoopback]'s 8730–8739, so the
+     * near carrier's stored `-R` forward usually still points at the right
+     * target after a server restart. OS-assigned fallback if all are busy.
+     */
+    private fun bindTunneled(): ServerSocket {
+        val loopback = InetAddress.getByName("127.0.0.1")
+        for (p in 8740..8749) {
+            try {
+                return ServerSocket(p, 10, loopback).apply { reuseAddress = true }
+            } catch (_: IOException) {
+                // busy, try next
+            }
+        }
         return ServerSocket(0, 10, loopback).apply { reuseAddress = true }
     }
 
@@ -968,18 +1028,12 @@ class McpServer @Inject constructor(
 
     // --- HTTP + JSON-RPC handling ---
 
-    private fun handleClient(socket: Socket) {
+    private fun handleClient(socket: Socket, origin: McpOrigin) {
         try {
             // Read timeout. Must exceed CONSENT_WAIT_MS so a request blocked on
             // an interactive consent prompt isn't dropped mid-wait.
             socket.soTimeout = 70_000
-            // Loopback peers (the dedicated 127.0.0.1 binder; also covers ::1
-            // and 127.0.0.0/8) are local clients. The LAN binder also routes
-            // here, but its accepted sockets carry the remote client's LAN
-            // address as peer — so same-device-to-LAN-IP still reads as
-            // non-loopback and keeps the full gate. (#214)
-            val isLoopback = socket.inetAddress?.isLoopbackAddress == true
-            socket.use { s -> handleConnection(s.getInputStream(), s.getOutputStream(), isLoopback) }
+            socket.use { s -> handleConnection(s.getInputStream(), s.getOutputStream(), origin) }
         } catch (e: Exception) {
             Log.w(TAG, "client handler error: ${e.message}")
         }
@@ -987,11 +1041,12 @@ class McpServer @Inject constructor(
 
     /**
      * Serve one HTTP/JSON-RPC request off a raw stream pair. Shared by the
-     * loopback [ServerSocket] path ([handleClient]) and the WireGuard
-     * netstack accept loop ([wireguardAcceptLoop]) so both transports run
-     * identical request handling + pairing checks (#176).
+     * kernel-[ServerSocket] paths ([handleClient]) and the WireGuard
+     * netstack accept loop so all transports run identical request handling
+     * + pairing checks (#176). [origin] is the accepting listener's
+     * bind-time trust tag (#mcp-backbone Stage 2).
      */
-    private fun handleConnection(input: InputStream, output: OutputStream, isLoopback: Boolean) {
+    private fun handleConnection(input: InputStream, output: OutputStream, origin: McpOrigin) {
         // Byte-level read (buffered so per-byte header scanning isn't a syscall
         // storm); body is read by byte length, not char count (#mcp-backbone
         // Stage 0). Both the loopback and WireGuard accept paths share this.
@@ -999,12 +1054,12 @@ class McpServer @Inject constructor(
         when (val res = parseHttpRequest(bin)) {
             is HttpParseResult.Closed -> return
             is HttpParseResult.Fail -> writeError(output, res.status, res.reason)
-            is HttpParseResult.Ok -> dispatchHttpRequest(res.request, output, isLoopback)
+            is HttpParseResult.Ok -> dispatchHttpRequest(res.request, output, origin)
         }
     }
 
     /** Route one parsed request to the JSON-RPC layer / CORS / errors. */
-    private fun dispatchHttpRequest(req: ParsedHttpRequest, output: OutputStream, isLoopback: Boolean) {
+    private fun dispatchHttpRequest(req: ParsedHttpRequest, output: OutputStream, origin: McpOrigin) {
         val method = req.method
         val path = req.path
         when {
@@ -1013,13 +1068,13 @@ class McpServer @Inject constructor(
                 // page on the device can reach the loopback endpoint. Reject a
                 // POST that carries a cross-origin `Origin`; non-browser MCP
                 // clients send no Origin and pass through.
-                val origin = req.headers["origin"]
-                if (origin != null && !isLoopbackOrigin(origin)) {
+                val httpOrigin = req.headers["origin"]
+                if (httpOrigin != null && !isLoopbackOrigin(httpOrigin)) {
                     writeError(output, 403, "Forbidden")
                     return
                 }
                 val sessionId = req.headers["mcp-session-id"]?.takeIf { it.isNotEmpty() }
-                val outcome = handleJsonRpc(req.body, sessionId, isLoopback)
+                val outcome = handleJsonRpc(req.body, sessionId, origin)
                 if (outcome.httpStatus == 404) {
                     // Streamable-HTTP signal: presented session id is unknown.
                     // Empty body — the client re-initialises.
@@ -1098,7 +1153,7 @@ class McpServer @Inject constructor(
     internal fun handleJsonRpc(
         body: String,
         requestSessionId: String?,
-        isLoopback: Boolean = false,
+        origin: McpOrigin = McpOrigin.LAN,
     ): JsonRpcOutcome {
         if (body.isBlank()) {
             return JsonRpcOutcome(200, jsonRpcError(null, -32700, "Parse error: empty body"), null)
@@ -1135,7 +1190,7 @@ class McpServer @Inject constructor(
         var resultJson: JSONObject? = null
         var newSessionId: String? = null
         val response = try {
-            val result = dispatch(method, params, requestSessionId, isLoopback)
+            val result = dispatch(method, params, requestSessionId, origin)
             if (result is JSONObject) resultJson = result
             // A successful `initialize` mints a new session id we'll
             // hand back to the client in the response header. The
@@ -1233,11 +1288,14 @@ class McpServer @Inject constructor(
      * present but unrecognised we throw [SessionExpiredError] so the
      * HTTP layer returns 404 and the client per spec re-initialises.
      */
-    private fun dispatch(method: String, params: JSONObject, requestSessionId: String?, isLoopback: Boolean): Any? {
-        // Loopback auto-trust: a client on the loopback binder is treated
-        // as already-paired and consent-bypassed when the pref is on.
-        // LAN / WireGuard (isLoopback=false) always run the full gate. (#214)
-        val trusted = isLoopback && trustLoopbackEnabled
+    private fun dispatch(method: String, params: JSONObject, requestSessionId: String?, origin: McpOrigin): Any? {
+        // Loopback auto-trust: only a DEVICE-origin client (the plain
+        // loopback binder) can be treated as already-paired and
+        // consent-bypassed, and only when the user opted in. TUNNELED
+        // traffic also arrives on 127.0.0.1 but its far end is a remote
+        // host — never trusted (#mcp-backbone Stage 2). LAN / WireGuard
+        // always run the full gate. (#214)
+        val trusted = origin == McpOrigin.DEVICE && trustLoopbackEnabled
         // Pairing gate: every method except the pair-or-fail path itself
         // requires the calling client to be in the allowlist. `ping` is
         // intentionally allowed unauthenticated so a client can probe
