@@ -1,6 +1,7 @@
 package sh.haven.core.vnc
 
 import android.graphics.Bitmap
+import java.security.cert.X509Certificate
 
 /**
  * Configuration for a VNC client connection.
@@ -8,6 +9,24 @@ import android.graphics.Bitmap
 class VncConfig {
     var passwordSupplier: (() -> String)? = null
     var usernameSupplier: (() -> String)? = null
+
+    /**
+     * Called during a VeNCrypt X509 handshake with the server's leaf
+     * certificate. Implementations perform trust-on-first-use pinning and
+     * MUST throw to abort the connection if the certificate is not trusted
+     * (e.g. it changed from a previously pinned one — a possible MITM).
+     * When null, the X509 certificate is not validated (legacy behaviour).
+     * Fixes security-review critical #1.
+     */
+    var verifyServerCert: ((X509Certificate) -> Unit)? = null
+
+    /**
+     * Fired when the negotiated security is encrypted-but-unauthenticated
+     * (anonymous-DH VeNCrypt TLS, which carries no certificate) or entirely
+     * unauthenticated (security type None). The UI surfaces this as a
+     * non-blocking banner so the user knows the server identity is unverified.
+     */
+    var onSecurityWarning: ((String) -> Unit)? = null
     var onScreenUpdate: ((Bitmap) -> Unit)? = null
     var onError: ((Exception) -> Unit)? = null
     var onBell: (() -> Unit)? = null

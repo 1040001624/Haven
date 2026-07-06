@@ -168,6 +168,8 @@ fun VncSessionContent(
     bandwidthSuggestion: StateFlow<String?>? = null,
     onAcceptBandwidthSuggestion: (() -> Unit)? = null,
     onDismissBandwidthSuggestion: (() -> Unit)? = null,
+    securityWarning: StateFlow<String?>? = null,
+    onDismissSecurityWarning: (() -> Unit)? = null,
     currentOrientation: Int = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
     onCycleOrientation: () -> Unit = {},
     onRetry: (() -> Unit)? = null,
@@ -270,6 +272,8 @@ fun VncSessionContent(
             bandwidthSuggestion = bandwidthSuggestion?.collectAsState()?.value,
             onAcceptBandwidthSuggestion = onAcceptBandwidthSuggestion,
             onDismissBandwidthSuggestion = onDismissBandwidthSuggestion,
+            securityWarning = securityWarning?.collectAsState()?.value,
+            onDismissSecurityWarning = onDismissSecurityWarning,
             currentOrientation = currentOrientation,
             onCycleOrientation = onCycleOrientation,
             onMinimize = onMinimize,
@@ -366,6 +370,8 @@ fun VncScreen(
         onFullscreenChanged = onFullscreenChanged,
         cursor = viewModel.cursor,
         pointerPos = viewModel.pointerPos,
+        securityWarning = viewModel.securityWarning,
+        onDismissSecurityWarning = { viewModel.dismissSecurityWarning() },
         currentOrientation = orientationValue,
         onCycleOrientation = { orientationValue = cycleVncOrientation(orientationValue) },
     )
@@ -512,6 +518,8 @@ private fun VncViewer(
     bandwidthSuggestion: String? = null,
     onAcceptBandwidthSuggestion: (() -> Unit)? = null,
     onDismissBandwidthSuggestion: (() -> Unit)? = null,
+    securityWarning: String? = null,
+    onDismissSecurityWarning: (() -> Unit)? = null,
     currentOrientation: Int = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
     onCycleOrientation: () -> Unit = {},
     /** Switch DIRECT/TOUCHPAD input mode from the toolbar (#183). When null
@@ -698,6 +706,32 @@ private fun VncViewer(
 
     Box(modifier = Modifier.fillMaxSize().onSizeChanged { rootBoxSize = it }) {
     Column(modifier = Modifier.fillMaxSize()) {
+        // Security banner: the server's identity is unverified (anonymous TLS
+        // or security type None). Non-blocking; the connection still works but
+        // the user should know it isn't authenticated (security-review #1/#11).
+        if (!fullscreen && securityWarning != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = securityWarning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (onDismissSecurityWarning != null) {
+                        TextButton(onClick = onDismissSecurityWarning) {
+                            Text(stringResource(R.string.vnc_action_dismiss))
+                        }
+                    }
+                }
+            }
+        }
         // Bandwidth-suggestion banner (#107 follow-up). Non-blocking; user
         // chooses Switch (clean reconnect at 256 colours) or Dismiss.
         if (!fullscreen && bandwidthSuggestion != null && onAcceptBandwidthSuggestion != null && onDismissBandwidthSuggestion != null) {

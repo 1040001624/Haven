@@ -48,6 +48,7 @@ class VncViewModel @Inject constructor(
     private val moshSessionManager: MoshSessionManager,
     private val etSessionManager: EtSessionManager,
     private val portKnocker: PortKnocker,
+    private val tlsCertVerifier: sh.haven.core.data.agent.TlsCertVerifier,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -62,6 +63,14 @@ class VncViewModel @Inject constructor(
 
     private val _serverName = MutableStateFlow<String?>(null)
     val serverName: StateFlow<String?> = _serverName.asStateFlow()
+
+    /**
+     * Non-fatal security notice for the current session — set when the
+     * connection is encrypted-but-unauthenticated (anonymous TLS) or wholly
+     * unauthenticated (security type None). The UI shows it as a banner.
+     */
+    private val _securityWarning = MutableStateFlow<String?>(null)
+    val securityWarning: StateFlow<String?> = _securityWarning.asStateFlow()
 
     /** Most recent cursor shape from the server, or null if none received. */
     private val _cursor = MutableStateFlow<CursorOverlay?>(null)
@@ -176,6 +185,13 @@ class VncViewModel @Inject constructor(
     ) {
         // Stop any previous client to avoid orphaned threads
         client?.stop()
+        _securityWarning.value = null
+
+        // Pin the server's TLS certificate against its real identity, not the
+        // localhost tunnel endpoint, so a direct and an SSH-tunnelled connect
+        // to the same server share one pin.
+        val certHost = displayHost ?: host
+        val certPort = displayPort ?: port
 
         val config = VncConfig().apply {
             colorDepth = ColorDepth.BPP_24_TRUE
@@ -185,6 +201,39 @@ class VncViewModel @Inject constructor(
             }
             if (!username.isNullOrEmpty()) {
                 usernameSupplier = { username }
+            }
+            // VeNCrypt X509 cert TOFU pinning (security-review critical #1).
+            // Runs on the connection thread; the short DB access is blocking.
+            verifyServerCert = { cert ->
+                when (
+                    val r = kotlinx.coroutines.runBlocking {
+                        tlsCertVerifier.verify(certHost, certPort, cert.encoded)
+                    }
+                ) {
+                    is sh.haven.core.data.agent.TlsCertResult.Trusted -> {
+                        Log.d(TAG, "VNC TLS cert trusted for $certHost:$certPort")
+                    }
+                    is sh.haven.core.data.agent.TlsCertResult.NewCert -> {
+                        kotlinx.coroutines.runBlocking {
+                            tlsCertVerifier.accept(certHost, certPort, r.sha256)
+                        }
+                        Log.i(TAG, "Pinned VNC TLS cert for $certHost:$certPort: ${r.sha256.take(16)}…")
+                    }
+                    is sh.haven.core.data.agent.TlsCertResult.CertChanged -> {
+                        throw HandshakingFailedException(
+                            "The VNC server's TLS certificate has changed since you last " +
+                                "connected — this can indicate a man-in-the-middle attack, so " +
+                                "the connection was refused.\n\nExpected: ${r.stored.take(32)}…\n" +
+                                "Got: ${r.presented.take(32)}…\n\nIf you changed the server's " +
+                                "certificate on purpose, forget the saved certificate for " +
+                                "$certHost:$certPort and reconnect.",
+                        )
+                    }
+                }
+            }
+            onSecurityWarning = { msg ->
+                Log.w(TAG, "VNC security: $msg")
+                _securityWarning.value = msg
             }
             onScreenUpdate = { bitmap ->
                 _frame.value = bitmap
@@ -221,6 +270,11 @@ class VncViewModel @Inject constructor(
         moshSessionManager.sessions.value[sessionId]?.sshClient?.let { return it as? SshClient }
         etSessionManager.sessions.value[sessionId]?.sshClient?.let { return it as? SshClient }
         return null
+    }
+
+    /** Dismisses the non-fatal unauthenticated-connection banner. */
+    fun dismissSecurityWarning() {
+        _securityWarning.value = null
     }
 
     fun disconnect() {

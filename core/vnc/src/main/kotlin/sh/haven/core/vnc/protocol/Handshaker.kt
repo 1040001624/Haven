@@ -58,6 +58,14 @@ object Handshaker {
         negotiateSecurityType(session, socket, host)
     }
 
+    /** Security type None: neither encrypted nor authenticated (finding #11). */
+    private fun warnUnauthenticated(session: VncSession) {
+        Log.w(TAG, "VNC security type None: connection is unencrypted and unauthenticated")
+        session.config.onSecurityWarning?.invoke(
+            "This VNC connection is unencrypted and unauthenticated (security type None).",
+        )
+    }
+
     private fun negotiateProtocolVersion(session: VncSession) {
         val serverVersion = ProtocolVersion.decode(session.inputStream)
         if (serverVersion.major < 3 || (serverVersion.major == 3 && serverVersion.minor < 3)) {
@@ -112,6 +120,7 @@ object Handshaker {
                 SEC_NONE in types -> {
                     session.outputStream.write(SEC_NONE)
                     session.outputStream.flush()
+                    warnUnauthenticated(session)
                 }
                 else -> throw HandshakingFailedException("No supported security types: $types")
             }
@@ -129,7 +138,7 @@ object Handshaker {
                     d.readFully(errBytes)
                     throw HandshakingFailedException(String(errBytes, Charsets.US_ASCII))
                 }
-                SEC_NONE -> { /* no auth */ }
+                SEC_NONE -> warnUnauthenticated(session)
                 SEC_VNC_AUTH -> authenticateVnc(session)
                 else -> throw HandshakingFailedException("Unsupported security type: $type")
             }
@@ -168,15 +177,20 @@ object Handshaker {
         val subTypes = (0 until subCount).map { d.readInt() }
         Log.d(TAG, "VeNCrypt sub-types: $subTypes")
 
-        // Pick the best supported sub-type. Preference:
-        //   TLSPlain > X509Plain > TLSVnc > X509Vnc > TLSNone > X509None > Plain
+        // Pick the best supported sub-type. Prefer the X509 family over the
+        // anonymous-DH (plain TLS) family: X509 carries a server certificate
+        // we can pin (trust-on-first-use), whereas anonymous-DH TLS is
+        // encrypted but unauthenticated and cannot be verified. Within each
+        // family prefer Plain (user/pass) > Vnc (DES) > None. (security-review
+        // critical #1)
+        //   X509Plain > X509Vnc > X509None > TLSPlain > TLSVnc > TLSNone > Plain
         val chosen = when {
-            VENCRYPT_TLS_PLAIN in subTypes -> VENCRYPT_TLS_PLAIN
             VENCRYPT_X509_PLAIN in subTypes -> VENCRYPT_X509_PLAIN
-            VENCRYPT_TLS_VNC in subTypes -> VENCRYPT_TLS_VNC
             VENCRYPT_X509_VNC in subTypes -> VENCRYPT_X509_VNC
-            VENCRYPT_TLS_NONE in subTypes -> VENCRYPT_TLS_NONE
             VENCRYPT_X509_NONE in subTypes -> VENCRYPT_X509_NONE
+            VENCRYPT_TLS_PLAIN in subTypes -> VENCRYPT_TLS_PLAIN
+            VENCRYPT_TLS_VNC in subTypes -> VENCRYPT_TLS_VNC
+            VENCRYPT_TLS_NONE in subTypes -> VENCRYPT_TLS_NONE
             VENCRYPT_PLAIN in subTypes -> VENCRYPT_PLAIN
             else -> throw HandshakingFailedException(
                 "No supported VeNCrypt sub-type (offered: $subTypes)",
@@ -186,17 +200,27 @@ object Handshaker {
         o.writeInt(chosen)
         o.flush()
 
-        // Sub-types that require a TLS upgrade
-        val needsTls = chosen in listOf(
-            VENCRYPT_TLS_NONE, VENCRYPT_TLS_VNC, VENCRYPT_TLS_PLAIN,
+        // Sub-types that require a TLS upgrade. X509 variants carry a server
+        // certificate we pin; the anonymous-DH (plain TLS) variants do not.
+        val isX509 = chosen in listOf(
             VENCRYPT_X509_NONE, VENCRYPT_X509_VNC, VENCRYPT_X509_PLAIN,
         )
-        if (needsTls) {
+        val isAnonTls = chosen in listOf(
+            VENCRYPT_TLS_NONE, VENCRYPT_TLS_VNC, VENCRYPT_TLS_PLAIN,
+        )
+        if (isX509 || isAnonTls) {
             // For TLS-family sub-types, the server sends an extra ack byte
             // (0 = accepted) before the TLS handshake begins.
             val tlsAck = d.readUnsignedByte()
             if (tlsAck != 1) throw HandshakingFailedException("VeNCrypt sub-type refused: ack=$tlsAck")
-            upgradeToTls(session, socket, host)
+            upgradeToTls(session, socket, host, requireCert = isX509)
+            if (isAnonTls) {
+                Log.w(TAG, "VeNCrypt anonymous-DH TLS: encrypted but server identity is unverified")
+                session.config.onSecurityWarning?.invoke(
+                    "This VNC server uses anonymous TLS: the connection is encrypted " +
+                        "but the server's identity cannot be verified.",
+                )
+            }
         }
 
         // Sub-type-specific auth now runs over the (possibly) TLS-wrapped streams
@@ -214,12 +238,25 @@ object Handshaker {
     }
 
     /**
-     * Upgrade the socket to TLS. Uses a trust-all TrustManager (like most
-     * VNC clients do by default — the wire is encrypted but the cert isn't
-     * verified, similar to `-SecurityTypes=TLSPlain` in vncviewer).
+     * Upgrade the socket to TLS.
+     *
+     * For X509 sub-types ([requireCert] = true) the server presents a real
+     * certificate: we use regular (non-anonymous) cipher suites and hand the
+     * leaf cert to [VncConfig.verifyServerCert] for trust-on-first-use pinning.
+     * That callback throws to abort if the cert is untrusted/changed — closing
+     * the "accepts any server certificate" MITM hole (critical #1).
+     *
+     * For anonymous-DH sub-types ([requireCert] = false) there is no
+     * certificate to verify; we enable ADH suites and the connection is
+     * encrypted but unauthenticated (the caller surfaces a warning).
      */
-    private fun upgradeToTls(session: VncSession, socket: Socket, host: String) {
-        Log.d(TAG, "Upgrading socket to TLS (anonymous + trust-all)")
+    private fun upgradeToTls(session: VncSession, socket: Socket, host: String, requireCert: Boolean) {
+        Log.d(TAG, "Upgrading socket to TLS (requireCert=$requireCert)")
+        // Anonymous-DH suites have no certificate, so a TrustManager never
+        // sees one. For X509 we still install an accept-all TrustManager here
+        // and enforce trust ourselves against the pinned fingerprint after the
+        // handshake (a chain-of-trust check would reject the self-signed certs
+        // that VNC servers overwhelmingly use; TOFU pinning is the right model).
         val ctx = SSLContext.getInstance("TLS")
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -234,24 +271,42 @@ object Handshaker {
         val sslSocket = factory.createSocket(socket, host, socket.port, true) as SSLSocket
         sslSocket.useClientMode = true
 
-        // VeNCrypt TLSxxx allows anonymous DH cipher suites. Enable both
-        // ADH and regular TLS suites so we negotiate with whatever the
-        // server supports. X509xxx sub-types require regular TLS suites.
-        try {
-            val anonSuites = sslSocket.supportedCipherSuites.filter {
-                it.contains("anon", ignoreCase = true)
+        if (!requireCert) {
+            // VeNCrypt TLSxxx allows anonymous DH cipher suites. Enable both
+            // ADH and regular TLS suites so we negotiate with whatever the
+            // server supports.
+            try {
+                val anonSuites = sslSocket.supportedCipherSuites.filter {
+                    it.contains("anon", ignoreCase = true)
+                }
+                val regularSuites = sslSocket.enabledCipherSuites.toList()
+                val combined = (anonSuites + regularSuites).distinct().toTypedArray()
+                if (combined.isNotEmpty()) {
+                    sslSocket.enabledCipherSuites = combined
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to enable anon cipher suites: ${e.message}")
             }
-            val regularSuites = sslSocket.enabledCipherSuites.toList()
-            val combined = (anonSuites + regularSuites).distinct().toTypedArray()
-            if (combined.isNotEmpty()) {
-                sslSocket.enabledCipherSuites = combined
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to enable anon cipher suites: ${e.message}")
         }
+        // X509 sub-types keep the default (non-anonymous) suites so the server
+        // is forced to present a certificate.
 
         sslSocket.startHandshake()
         Log.d(TAG, "TLS handshake complete: ${sslSocket.session.protocol} ${sslSocket.session.cipherSuite}")
+
+        if (requireCert) {
+            val leaf = sslSocket.session.peerCertificates.firstOrNull() as? X509Certificate
+                ?: throw HandshakingFailedException(
+                    "VeNCrypt X509: server presented no certificate",
+                )
+            val verifier = session.config.verifyServerCert
+            if (verifier != null) {
+                // Throws to abort on an untrusted / changed certificate.
+                verifier.invoke(leaf)
+            } else {
+                Log.w(TAG, "No certificate verifier configured — X509 cert left unvalidated")
+            }
+        }
 
         // Swap the session's streams for the TLS-wrapped ones
         session.inputStream = BufferedInputStream(sslSocket.inputStream)

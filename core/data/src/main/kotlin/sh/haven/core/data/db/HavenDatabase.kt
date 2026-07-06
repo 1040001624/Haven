@@ -10,6 +10,7 @@ import sh.haven.core.data.db.entities.ConnectionGroup
 import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.KnownHost
+import sh.haven.core.data.db.entities.KnownTlsCert
 import sh.haven.core.data.db.entities.MailRule
 import sh.haven.core.data.db.entities.MailRuleFiring
 import sh.haven.core.data.db.entities.MailRulePendingAction
@@ -31,6 +32,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         ConnectionProfile::class,
         ConnectionGroup::class,
         KnownHost::class,
+        KnownTlsCert::class,
         ConnectionLog::class,
         SshKey::class,
         PortForwardRule::class,
@@ -50,13 +52,14 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         StandingPolicy::class,
         AgeIdentityEntity::class,
     ],
-    version = 73,
+    version = 74,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
     abstract fun connectionDao(): ConnectionDao
     abstract fun connectionGroupDao(): ConnectionGroupDao
     abstract fun knownHostDao(): KnownHostDao
+    abstract fun knownTlsCertDao(): KnownTlsCertDao
     abstract fun connectionLogDao(): ConnectionLogDao
     abstract fun sshKeyDao(): SshKeyDao
     abstract fun portForwardRuleDao(): PortForwardRuleDao
@@ -1176,6 +1179,28 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_72_73 = object : Migration(72, 73) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 addColumnIfMissing(db, "connection_profiles", "usbDriveSerial", "TEXT")
+            }
+        }
+
+        /**
+         * TOFU store for remote-desktop TLS server certificates (VNC
+         * VeNCrypt X509 + RDP), the TLS analogue of `known_hosts`. Fixes
+         * the "accepts any server certificate" criticals by pinning the
+         * leaf cert fingerprint on first connect.
+         */
+        val MIGRATION_73_74 = object : Migration(73, 74) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `known_tls_certs` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `hostname` TEXT NOT NULL,
+                        `port` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `firstSeen` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
             }
         }
 
