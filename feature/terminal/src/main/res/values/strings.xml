@@ -48,6 +48,7 @@
     <string name="terminal_new_tab_no_active">No active session to clone</string>
     <string name="terminal_new_tab_no_config">Connection config not found — try reconnecting first</string>
     <string name="terminal_new_tab_host_key_changed">Host key changed for %s — connection refused for security</string>
+    <string name="terminal_new_tab_host_key_unknown">Unknown host key for %s — open this connection first to verify and trust it</string>
     <string name="terminal_new_tab_connection_failed">Could not connect: %s</string>
     <string name="terminal_new_tab_shell_failed">Failed to open shell: %s</string>
     <string name="terminal_new_tab_reticulum_no_session">No active Reticulum session to clone</string>

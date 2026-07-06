@@ -2033,11 +2033,21 @@ class TerminalViewModel @Inject constructor(
                         client.connect(config, proxy = proxy)
                     }
 
-                    // Silent TOFU: auto-accept new hosts, reject key changes
+                    // Silent TOFU is fail-closed: a new tab never silently trusts
+                    // an unknown or changed host key; the user establishes trust
+                    // via an interactive connect (host-key prompt). (#5)
                     when (val hkResult = hostKeyVerifier.verify(hostKeyEntry)) {
                         is HostKeyResult.Trusted -> { /* matches — continue */ }
                         is HostKeyResult.NewHost -> {
-                            hostKeyVerifier.accept(hkResult.entry)
+                            client.disconnect()
+                            sessionManager.removeSession(sessionId)
+                            Log.w(TAG, "Unknown host key for ${config.host}:${config.port} — aborting new tab")
+                            _newTabMessage.value = appContext.getString(
+                                R.string.terminal_new_tab_host_key_unknown,
+                                "${config.host}:${config.port}",
+                            )
+                            _newTabLoading.value = false
+                            return@launch
                         }
                         is HostKeyResult.KeyChanged -> {
                             client.disconnect()
@@ -2186,7 +2196,18 @@ class TerminalViewModel @Inject constructor(
                     val hostKeyEntry = withContext(Dispatchers.IO) { client.connect(config, proxy = proxy) }
                     when (val hkResult = hostKeyVerifier.verify(hostKeyEntry)) {
                         is HostKeyResult.Trusted -> {}
-                        is HostKeyResult.NewHost -> hostKeyVerifier.accept(hkResult.entry)
+                        is HostKeyResult.NewHost -> {
+                            // Fail closed on an unknown host in the silent new-tab
+                            // path; trust is established interactively. (#5)
+                            client.disconnect()
+                            sessionManager.removeSession(sessionId)
+                            _newTabMessage.value = appContext.getString(
+                                R.string.terminal_new_tab_host_key_unknown,
+                                "${config.host}:${config.port}",
+                            )
+                            _newTabLoading.value = false
+                            return@launch
+                        }
                         is HostKeyResult.KeyChanged -> {
                             client.disconnect()
                             sessionManager.removeSession(sessionId)

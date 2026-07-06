@@ -34005,6 +34005,15 @@
      }
     },
     {
+     "name": "terminal_new_tab_host_key_unknown",
+     "en": "Unknown host key for %s — open this connection first to verify and trust it",
+     "comment": "New tab errors",
+     "args": [
+      "%s"
+     ],
+     "t": {}
+    },
+    {
      "name": "terminal_new_tab_connection_failed",
      "en": "Could not connect: %s",
      "comment": "New tab errors",

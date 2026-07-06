@@ -4757,10 +4757,18 @@ class ConnectionsViewModel @Inject constructor(
                     preConnect = buildKnockHook(profile, verboseLogger),
                 )
 
-                // Silent TOFU: accept new hosts, reject changed keys
+                // Silent TOFU is fail-closed: a background / workspace connect
+                // never silently trusts an unknown OR changed host key. Trust is
+                // established interactively via the host-key prompt. (#5)
                 when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
-                    is HostKeyResult.NewHost -> hostKeyVerifier.accept(result.entry)
+                    is HostKeyResult.NewHost -> {
+                        client.disconnect()
+                        throw Exception(
+                            "Unknown host key for ${profile.host} — open this connection from " +
+                                "the Connections tab first to verify and trust its host key.",
+                        )
+                    }
                     is HostKeyResult.KeyChanged -> {
                         client.disconnect()
                         throw Exception("Host key changed for ${profile.host} — possible MITM")
@@ -4827,7 +4835,15 @@ class ConnectionsViewModel @Inject constructor(
 
                 when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
-                    is HostKeyResult.NewHost -> hostKeyVerifier.accept(result.entry)
+                    is HostKeyResult.NewHost -> {
+                        // Fail closed: don't silently trust an unknown host in a
+                        // background/workspace connect; require interactive TOFU. (#5)
+                        sshClient.disconnect()
+                        throw Exception(
+                            "Unknown host key for ${profile.host} — open this connection from " +
+                                "the Connections tab first to verify and trust its host key.",
+                        )
+                    }
                     is HostKeyResult.KeyChanged -> {
                         sshClient.disconnect()
                         throw Exception("Host key changed for ${profile.host} — possible MITM")
@@ -4884,7 +4900,15 @@ class ConnectionsViewModel @Inject constructor(
 
                 when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
-                    is HostKeyResult.NewHost -> hostKeyVerifier.accept(result.entry)
+                    is HostKeyResult.NewHost -> {
+                        // Fail closed: don't silently trust an unknown host in a
+                        // background/workspace connect; require interactive TOFU. (#5)
+                        sshClient.disconnect()
+                        throw Exception(
+                            "Unknown host key for ${profile.host} — open this connection from " +
+                                "the Connections tab first to verify and trust its host key.",
+                        )
+                    }
                     is HostKeyResult.KeyChanged -> {
                         sshClient.disconnect()
                         throw Exception("Host key changed for ${profile.host} — possible MITM")

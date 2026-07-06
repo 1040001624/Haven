@@ -416,11 +416,16 @@ class McpTunnelManager @Inject constructor(
         sessionId = sid
         return try {
             val hostKeyEntry = client.connect(config)
-            // Silent TOFU — same policy the reconnect path uses: accept a
-            // new host, abort on a changed key.
+            // Fail-closed TOFU: this headless tunnel never silently trusts an
+            // unknown or changed host key. The user establishes trust by
+            // connecting the profile interactively first (host-key prompt). (#5)
             when (val r = hostKeyVerifier.verify(hostKeyEntry)) {
                 is HostKeyResult.Trusted -> { /* ok */ }
-                is HostKeyResult.NewHost -> hostKeyVerifier.accept(r.entry)
+                is HostKeyResult.NewHost -> {
+                    Log.w(TAG, "Unknown host key for ${profile.label} — refusing MCP tunnel (connect it interactively first)")
+                    cleanup(sid)
+                    return Outcome.FATAL
+                }
                 is HostKeyResult.KeyChanged -> {
                     Log.w(TAG, "Host key changed for ${profile.label} — refusing MCP tunnel")
                     cleanup(sid)
