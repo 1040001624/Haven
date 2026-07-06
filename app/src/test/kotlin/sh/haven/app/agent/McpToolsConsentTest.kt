@@ -607,4 +607,33 @@ class McpToolsConsentTest {
             assertTrue("$name must remain registered", name in names)
         }
     }
+
+    // --- Mail provider extraction (#mcp-backbone Stage 5, Layer E) ---
+
+    @Test
+    fun `mail tools are aggregated with their consent levels intact`() {
+        val tools = newTools()
+        val names = tools.definitions().map { it.getString("name") }.toSet()
+        // Read-only listings/status + poke are NEVER (poke just nudges the
+        // watcher; its rule actions carry their own pre-authorisation).
+        for (name in listOf(
+            "list_mail_rules", "get_mail_automation_status", "poke_mail_watch",
+            "list_mail_folders", "list_mail_messages", "read_mail_message", "search_mail",
+        )) {
+            assertTrue("$name missing from definitions()", name in names)
+            assertEquals("$name must be NEVER", ConsentLevel.NEVER, tools.consentFor(name)!!.level)
+        }
+        // The write / send / rule-mutation verbs gate (not NEVER).
+        for (name in listOf(
+            "create_mail_rule", "delete_mail_rule",
+            "send_mail", "save_mail_attachment", "modify_mail_message",
+            "save_mail_draft", "create_mail_folder", "delete_mail_folder",
+        )) {
+            assertTrue("$name missing from definitions()", name in names)
+            assertNotEquals("$name should gate (not NEVER)", ConsentLevel.NEVER, tools.consentFor(name)!!.level)
+        }
+        // Dispatch via McpTools.call is proven by the five other provider
+        // dispatch tests; the mail reads hit a Flow/session a relaxed mock
+        // can't satisfy, so this asserts registration + consent.
+    }
 }
