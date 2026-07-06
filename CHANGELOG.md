@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.18
+
+🔌 **The agent (MCP) endpoint now self-heals and no longer stalls on non-ASCII** — two fixes to the agent transport that the SSH terminal beside it already got right. The endpoint's accept loop is a background thread that the OS can kill when it trims the app; nothing was restarting it, so a still-up carrier could sit in front of a dead endpoint until you toggled the setting. It now revives on the same triggers the SSH sessions use (return-to-foreground and network-available). Separately, the request parser counted characters against a byte length, so any tool call carrying a multibyte character (an emoji, CJK, an accented letter) stalled until a 70-second timeout — it now reads the body by byte length and returns instantly. Both were reproduced and fixed on-device.
+
+🔒 **Agent endpoint hardening** — the request parser now caps body and header size (an oversized `Content-Length` could exhaust memory), and rejects cross-origin browser requests to the loopback endpoint (a web page on the device could otherwise reach it). Part of a staged review of the agent transport documented in `docs/design/mcp-backbone.md`. No change for normal MCP clients.
+
 ## v5.68.17
 
 🖼️ **Agent-presented web pages, images and PDFs get a fullscreen view and clearer window controls** — pages the AI opens on screen now run with JavaScript and DOM storage enabled (previously many rendered as a blank white view), and the window chrome matches Haven's other windowed apps: an explicit ✕ closes the window (the old top-bar affordance read as "minimise"), and web/image content has a fullscreen toggle beside it that opens an immersive view with an exit control, rather than overlaying the content.

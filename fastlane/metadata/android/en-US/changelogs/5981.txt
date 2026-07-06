@@ -1,0 +1,3 @@
+🔌 The agent (MCP) endpoint now self-heals instead of staying dead behind a still-up carrier: it revives on return-to-foreground and network-available, like the SSH sessions. It also no longer stalls on tool calls carrying non-ASCII text (emoji/CJK/accents) — the request body is read by byte length now, not character count. Both reproduced and fixed on-device.
+
+🔒 Agent endpoint hardening: the request parser caps body/header size and rejects cross-origin browser requests to the loopback endpoint. No change for normal MCP clients.
