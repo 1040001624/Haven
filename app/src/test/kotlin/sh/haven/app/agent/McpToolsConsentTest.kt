@@ -479,4 +479,25 @@ class McpToolsConsentTest {
         // Relaxed TunnelConfigRepository.getAll() returns an empty list.
         assertEquals(0, out.getInt("count"))
     }
+
+    // --- SSH-key provider extraction (#mcp-backbone Stage 5, Layer E) ---
+
+    @Test
+    fun `ssh-key tools are aggregated with their consent levels intact`() {
+        val tools = newTools()
+        val definitionNames = tools.definitions().map { it.getString("name") }.toSet()
+        assertTrue("list_ssh_keys missing", "list_ssh_keys" in definitionNames)
+        assertEquals("list_ssh_keys must be NEVER", ConsentLevel.NEVER, tools.consentFor("list_ssh_keys")!!.level)
+        assertEquals("import_ssh_key must be EVERY_CALL", ConsentLevel.EVERY_CALL, tools.consentFor("import_ssh_key")!!.level)
+        assertEquals("delete_ssh_key must be EVERY_CALL", ConsentLevel.EVERY_CALL, tools.consentFor("delete_ssh_key")!!.level)
+        assertEquals("set_ssh_key_option must be ONCE_PER_SESSION", ConsentLevel.ONCE_PER_SESSION, tools.consentFor("set_ssh_key_option")!!.level)
+    }
+
+    @Test
+    fun `list_ssh_keys dispatches through the aggregated call path`() {
+        val tools = newTools(mockk(relaxed = true))
+        val out = runBlocking { tools.call("list_ssh_keys", JSONObject()) }
+        // Relaxed SshKeyRepository.getAll() returns an empty list.
+        assertEquals(0, out.getInt("count"))
+    }
 }

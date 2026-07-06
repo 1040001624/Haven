@@ -211,6 +211,9 @@ internal class McpTools(
         tunnelConfigRepository = tunnelConfigRepository,
         tunnelManager = tunnelManager,
     )
+    private val sshKeyProvider = SshKeyToolProvider(
+        sshKeyRepository = sshKeyRepository,
+    )
 
     /** Tool registry: name → handler. */
     // The not-yet-extracted tools are split across several builder methods
@@ -220,7 +223,7 @@ internal class McpTools(
     // the holding fix for the tools that haven't moved out yet.)
     private val tools: Map<String, ToolHandler> =
         toolsPart1() + toolsPart2() + toolsPart3() + toolsPart4() +
-            keyStoreProvider.tools() + tunnelProvider.tools()
+            keyStoreProvider.tools() + tunnelProvider.tools() + sshKeyProvider.tools()
 
     private fun toolsPart1(): Map<String, ToolHandler> = linkedMapOf(
         "get_app_info" to ToolHandler(
@@ -3007,82 +3010,6 @@ internal class McpTools(
                 "Open workspace \"$name\"?"
             },
         ) { args -> composeWorkspace(args) },
-
-        "list_ssh_keys" to ToolHandler(
-            description = "List saved SSH keys available for SSH / Mosh / SFTP profiles. Returns id, label, keyType (e.g. ed25519, rsa, sk-ssh-ed25519@openssh.com), publicKeyOpenSsh, fingerprintSha256, isEncrypted (passphrase-protected), biometricProtected, enabledForAuth (whether it's offered in 'any saved key' auto-auth), verifyRequired (FIDO2/SK keys only: requires its PIN at sign-in), and createdAt. Set enabledForAuth / verifyRequired via set_ssh_key_option. Private key bytes are NEVER returned — they stay encrypted at rest.",
-            inputSchema = emptyObjectSchema(),
-        ) { _ -> listSshKeys() },
-
-        "import_ssh_key" to ToolHandler(
-            description = "Import an OpenSSH / PEM / PKCS#8 / PuTTY PPK private key into the Haven key store. Pass `privateKey` (the text body, e.g. starting with `-----BEGIN OPENSSH PRIVATE KEY-----`), `label` (user-facing name), and optional `passphrase` (only if the key is encrypted). Returns the new key id, keyType, publicKeyOpenSsh (suitable for an `authorized_keys` line), and fingerprintSha256.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("privateKey", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Private key body in OpenSSH / PEM / PKCS#8 / PuTTY format. Pass the file's text contents verbatim, including BEGIN/END lines.")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "User-facing label shown on the Keys screen and in profile pickers.")
-                    })
-                    put("passphrase", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Only required if the private key is encrypted at rest. Stored only briefly to decrypt the key for parsing; the saved entity keeps the original (still-encrypted) bytes.")
-                    })
-                })
-                put("required", JSONArray().put("privateKey").put("label"))
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args ->
-                val label = args.optString("label", "(unnamed)")
-                "Import SSH key \"$label\" into the Haven key store?"
-            },
-        ) { args -> importSshKey(args) },
-
-        "delete_ssh_key" to ToolHandler(
-            description = "Delete a saved SSH key by id. Profiles that referenced it via sshKeyId will fall through to password auth (or fail) on next connect — no cascade rewrite. Irreversible: the encrypted private key bytes are removed.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sshKeyId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "SSH key id from list_ssh_keys.")
-                    })
-                })
-                put("required", JSONArray().put("sshKeyId"))
-            },
-            consentLevel = ConsentLevel.EVERY_CALL,
-            summarise = { args ->
-                val id = args.optString("sshKeyId")
-                val label = runBlocking { sshKeyRepository.getById(id)?.label } ?: id.take(8) + "…"
-                "Delete SSH key \"$label\"? Cannot be undone."
-            },
-        ) { args -> deleteSshKey(args) },
-
-        "set_ssh_key_option" to ToolHandler(
-            description = "Set per-key options on a saved SSH key (the toggles on the Keys screen). " +
-                "`keyId` (from list_ssh_keys) is required; pass either or both of: " +
-                "`enabledForAuth` (bool) — whether the key takes part in 'any saved key' auto-auth (off = only used when a profile pins it); " +
-                "`verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering. " +
-                "Returns the key's resulting enabledForAuth and verifyRequired. Biometric-protected SK keys can't have verifyRequired changed over MCP (no prompt available).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("keyId", JSONObject().apply {
-                        put("type", "string"); put("description", "SSH key id from list_ssh_keys.")
-                    })
-                    put("enabledForAuth", JSONObject().apply {
-                        put("type", "boolean"); put("description", "Include this key in 'any saved key' auto-auth.")
-                    })
-                    put("verifyRequired", JSONObject().apply {
-                        put("type", "boolean"); put("description", "FIDO2/SK only: require the key's PIN at every sign-in.")
-                    })
-                })
-                put("required", JSONArray().put("keyId"))
-            },
-            consentLevel = ConsentLevel.ONCE_PER_SESSION,
-        ) { args -> setSshKeyOption(args) },
 
         "list_snippets" to ToolHandler(
             description = "List terminal toolbar snippets (custom send-key macros reachable from the scissors button). " +
@@ -8610,98 +8537,6 @@ internal class McpTools(
         }
     }
 
-    // ---- #149 tunnel + routing tools --------------------------------------
-
-    private suspend fun listSshKeys(): JSONObject {
-        val keys = sshKeyRepository.getAll()
-        val arr = JSONArray()
-        for (k in keys) {
-            arr.put(JSONObject().apply {
-                put("id", k.id)
-                put("label", k.label)
-                put("keyType", k.keyType)
-                put("publicKeyOpenSsh", k.publicKeyOpenSsh)
-                put("fingerprintSha256", k.fingerprintSha256)
-                put("isEncrypted", k.isEncrypted)
-                put("biometricProtected", k.biometricProtected)
-                put("enabledForAuth", k.enabledForAuth)
-                // verify-required (PIN) lives in the SK blob's flags; decrypt
-                // non-biometric SK keys to surface it (null for non-SK or when
-                // unreadable). Biometric keys are skipped to avoid a prompt.
-                if (k.keyType.startsWith("sk-")) {
-                    val vr = if (!k.biometricProtected) {
-                        runCatching {
-                            sshKeyRepository.getDecryptedKeyBytes(k.id)?.let {
-                                sh.haven.core.fido.SkKeyData.deserialize(it).flags.toInt() and 0x04 != 0
-                            }
-                        }.getOrNull()
-                    } else null
-                    put("verifyRequired", vr ?: JSONObject.NULL)
-                }
-                put("hasCertificate", k.certificateBytes != null)
-                put("caConfigId", k.caConfigId ?: JSONObject.NULL)
-                put("certIssuedAt", k.certIssuedAt ?: JSONObject.NULL)
-                put("createdAt", k.createdAt)
-            })
-        }
-        return JSONObject().apply {
-            put("count", keys.size)
-            put("keys", arr)
-        }
-    }
-
-    private suspend fun setSshKeyOption(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val keyId = args.optString("keyId").ifBlank { throw IllegalArgumentException("keyId required") }
-        val key = sshKeyRepository.getById(keyId)
-            ?: throw IllegalArgumentException("SSH key not found: $keyId")
-        val changed = JSONArray()
-
-        if (args.has("enabledForAuth")) {
-            sshKeyRepository.setEnabledForAuth(keyId, args.getBoolean("enabledForAuth"))
-            changed.put("enabledForAuth=${args.getBoolean("enabledForAuth")}")
-        }
-        if (args.has("verifyRequired")) {
-            if (!key.keyType.startsWith("sk-")) {
-                throw IllegalArgumentException("verifyRequired only applies to FIDO2/SK keys")
-            }
-            val required = args.getBoolean("verifyRequired")
-            val plain = sshKeyRepository.getDecryptedKeyBytes(keyId)
-                ?: throw IllegalArgumentException(
-                    "Couldn't read the key (biometric-protected keys can't be changed over MCP)",
-                )
-            val sk = sh.haven.core.fido.SkKeyData.deserialize(plain)
-            val newFlags: Byte = if (required) 0x05 else 0x01
-            if (sk.flags != newFlags) {
-                sshKeyRepository.save(
-                    key.copy(
-                        privateKeyBytes =
-                            sh.haven.core.fido.SkKeyData.serialize(sk.copy(flags = newFlags)),
-                    ),
-                )
-            }
-            changed.put("verifyRequired=$required")
-        }
-
-        val updated = sshKeyRepository.getById(keyId)!!
-        val vr = if (updated.keyType.startsWith("sk-") && !updated.biometricProtected) {
-            runCatching {
-                sshKeyRepository.getDecryptedKeyBytes(keyId)?.let {
-                    sh.haven.core.fido.SkKeyData.deserialize(it).flags.toInt() and 0x04 != 0
-                }
-            }.getOrNull()
-        } else {
-            null
-        }
-        JSONObject().apply {
-            put("id", keyId)
-            put("label", updated.label)
-            put("keyType", updated.keyType)
-            put("enabledForAuth", updated.enabledForAuth)
-            put("verifyRequired", vr ?: JSONObject.NULL)
-            put("changed", changed)
-        }
-    }
-
     // --- Toolbar snippets (#244) -------------------------------------------
 
     private fun snippetPlacement(layout: ToolbarLayout, item: ToolbarItem.Custom): String = when {
@@ -8774,63 +8609,6 @@ internal class McpTools(
             put("label", label)
             put("placement", snippetPlacement(newLayout, item))
             put("snippets", snippetsArray(newLayout, newLib))
-        }
-    }
-
-    private suspend fun importSshKey(args: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val privateKey = args.optString("privateKey").ifBlank {
-            throw IllegalArgumentException("privateKey required")
-        }
-        val label = args.optString("label").ifBlank {
-            throw IllegalArgumentException("label required")
-        }
-        val passphrase = args.optString("passphrase").takeIf { it.isNotEmpty() }
-
-        val fileBytes = privateKey.toByteArray(Charsets.UTF_8)
-        val imported = try {
-            sh.haven.core.ssh.SshKeyImporter.import(fileBytes, passphrase)
-        } catch (e: sh.haven.core.ssh.SshKeyImporter.EncryptedKeyException) {
-            throw IllegalArgumentException(
-                "Key is passphrase-encrypted — pass `passphrase` to import.",
-            )
-        } catch (e: sh.haven.core.ssh.SshKeyImporter.SkKeyDetectedException) {
-            throw IllegalArgumentException(
-                "FIDO2 SK keys must be imported via the Keys → Discover from security key " +
-                    "flow on-device — they aren't pasteable text.",
-            )
-        }
-
-        val entity = sh.haven.core.data.db.entities.SshKey(
-            label = label,
-            keyType = imported.keyType,
-            privateKeyBytes = imported.privateKeyBytes,
-            publicKeyOpenSsh = imported.publicKeyOpenSsh,
-            fingerprintSha256 = imported.fingerprintSha256,
-            isEncrypted = imported.isEncrypted,
-        )
-        sshKeyRepository.save(entity)
-
-        JSONObject().apply {
-            put("id", entity.id)
-            put("label", entity.label)
-            put("keyType", entity.keyType)
-            put("publicKeyOpenSsh", entity.publicKeyOpenSsh)
-            put("fingerprintSha256", entity.fingerprintSha256)
-            put("isEncrypted", entity.isEncrypted)
-        }
-    }
-
-    private suspend fun deleteSshKey(args: JSONObject): JSONObject {
-        val id = args.optString("sshKeyId").ifBlank {
-            throw IllegalArgumentException("sshKeyId required")
-        }
-        val existing = sshKeyRepository.getById(id)
-            ?: throw IllegalArgumentException("No SSH key with id $id")
-        sshKeyRepository.delete(id)
-        return JSONObject().apply {
-            put("deleted", true)
-            put("id", id)
-            put("label", existing.label)
         }
     }
 
