@@ -9,7 +9,15 @@ compare link is appended automatically — don't add it here.
 
 🔌 **The agent (MCP) endpoint now self-heals and no longer stalls on non-ASCII** — two fixes to the agent transport that the SSH terminal beside it already got right. The endpoint's accept loop is a background thread that the OS can kill when it trims the app; nothing was restarting it, so a still-up carrier could sit in front of a dead endpoint until you toggled the setting. It now revives on the same triggers the SSH sessions use (return-to-foreground and network-available). Separately, the request parser counted characters against a byte length, so any tool call carrying a multibyte character (an emoji, CJK, an accented letter) stalled until a 70-second timeout — it now reads the body by byte length and returns instantly. Both were reproduced and fixed on-device.
 
-🔒 **Agent endpoint hardening** — the request parser now caps body and header size (an oversized `Content-Length` could exhaust memory), and rejects cross-origin browser requests to the loopback endpoint (a web page on the device could otherwise reach it). Part of a staged review of the agent transport documented in `docs/design/mcp-backbone.md`. No change for normal MCP clients.
+🔒 **Agent endpoint security hardening** — a staged review of the agent (MCP) transport, bringing it to the same bar as the SSH stack (`docs/design/mcp-backbone.md`). The request parser now caps body and header size (an oversized `Content-Length` could exhaust memory) and rejects cross-origin browser requests to the loopback endpoint. Beyond that, three changes tighten *who* an agent client is and *what* it may do:
+
+- **Pairing tokens.** A paired client is now identified by a 256-bit secret it was issued when you approved it — not by the name it claims. It sends that token on every request; only its SHA-256 is stored on the device. A client that presents no token (or a wrong one) is treated as new and must be approved again. Approving a client on the phone is the one and only way in.
+- **Un-pairing takes effect immediately.** Removing a client (from the tool or Settings → Agent endpoint → Paired clients) now revokes its token on the spot, not just after the next app restart.
+- **Tunnelled traffic is never treated as on-device.** The "trust local clients" option applies only to genuine on-device clients; a client reaching the endpoint through a reverse tunnel still has to be approved, even though it arrives on `127.0.0.1`. Loopback trust is also **off by default** now.
+
+Each of these was verified on-device against the live endpoint. Existing clients re-approve once on first connect after updating; configure your client (or the failover proxy) to send the token it's issued to stay paired across reconnects.
+
+📖 **The agent's full tool surface is documented** — `docs/mcp-tools.md` lists every tool an agent can call, its arguments, and exactly when Haven asks for your approval (every call / once per session / never), generated from the live code so it can't drift. Under the hood the transport was re-architected into a shared protocol module and per-domain tool providers, with no change to how any tool behaves.
 
 ## v5.68.17
 
