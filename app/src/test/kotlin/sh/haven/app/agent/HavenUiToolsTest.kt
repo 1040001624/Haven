@@ -1,5 +1,6 @@
 package sh.haven.app.agent
 
+import sh.haven.core.mcp.McpError
 import android.content.Context
 import io.mockk.coEvery
 import io.mockk.mockk

@@ -1,8 +1,8 @@
 package sh.haven.app.agent
 
 import android.util.Log
-import org.json.JSONArray
 import org.json.JSONObject
+import sh.haven.core.mcp.jsonRpcRequest
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -61,7 +61,7 @@ internal class GuestMcpClient(
         }
         rpc("initialize", params)
         // Best-effort initialized notification (no id, no result expected).
-        runCatching { post(JSONObject().apply { put("jsonrpc", "2.0"); put("method", "notifications/initialized") }) }
+        runCatching { post(jsonRpcRequest(id = null, method = "notifications/initialized")) }
     }
 
     private fun rpcWithRetry(method: String, params: JSONObject): JSONObject? =
@@ -74,13 +74,9 @@ internal class GuestMcpClient(
         }
 
     private fun rpc(method: String, params: JSONObject): JSONObject? {
-        val body = JSONObject().apply {
-            put("jsonrpc", "2.0")
-            put("id", nextId++)
-            put("method", method)
-            put("params", params)
-        }
-        val json = post(body)
+        // Shared frame builder (core:mcp) — same JSON-RPC layer the server
+        // speaks, so the two stacks can't drift (#mcp-backbone Stage 4).
+        val json = post(jsonRpcRequest(nextId++, method, params))
         json?.optJSONObject("error")?.let { err ->
             throw RuntimeException("guest MCP error ${err.optInt("code")}: ${err.optString("message")}")
         }

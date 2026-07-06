@@ -1,5 +1,6 @@
 package sh.haven.app.agent
 
+import sh.haven.core.mcp.McpError
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context

@@ -111,6 +111,7 @@ include(":core:security")
 include(":core:data")
 include(":core:tunnel")
 include(":core:knock")
+include(":core:mcp")
 include(":core:spa")
 include(":core:stepca")
 

@@ -33,6 +33,16 @@ import sh.haven.core.data.repository.PortForwardRepository
 import sh.haven.core.ffmpeg.FfmpegExecutor
 import sh.haven.core.ffmpeg.HlsStreamServer
 import sh.haven.core.local.LocalSessionManager
+import sh.haven.core.mcp.HttpResponse
+import sh.haven.core.mcp.McpError
+import sh.haven.core.mcp.ParsedHttpRequest
+import sh.haven.core.mcp.SessionExpiredError
+import sh.haven.core.mcp.isLoopbackOrigin
+import sh.haven.core.mcp.jsonRpcError
+import sh.haven.core.mcp.jsonRpcResult
+import sh.haven.core.mcp.serveHttpConnection
+import sh.haven.core.mcp.textResponse
+import sh.haven.core.mcp.writeHttpResponse
 import sh.haven.core.rclone.RcloneClient
 import sh.haven.core.ssh.SessionManagerRegistry
 import sh.haven.core.ssh.SshSessionManager
@@ -61,123 +71,12 @@ private const val TAG = "McpServer"
 private const val CONSENT_WAIT_MS: Long = 55_000L
 
 /**
- * Hard cap on a request body (#mcp-backbone Stage 0). The body buffer is sized
- * from the client-supplied `Content-Length`; without a bound, a hostile
- * `Content-Length: 2000000000` forces a multi-GB allocation → OutOfMemoryError
- * before a byte of body arrives. MCP request bodies are small JSON (bulk bytes
- * go out-of-band via serve_file), so 8 MiB is generous headroom. A larger or
- * negative length is refused with 413 before any allocation.
+ * Maximum concurrently-open MCP connections across the kernel-socket binders
+ * (#mcp-backbone Stage 4). Keep-alive means a connection can now hold its
+ * worker thread between requests, so the old thread-per-connection-unbounded
+ * shape needed a ceiling; connections beyond it get an immediate 503.
  */
-private const val MAX_BODY_BYTES: Int = 8 * 1024 * 1024
-
-/**
- * Hard cap on the HTTP header block (#mcp-backbone Stage 0). The header reader
- * accumulates bytes until the CRLFCRLF terminator; without a bound a peer that
- * never sends the blank line (Slowloris) grows the buffer until the socket
- * timeout. 64 KiB is far above any real MCP request's headers.
- */
-private const val MAX_HEADER_BYTES: Int = 64 * 1024
-
-/** Outcome of [parseHttpRequest]. */
-internal sealed interface HttpParseResult {
-    data class Ok(val request: ParsedHttpRequest) : HttpParseResult
-    /** Malformed or oversized — [status]/[reason] is the HTTP error to return. */
-    data class Fail(val status: Int, val reason: String) : HttpParseResult
-    /** Clean EOF before any bytes — the peer closed without sending a request. */
-    object Closed : HttpParseResult
-}
-
-/** One parsed HTTP request. [headers] keys are lowercased; [body] is UTF-8. */
-internal data class ParsedHttpRequest(
-    val method: String,
-    val path: String,
-    val headers: Map<String, String>,
-    val body: String,
-)
-
-/**
- * Byte-accurate HTTP/1.1 request parser (#mcp-backbone Stage 0). Reads the
- * header block up to the CRLFCRLF terminator (bounded by [MAX_HEADER_BYTES]),
- * then reads exactly `Content-Length` BYTES (bounded by [MAX_BODY_BYTES]) and
- * decodes them as UTF-8.
- *
- * Replaces a char-based read that (a) sized the body buffer from an unbounded
- * `Content-Length` (a hostile length OOM'd the process) and (b) counted CHARS
- * against a BYTE length, so any multibyte-UTF-8 body under-filled the loop and
- * stalled the read until the 70 s socket timeout. Pure over an [InputStream] so
- * it is unit-testable without a socket.
- */
-internal fun parseHttpRequest(input: InputStream): HttpParseResult {
-    val head = java.io.ByteArrayOutputStream(512)
-    val cr = '\r'.code
-    val lf = '\n'.code
-    var state = 0 // progress through the CR LF CR LF terminator
-    while (true) {
-        if (head.size() >= MAX_HEADER_BYTES) {
-            return HttpParseResult.Fail(431, "Request Header Fields Too Large")
-        }
-        val b = input.read()
-        if (b < 0) {
-            return if (head.size() == 0) HttpParseResult.Closed
-            else HttpParseResult.Fail(400, "Bad Request")
-        }
-        head.write(b)
-        state = when {
-            state == 0 && b == cr -> 1
-            state == 1 && b == lf -> 2
-            state == 2 && b == cr -> 3
-            state == 3 && b == lf -> 4
-            b == cr -> 1
-            else -> 0
-        }
-        if (state == 4) break
-    }
-    // Headers are ASCII/latin1; decode the block that way for line splitting.
-    val lines = head.toString("ISO-8859-1").split("\r\n")
-    val parts = lines.firstOrNull().orEmpty().split(" ")
-    if (parts.size < 3) return HttpParseResult.Fail(400, "Bad Request")
-    val headers = HashMap<String, String>()
-    for (i in 1 until lines.size) {
-        val line = lines[i]
-        if (line.isEmpty()) break
-        val colon = line.indexOf(':')
-        if (colon > 0) {
-            headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
-        }
-    }
-    val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
-    if (contentLength !in 0..MAX_BODY_BYTES) return HttpParseResult.Fail(413, "Payload Too Large")
-    val body = if (contentLength > 0) {
-        val buf = ByteArray(contentLength)
-        var read = 0
-        while (read < contentLength) {
-            val n = input.read(buf, read, contentLength - read)
-            if (n < 0) return HttpParseResult.Fail(400, "Bad Request") // body truncated by EOF
-            read += n
-        }
-        String(buf, Charsets.UTF_8)
-    } else ""
-    return HttpParseResult.Ok(ParsedHttpRequest(parts[0], parts[1], headers, body))
-}
-
-/**
- * True iff [origin] (an HTTP `Origin` header, `scheme://host[:port]`) names a
- * loopback host. The browser DNS-rebinding / CSRF guard rejects a POST carrying
- * any other Origin — a page served from a real host sends its domain as the
- * Origin host, never `127.0.0.1`. A `null`/opaque origin (sandboxed iframe,
- * `file://`) is treated as non-loopback and denied. Non-browser MCP clients send
- * no Origin at all and bypass the check entirely.
- */
-internal fun isLoopbackOrigin(origin: String): Boolean {
-    val afterScheme = origin.substringAfter("://", "").substringBefore('/')
-    val host = if (afterScheme.startsWith("[")) {
-        val end = afterScheme.indexOf(']')
-        if (end > 0) afterScheme.substring(1, end) else afterScheme
-    } else {
-        afterScheme.substringBefore(':')
-    }
-    return host == "localhost" || host == "::1" || host.startsWith("127.")
-}
+private const val MAX_CONCURRENT_CONNECTIONS = 64
 
 /**
  * The trust origin of an accepted MCP connection, tagged **at bind time** by
@@ -223,7 +122,9 @@ private const val WG_RETRY_MS: Long = 5_000L
  *
  * Implements the 2025-06-18 **Streamable HTTP** transport. A single
  * `POST /mcp` endpoint accepts one JSON-RPC 2.0 message and responds
- * with a single JSON body. No SSE, no WebSocket.
+ * with a single JSON body. No SSE, no WebSocket. Connections are
+ * keep-alive (#mcp-backbone Stage 4, `core:mcp`), so a client holds one
+ * warm connection instead of dialling per request.
  *
  * ### Sessions
  *
@@ -391,6 +292,9 @@ class McpServer @Inject constructor(
     private var trustLoopbackEnabled: Boolean = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Open connections across the kernel-socket binders (keep-alive cap, Stage 4). */
+    private val activeConnections = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * Serializes [start] and [stop] so preference-driven toggles that
@@ -698,6 +602,10 @@ class McpServer @Inject constructor(
      * [origin] — the bind-time trust tag (#mcp-backbone Stage 2). One shape
      * shared by the DEVICE, TUNNELED, and LAN binders so their handling can't
      * drift; the WireGuard netstack path has its own coroutine loop.
+     *
+     * Connections are keep-alive (Stage 4), so each holds its worker thread
+     * while open; [activeConnections] caps the total and overflow gets an
+     * immediate 503 rather than an unbounded thread pile.
      */
     private fun acceptThread(ss: ServerSocket, name: String, origin: McpOrigin): Thread =
         thread(name = name, isDaemon = true) {
@@ -705,13 +613,25 @@ class McpServer @Inject constructor(
                 try {
                     val client = ss.accept()
                     thread(name = "$name-client", isDaemon = true) {
+                        val overloaded = activeConnections.incrementAndGet() > MAX_CONCURRENT_CONNECTIONS
                         try {
-                            handleClient(client, origin)
+                            if (overloaded) {
+                                Log.w(TAG, "$name: connection cap ($MAX_CONCURRENT_CONNECTIONS) hit — 503")
+                                writeHttpResponse(
+                                    client.getOutputStream(),
+                                    textResponse(503, "Service Unavailable"),
+                                    keepAlive = false,
+                                )
+                            } else {
+                                handleClient(client, origin)
+                            }
                         } catch (e: Throwable) {
                             // Last-resort guard so one bad request can
                             // never kill a worker thread silently and
                             // leave the peer socket in CLOSE_WAIT.
                             Log.w(TAG, "$name worker crashed: ${e.message}")
+                        } finally {
+                            activeConnections.decrementAndGet()
                             try { client.close() } catch (_: Exception) {}
                         }
                     }
@@ -804,8 +724,14 @@ class McpServer @Inject constructor(
                         scope.launch {
                             try {
                                 // WireGuard peers are always remote (a WG
-                                // tunnel IP) — never loopback-trusted. (#214)
-                                handleConnection(conn.inputStream, conn.outputStream, McpOrigin.WIREGUARD)
+                                // tunnel IP) — never loopback-trusted (#214).
+                                // One-shot (maxRequests=1), NOT keep-alive: the
+                                // netstack connection has no read timeout, so
+                                // an idle keep-alive peer would pin an IO
+                                // thread indefinitely.
+                                serveHttpConnection(conn.inputStream, conn.outputStream, maxRequests = 1) { req ->
+                                    dispatchHttpRequest(req, McpOrigin.WIREGUARD)
+                                }
                             } catch (e: Throwable) {
                                 Log.w(TAG, "WG worker crashed: ${e.message}")
                             } finally {
@@ -959,7 +885,7 @@ class McpServer @Inject constructor(
     // reverse tunnel (roaming fallback), the WireGuard-tunnel netstack bind
     // ([startWireguardBinderLocked], #176 — direct reach for a WG peer), and
     // the LAN bind below ([bindLan] — direct reach for a same-network
-    // client). All share [handleConnection]'s pairing/consent gate.
+    // client). All share [dispatchHttpRequest]'s pairing/consent gate.
     private fun bindLoopback(): ServerSocket {
         val loopback = InetAddress.getByName("127.0.0.1")
         // Try preferred ports first so a client that cached an endpoint
@@ -1043,38 +969,34 @@ class McpServer @Inject constructor(
     private fun handleClient(socket: Socket, origin: McpOrigin) {
         try {
             // Read timeout. Must exceed CONSENT_WAIT_MS so a request blocked on
-            // an interactive consent prompt isn't dropped mid-wait.
+            // an interactive consent prompt isn't dropped mid-wait; it also
+            // bounds how long an idle keep-alive connection holds its worker.
             socket.soTimeout = 70_000
-            socket.use { s -> handleConnection(s.getInputStream(), s.getOutputStream(), origin) }
+            // Keep-alive (#mcp-backbone Stage 4): serve requests off this
+            // connection until the peer closes / asks to close / times out
+            // idle. This is what lets an MCP client hold one warm connection
+            // instead of dialling per request — the failover proxy's reason.
+            socket.use { s ->
+                serveHttpConnection(s.getInputStream(), s.getOutputStream()) { req ->
+                    dispatchHttpRequest(req, origin)
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "client handler error: ${e.message}")
         }
     }
 
     /**
-     * Serve one HTTP/JSON-RPC request off a raw stream pair. Shared by the
-     * kernel-[ServerSocket] paths ([handleClient]) and the WireGuard
-     * netstack accept loop so all transports run identical request handling
-     * + pairing checks (#176). [origin] is the accepting listener's
-     * bind-time trust tag (#mcp-backbone Stage 2).
+     * Route one parsed request to the JSON-RPC layer / CORS / errors. Shared
+     * by the kernel-[ServerSocket] paths ([handleClient]) and the WireGuard
+     * netstack accept loop so all transports run identical request handling +
+     * pairing checks (#176). [origin] is the accepting listener's bind-time
+     * trust tag (#mcp-backbone Stage 2).
      */
-    private fun handleConnection(input: InputStream, output: OutputStream, origin: McpOrigin) {
-        // Byte-level read (buffered so per-byte header scanning isn't a syscall
-        // storm); body is read by byte length, not char count (#mcp-backbone
-        // Stage 0). Both the loopback and WireGuard accept paths share this.
-        val bin = if (input is java.io.BufferedInputStream) input else java.io.BufferedInputStream(input)
-        when (val res = parseHttpRequest(bin)) {
-            is HttpParseResult.Closed -> return
-            is HttpParseResult.Fail -> writeError(output, res.status, res.reason)
-            is HttpParseResult.Ok -> dispatchHttpRequest(res.request, output, origin)
-        }
-    }
-
-    /** Route one parsed request to the JSON-RPC layer / CORS / errors. */
-    private fun dispatchHttpRequest(req: ParsedHttpRequest, output: OutputStream, origin: McpOrigin) {
+    private fun dispatchHttpRequest(req: ParsedHttpRequest, origin: McpOrigin): HttpResponse {
         val method = req.method
         val path = req.path
-        when {
+        return when {
             method == "POST" && (path == "/mcp" || path == "/") -> {
                 // DNS-rebinding / CSRF guard (#mcp-backbone Stage 0): a browser
                 // page on the device can reach the loopback endpoint. Reject a
@@ -1082,8 +1004,7 @@ class McpServer @Inject constructor(
                 // clients send no Origin and pass through.
                 val httpOrigin = req.headers["origin"]
                 if (httpOrigin != null && !isLoopbackOrigin(httpOrigin)) {
-                    writeError(output, 403, "Forbidden")
-                    return
+                    return textResponse(403, "Forbidden")
                 }
                 val sessionId = req.headers["mcp-session-id"]?.takeIf { it.isNotEmpty() }
                 // Pairing-token credential (#mcp-backbone Stage 3).
@@ -1094,18 +1015,18 @@ class McpServer @Inject constructor(
                 if (outcome.httpStatus == 404) {
                     // Streamable-HTTP signal: presented session id is unknown.
                     // Empty body — the client re-initialises.
-                    writeJson(output, 404, "", null)
+                    jsonResponse(404, "", null)
                 } else {
-                    writeJson(output, outcome.httpStatus, outcome.body, outcome.responseSessionId)
+                    jsonResponse(outcome.httpStatus, outcome.body, outcome.responseSessionId)
                 }
             }
             method == "GET" && (path == "/mcp" || path == "/") -> {
-                // SSE channel for server-initiated messages — not supported in
-                // v1. Spec allows 405.
-                writeError(output, 405, "Method Not Allowed")
+                // SSE channel for server-initiated messages — deferred until
+                // something consumes it (listChanged, Stage 5). Spec allows 405.
+                textResponse(405, "Method Not Allowed")
             }
-            method == "OPTIONS" -> writeOptionsResponse(output, req.headers["origin"])
-            else -> writeError(output, 404, "Not Found")
+            method == "OPTIONS" -> optionsResponse(req.headers["origin"])
+            else -> textResponse(404, "Not Found")
         }
     }
 
@@ -1115,20 +1036,33 @@ class McpServer @Inject constructor(
      * real request is never sent — the belt to the Origin-reject suspenders on
      * POST. A non-browser client never sends OPTIONS.
      */
-    private fun writeOptionsResponse(output: OutputStream, origin: String?) {
-        val allowed = origin != null && isLoopbackOrigin(origin)
-        val headers = buildString {
-            append("HTTP/1.1 204 No Content\r\n")
-            if (allowed) {
-                append("Access-Control-Allow-Origin: $origin\r\n")
-                append("Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n")
-                append("Access-Control-Allow-Headers: Content-Type, Mcp-Session-Id, Mcp-Protocol-Version\r\n")
-            }
-            append("Content-Length: 0\r\n")
-            append("\r\n")
+    private fun optionsResponse(origin: String?): HttpResponse {
+        val cors = if (origin != null && isLoopbackOrigin(origin)) listOf(
+            "Access-Control-Allow-Origin" to origin,
+            "Access-Control-Allow-Methods" to "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers" to "Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Authorization",
+        ) else emptyList()
+        return HttpResponse(204, "No Content", ByteArray(0), headers = cors)
+    }
+
+    /** A JSON body response. No `Access-Control-Allow-Origin: *` (#mcp-backbone
+     *  Stage 0): a wildcard let any web page read MCP responses off the
+     *  loopback endpoint. */
+    private fun jsonResponse(status: Int, body: String, sessionId: String?): HttpResponse {
+        val statusText = when (status) {
+            200 -> "OK"
+            204 -> "No Content"
+            404 -> "Not Found"
+            else -> "OK"
         }
-        output.write(headers.toByteArray(Charsets.UTF_8))
-        output.flush()
+        val headers = buildList {
+            add("Cache-Control" to "no-store")
+            if (sessionId != null) add("Mcp-Session-Id" to sessionId)
+        }
+        return HttpResponse(
+            status, statusText, body.toByteArray(Charsets.UTF_8),
+            "application/json; charset=utf-8", headers,
+        )
     }
 
     /**
@@ -1738,79 +1672,10 @@ class McpServer @Inject constructor(
         }
     }
 
-    // --- JSON-RPC response builders ---
-
-    private fun jsonRpcResult(id: Any?, result: Any?): String {
-        val obj = JSONObject()
-        obj.put("jsonrpc", "2.0")
-        if (id != null) obj.put("id", id)
-        obj.put("result", result ?: JSONObject.NULL)
-        return obj.toString()
-    }
-
-    private fun jsonRpcError(id: Any?, code: Int, message: String): String {
-        val obj = JSONObject()
-        obj.put("jsonrpc", "2.0")
-        if (id != null) obj.put("id", id) else obj.put("id", JSONObject.NULL)
-        obj.put("error", JSONObject().apply {
-            put("code", code)
-            put("message", message)
-        })
-        return obj.toString()
-    }
-
-    // --- HTTP response helpers ---
-
-    private fun writeJson(
-        out: OutputStream,
-        status: Int,
-        body: String,
-        sessionId: String? = null,
-    ) {
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        val statusLine = when (status) {
-            200 -> "200 OK"
-            204 -> "204 No Content"
-            404 -> "404 Not Found"
-            else -> "$status OK"
-        }
-        val headers = buildString {
-            append("HTTP/1.1 $statusLine\r\n")
-            append("Content-Type: application/json; charset=utf-8\r\n")
-            append("Content-Length: ${bytes.size}\r\n")
-            // No `Access-Control-Allow-Origin: *` (#mcp-backbone Stage 0): a
-            // wildcard let any web page read MCP responses off the loopback
-            // endpoint. There are no browser MCP clients in v1; a future one
-            // would get a reflected loopback-origin ACAO, not a wildcard.
-            append("Cache-Control: no-store\r\n")
-            if (sessionId != null) append("Mcp-Session-Id: $sessionId\r\n")
-            append("\r\n")
-        }
-        out.write(headers.toByteArray(Charsets.UTF_8))
-        if (bytes.isNotEmpty()) out.write(bytes)
-        out.flush()
-    }
-
-    private fun writeError(out: OutputStream, status: Int, text: String) {
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        val statusLine = "$status $text"
-        val headers = buildString {
-            append("HTTP/1.1 $statusLine\r\n")
-            append("Content-Type: text/plain; charset=utf-8\r\n")
-            append("Content-Length: ${bytes.size}\r\n")
-            append("\r\n")
-        }
-        out.write(headers.toByteArray(Charsets.UTF_8))
-        out.write(bytes)
-        out.flush()
-    }
 }
 
 /** Session entries older than this are evicted on the next initialize. */
 private const val SESSION_TTL_MS: Long = 24L * 60L * 60L * 1000L
-
-/** Lightweight error type carrying a JSON-RPC error code. */
-open class McpError(val code: Int, message: String) : RuntimeException(message)
 
 /**
  * Raised by the dispatcher when the user denies a consent prompt (or no
@@ -1820,17 +1685,3 @@ open class McpError(val code: Int, message: String) : RuntimeException(message)
  */
 class ConsentDeniedError(toolName: String) :
     McpError(-32000, "User denied: $toolName")
-
-/**
- * Raised by [McpServer.dispatch] when a non-initialize request
- * presents an `Mcp-Session-Id` the server doesn't recognise. The HTTP
- * layer maps this to **404**, which is the streamable-HTTP-spec signal
- * that tells the client to re-`initialize` and retry — fixing the
- * "won't reconnect after Haven restart without dropping the Claude
- * Code session" wedge.
- *
- * The error message is informational only; clients react to the 404
- * status, not the body.
- */
-class SessionExpiredError :
-    McpError(-32001, "MCP session expired; re-initialize")

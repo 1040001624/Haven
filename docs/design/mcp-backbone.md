@@ -399,21 +399,39 @@ wins land first, protocol churn last.
   bounded pool + `Host`/`Origin` validation + drop `ACAO:*` on POST (§5.5);
   tighten the notification-Allow window (§5.6); confirm audit at-rest encryption
   (§5.7). No wire-protocol change, no client change. Closes the OOM, the
-  multibyte hang, and browser CSRF immediately.
+  multibyte hang, and browser CSRF immediately. **Shipped `b864cce2`.**
 - **Stage 1 — reliability (the outage fix).** Active MCP revive hook +
   service-owned supervision (Layer D). MCP self-heals to SSH's bar. No protocol
-  change; the failover proxy stays.
+  change; the failover proxy stays. **Shipped `d41d5cf5`.**
 - **Stage 2 — trust origin.** Explicit per-carrier origin tags; tunneled
   carriers off the trusted binder; default `trustLoopback` off or the
   uid-checked device socket (Layers B). Highest-impact security change; carrier
-  wiring only, tools untouched.
+  wiring only, tools untouched. **Shipped `a6b89f94`** — bind-time `McpOrigin`
+  tags, a dedicated tunneled-origin listener (8740–8749) the `-R` carriers
+  target, and `trustLoopback` defaulting off (the uid-checked Unix socket
+  remains future work; TCP loopback at full gate covers the client-compat
+  case).
 - **Stage 3 — authentication.** Pairing token; identity-keyed allowlist/grants
   (Layer C). Requires a one-time re-pair of existing clients (surfaced as a
-  prompt).
-- **Stage 4 — protocol core + keep-alive.** Extract `mcp-core` on a real HTTP
-  engine (Layer A); retire the second hand-rolled stack; add batch / SSE /
-  version negotiation. Keep-alive lands → **retire the failover proxy** in
-  lockstep with the proxy-contract invariant.
+  prompt). **Shipped `cd8e024d`** — 256-bit per-client token minted on pairing
+  approval (hash-only at rest), `Authorization: Bearer` or an
+  authenticated-session id required off-device; the `lastClientHint` name
+  fallback is gone.
+- **Stage 4 — protocol core + keep-alive.** Extract the shared core (Layer A);
+  retire the second hand-rolled stack; keep-alive lands → the failover proxy
+  loses its reason to exist. **Shipped (this change)** as `core:mcp` — framing
+  parser, JSON-RPC builders, and a keep-alive connection loop shared by the
+  server and `GuestMcpClient` — plus a per-server connection cap. Deliberate
+  divergences from the sketch above: **no HTTP engine dependency** (§8 Q3 —
+  Stage 0's bounded byte-accurate parser already closed the DoS class, so Ktor
+  would be a dependency without a job); **no batch** (MCP revision 2025-06-18
+  *removed* JSON-RPC batching, so single-frame bodies are the spec shape);
+  **no SSE yet** (deferred to Stage 5 where `listChanged` gets its first real
+  consumer); **version negotiation is moot** while exactly one protocol
+  revision is supported — responding with the server's latest when the request
+  names another IS the spec's negotiation. The WireGuard netstack path stays
+  one-request-per-connection: its tunneled streams have no read timeout, so an
+  idle keep-alive peer would pin an IO thread.
 - **Stage 5 — tool registry + §1b plugin bus.** Split `McpTools` into providers
   (Layer E); build Android-app MCP discovery on the shared client core (Layer F).
 
@@ -442,16 +460,26 @@ bidirectional vision.
 
 1. **Unix socket vs TCP loopback for `ORIGIN_DEVICE`** — a Unix socket gives
    `SO_PEERCRED` uid auth but some MCP clients only speak TCP; may need both,
-   with TCP loopback demoted to full-gate + token.
-2. **Failover proxy: retire or keep?** Keep-alive (Stage 4) removes its
-   *reason*, but it also does carrier-selection (near/LAN/WG). Decide whether
-   that logic moves into the client's MCP config or a slimmer proxy.
-3. **Kotlin MCP SDK vs Ktor-CIO-plus-thin-layer** — settle after a spike that
-   measures the SDK's transitive weight against dependency-verification cost.
+   with TCP loopback demoted to full-gate + token. *(Still open; Stage 2
+   shipped the trustLoopback-off default instead.)*
+2. **Failover proxy: retire or keep?** *(Settled with Stage 4.)* Keep-alive
+   removed its reason; the proxy is now optional workstation infra. Its
+   carrier-selection job (near vs LAN) belongs in the client's MCP config —
+   point the client at the `-R` endpoint directly. Nothing in-repo depends on
+   the proxy.
+3. **Kotlin MCP SDK vs Ktor-CIO-plus-thin-layer** — *(settled with Stage 4:
+   neither.)* Stage 0's bounded, byte-accurate parser closed the framing-DoS
+   class the engine was meant to solve, and keep-alive fit in a ~90-line loop
+   in `core:mcp` — so an engine would be transitive weight (plus F-Droid
+   dependency-verification and reproducibility surface) without a job.
+   Revisit only if Stage 5's SSE/plugin bus outgrows the hand-rolled loop.
 4. **Audit at-rest encryption** — is the Room DB already SQLCipher-backed? If
    not, Stage 0.
 5. **Token delivery to headless/cron agents** — how a non-interactive client
    obtains its pairing token without a human tap (a scoped provisioning flow?).
+   *(Partially eased by Stage 3: the token is returned in the pairing
+   initialize's `_meta` + instructions, so the agent behind the client can
+   capture and store it for its headless siblings.)*
 
 ---
 

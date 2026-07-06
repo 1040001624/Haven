@@ -1,4 +1,4 @@
-package sh.haven.app.agent
+package sh.haven.core.mcp
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +13,7 @@ import java.io.ByteArrayInputStream
  * char-vs-byte body read that hung on multibyte UTF-8 — plus the header bound
  * and the Origin/CSRF helper.
  */
-class McpFramingTest {
+class HttpFramingTest {
 
     private fun parse(raw: String) =
         parseHttpRequest(ByteArrayInputStream(raw.toByteArray(Charsets.UTF_8)))
