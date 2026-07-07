@@ -11,6 +11,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # termlib is a first-party fork consumed as a git submodule:
+      # settings.gradle.kts includeBuild substitutes org.connectbot:termlib
+      # with the local build, so a version bump here changes nothing built
+      # and upstream releases don't track the fork.
+      - dependency-name: "org.connectbot:termlib"
 
   - package-ecosystem: cargo
     directory: /rdp-kotlin/rust
