@@ -698,7 +698,7 @@ internal class McpTools(
         ) { args -> sendTerminalInput(args) },
 
         "send_to_agent" to ToolHandler(
-            description = "Deliver one message to another agent's REPL (or any raw-mode prompt) as a single submitted turn: bracketed-paste the text, settle, then Enter — and return the resulting screen (last ~50 lines by default, captured after a short render delay). A convenience wrapper over send_terminal_input tuned for agent↔agent / REPL conversation, so you don't hand-assemble the body-then-Enter sequence. Use list_sessions (chosenSessionName + isAgentRepl) to pick the target; pair with await_turn + read_last_turn for the full send → wait → read loop. Returns { sessionId, delivered, bytesSent, snapshot }.",
+            description = "Deliver one message to another agent's REPL (or any raw-mode prompt) as a single submitted turn: paste the text (bracketed-paste when the target has enabled it, plain otherwise), settle, then Enter — and return the resulting screen (last ~50 lines by default, captured after a short render delay). A convenience wrapper over send_terminal_input tuned for agent↔agent / REPL conversation, so you don't hand-assemble the body-then-Enter sequence. Use list_sessions (chosenSessionName + isAgentRepl) to pick the target; pair with await_turn + read_last_turn for the full send → wait → read loop. Returns { sessionId, delivered, bytesSent, snapshot }.",
             inputSchema = objectSchema {
                 string("sessionId", "Active session ID (from list_sessions). Optional — defaults to the sole open terminal session.")
                 string("message", "The message to deliver as one submitted prompt.", required = true)
@@ -3861,11 +3861,17 @@ internal class McpTools(
         val message = args.optString("message").ifEmpty {
             throw McpError(-32602, "Missing required argument: message")
         }
+        val sessionId = resolveTerminalSessionId(args.optString("sessionId"))
+        // Bracket-paste only when the target actually enabled it (raw-mode
+        // REPLs do): a plain shell that never sent DECSET 2004 receives the
+        // markers as literal text — busybox sh read ESC[200~echo… and ran
+        // "[200~echo: not found" (device-reproduced, #226).
+        val bracket = terminalSessionRegistry.get(sessionId)?.bracketPasteMode?.value == true
         return sendTerminalInput(
             JSONObject().apply {
-                if (args.has("sessionId")) put("sessionId", args.optString("sessionId"))
+                put("sessionId", sessionId)
                 put("text", message)
-                put("bracketedPaste", true)
+                put("bracketedPaste", bracket)
                 put("keys", JSONArray().put("enter"))
                 put("returnSnapshot", true)
                 // Let the REPL render the submitted turn before the ack
