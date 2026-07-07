@@ -1,0 +1,5 @@
+🖥️ System VM manager (#326): import an x86_64 disk image and boot a full QEMU VM (real kernel) inside the proot, displayed and driven through Haven's own VNC viewer. TCG emulation — slow but complete; Debian-family proot required (its qemu ships VNC); x86_64 guests, one VM at a time.
+
+🛡️ Pairing-loop protection (#337): duplicate pairing prompts coalesce, an explicit Deny backs re-asks off for 2 minutes, pairing sheets are rate-limited across all client names, and a new Block button silences a spamming client for the session. The consent sheet now shows when more requests are queued behind the visible one.
+
+🔧 Agent-created VNC/RDP/SPICE connections now honour vncPort/rdpPort/spicePort instead of defaulting to the generic port (#353).
