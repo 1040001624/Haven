@@ -1,5 +1,6 @@
 package sh.haven.core.fido
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
@@ -1038,6 +1039,11 @@ class FidoAuthenticator @Inject constructor(
      * credentialManagement enumerate paths so they share the same FLAG_MUTABLE
      * + explicit-package fix from #15 (olmari, Pixel 9 Fold).
      */
+    // The two-arg registerReceiver call is inside a SDK_INT < TIRAMISU guard
+    // (the flags overload requires API 33), but lint can't see through the
+    // version branch and reports UnspecifiedRegisterReceiverFlag anyway —
+    // failing every PR's lint job since the check went error-severity.
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private suspend fun ensureUsbPermission(usbManager: UsbManager, device: UsbDevice) {
         if (usbManager.hasPermission(device)) {
             Log.d(TAG, "USB permission already held for ${device.productName}")
