@@ -59,6 +59,14 @@ runs:
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699  # v4.0.1
+      with:
+        # Default is "tools platform-tools"; the legacy `tools` package pulls
+        # the Android Emulator, whose CDN zip served corrupt twice on
+        # 2026-07-07 ("Error reading Zip content from a SeekableByteChannel"),
+        # failing setup before any code ran. Nothing in CI or Release uses the
+        # emulator or legacy tools — Gradle provisions build-tools/platforms
+        # itself via the accepted licenses.
+        packages: platform-tools
 
     # Only install the NDK we pin in per-module ndkVersion
     # (core/local + termlib/lib: 29.0.14206865, r29 stable). F-Droid's
