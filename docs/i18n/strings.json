@@ -2944,6 +2944,48 @@
      }
     },
     {
+     "name": "app_desktop_add_foreign_distro",
+     "en": "+ %1$s %2$s — emulated, slower  (~%3$d MB)",
+     "comment": "Desktop manager: distro / rootfs",
+     "args": [
+      "%1$s",
+      "%2$s",
+      "%3$d"
+     ],
+     "t": {
+      "ar": "+ %1$s %2$s — عبر المحاكاة، أبطأ  (~%3$d MB)",
+      "bn": "+ %1$s %2$s — এমুলেটেড, ধীর  (~%3$d MB)",
+      "de": "+ %1$s %2$s — emuliert, langsamer  (~%3$d MB)",
+      "es": "+ %1$s %2$s — emulado, más lento  (~%3$d MB)",
+      "fr": "+ %1$s %2$s — émulé, plus lent  (~%3$d Mo)",
+      "hi": "+ %1$s %2$s — एम्युलेटेड, धीमा  (~%3$d MB)",
+      "ja": "+ %1$s %2$s — エミュレーション実行、低速  (~%3$d MB)",
+      "ko": "+ %1$s %2$s — 에뮬레이션 실행, 느림  (~%3$d MB)",
+      "pt": "+ %1$s %2$s — emulado, mais lento  (~%3$d MB)",
+      "ru": "+ %1$s %2$s — эмуляция, медленнее  (~%3$d МБ)",
+      "zh": "+ %1$s %2$s — 模拟运行，较慢  (~%3$d MB)"
+     }
+    },
+    {
+     "name": "app_desktop_usb_drive_picker_title",
+     "en": "Open which USB drive?",
+     "comment": "Desktop manager: distro / rootfs",
+     "args": [],
+     "t": {
+      "ar": "أي محرك أقراص USB تريد فتحه؟",
+      "bn": "কোন USB ড্রাইভ খুলবেন?",
+      "de": "Welches USB-Laufwerk öffnen?",
+      "es": "¿Qué unidad USB abrir?",
+      "fr": "Quel disque USB ouvrir ?",
+      "hi": "कौन-सी USB ड्राइव खोलें?",
+      "ja": "どのUSBドライブを開きますか？",
+      "ko": "어떤 USB 드라이브를 열까요?",
+      "pt": "Abrir qual unidade USB?",
+      "ru": "Какой USB-накопитель открыть?",
+      "zh": "打开哪个 USB 驱动器？"
+     }
+    },
+    {
      "name": "app_desktop_rootfs_downloading",
      "en": "Downloading rootfs… %1$d%%",
      "comment": "Desktop manager: distro / rootfs",
