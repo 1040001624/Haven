@@ -1,5 +1,3 @@
-🔒 Agent (MCP) endpoint security hardening, verified on-device. A paired client is now identified by a 256-bit secret token issued when you approve it — not the name it claims; no token (or a wrong one) means it must be approved again. Un-pairing revokes access immediately. A client reaching the endpoint through a tunnel is never treated as on-device, and "trust local clients" is off by default.
+🔒 Connection security review: VNC and RDP now pin the server's TLS certificate on first use (previously any certificate was accepted), silent SSH connects fail closed on unknown host keys, TLS mail requires STARTTLS, and VNC clipboard sync is opt-in.
 
-🔌 The endpoint also self-heals and no longer stalls on non-ASCII tool calls; the parser caps body/header size and blocks cross-origin browser requests.
-
-📖 Every agent tool and its consent level is now documented. Existing clients re-approve once after updating.
+🔒 Agent (MCP) endpoint hardening: a paired client is identified by a 256-bit secret token issued on approval, un-pairing revokes access immediately, tunnelled clients are never treated as on-device, and the endpoint self-heals after the OS trims the app. Existing clients re-approve once after updating.
