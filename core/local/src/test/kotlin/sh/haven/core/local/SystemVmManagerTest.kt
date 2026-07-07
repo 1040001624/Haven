@@ -7,7 +7,7 @@ import org.junit.Test
 import sh.haven.core.local.proot.PackageFamily
 
 /**
- * [qemuVncCommand] / [qemuPackageFor] are the pure, Context-free pieces of the
+ * [qemuVncCommand] / [qemuPackagesFor] are the pure, Context-free pieces of the
  * #326 system-VM launch — pinned here so the exact qemu args the on-device
  * spike proved (VNC on loopback, std VGA, boot-from-disk) can't silently
  * regress. The device path (proc launch, port-bind wait) is covered on-device.
@@ -51,10 +51,13 @@ class SystemVmManagerTest {
     }
 
     @Test
-    fun `qemu package name is per-distro-family — Debian's is VNC-capable`() {
-        assertEquals("qemu-system-x86_64", qemuPackageFor(PackageFamily.APK))
-        assertEquals("qemu-system-x86", qemuPackageFor(PackageFamily.APT))
-        assertEquals("qemu-system-x86", qemuPackageFor(PackageFamily.PACMAN))
-        assertEquals("qemu", qemuPackageFor(PackageFamily.XBPS))
+    fun `qemu packages are per-distro-family and include qemu-img (Debian's is qemu-utils)`() {
+        // Both the emulator AND qemu-img — the convert in importImage needs
+        // qemu-img, which Debian ships separately (qemu-utils, not a dep of
+        // qemu-system-x86), so a first import used to fail without it.
+        assertEquals(listOf("qemu-system-x86_64", "qemu-img"), qemuPackagesFor(PackageFamily.APK))
+        assertEquals(listOf("qemu-system-x86", "qemu-utils"), qemuPackagesFor(PackageFamily.APT))
+        assertEquals(listOf("qemu-system-x86", "qemu-img"), qemuPackagesFor(PackageFamily.PACMAN))
+        assertEquals(listOf("qemu"), qemuPackagesFor(PackageFamily.XBPS))
     }
 }

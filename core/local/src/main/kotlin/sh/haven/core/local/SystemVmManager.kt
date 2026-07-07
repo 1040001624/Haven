@@ -241,27 +241,38 @@ class SystemVmManager @Inject constructor(
     }
 
     /**
-     * Ensure `qemu-system-x86_64` is present in the active distro, installing
-     * it via that distro's package manager if not (mirrors
-     * [QemuManager.ensureQemu]). VNC *capability* is verified empirically at
-     * boot (the port-bind wait), not here.
+     * Ensure BOTH `qemu-system-x86_64` (the emulator) AND `qemu-img` (image
+     * convert, used by [importImage]) are present in the active distro,
+     * installing the family's package set if not. On Debian these live in
+     * SEPARATE packages — `qemu-system-x86` vs `qemu-utils` — and qemu-utils
+     * is NOT pulled in as a dependency, so checking only the emulator (as an
+     * earlier version did) let a first import fail at `qemu-img convert` on a
+     * fresh Debian. VNC *capability* is still verified empirically at boot
+     * (the port-bind wait), not here.
      */
     private suspend fun ensureQemuInstalled() {
-        val (found, _) = prootManager.runCommandInProot("command -v $QEMU_BIN || true")
-        if (found.contains(QEMU_BIN)) return
+        if (qemuToolsPresent()) return
         val family = prootManager.activeDistro.family
-        val pkg = qemuPackageFor(family)
+        val pkgs = qemuPackagesFor(family)
         val ops = PackageOps.forFamily(family)
-        Log.i(TAG, "installing $pkg in ${prootManager.activeDistroId}")
+        Log.i(TAG, "installing ${pkgs.joinToString(" ")} in ${prootManager.activeDistroId}")
         val (out, code) = prootManager.runCommandInProot(
-            "${ops.updateCmd()} >/dev/null 2>&1 ; ${ops.installCmd(listOf(pkg))} 2>&1",
+            "${ops.updateCmd()} >/dev/null 2>&1 ; ${ops.installCmd(pkgs)} 2>&1",
         )
-        val (recheck, _) = prootManager.runCommandInProot("command -v $QEMU_BIN || true")
-        if (!recheck.contains(QEMU_BIN)) {
+        if (!qemuToolsPresent()) {
             throw SystemVmException(
-                "Could not install $pkg in ${prootManager.activeDistroId} (exit $code): ${out.takeLast(200)}",
+                "Could not install ${pkgs.joinToString(" ")} in ${prootManager.activeDistroId} " +
+                    "(exit $code): ${out.takeLast(200)}",
             )
         }
+    }
+
+    /** True only when both the qemu emulator and qemu-img resolve on PATH. */
+    private suspend fun qemuToolsPresent(): Boolean {
+        val (out, _) = prootManager.runCommandInProot(
+            "command -v $QEMU_BIN >/dev/null 2>&1 && command -v qemu-img >/dev/null 2>&1 && echo QEMU_OK || true",
+        )
+        return out.contains("QEMU_OK")
     }
 
     /** Poll a loopback TCP connect until [port] accepts or [timeoutMs] elapses (or qemu dies). */
@@ -312,13 +323,18 @@ internal fun qemuVncCommand(diskGuestPath: String, display: Int, memMb: Int, cpu
         "-netdev user,id=n0 -device virtio-net-pci,netdev=n0 " +
         "-boot c -no-reboot"
 
-/** The qemu-system package name for a distro family (Debian's is VNC-capable; Alpine's is not). */
-internal fun qemuPackageFor(family: PackageFamily): String = when (family) {
-    PackageFamily.APK -> "qemu-system-x86_64"
-    PackageFamily.APT -> "qemu-system-x86"
-    PackageFamily.PACMAN -> "qemu-system-x86"
-    PackageFamily.XBPS -> "qemu"
-    else -> "qemu"
+/**
+ * The qemu packages to install for a distro family: the system emulator
+ * (Debian's is VNC-capable; Alpine's is not) PLUS qemu-img. Debian splits
+ * qemu-img into `qemu-utils`; Alpine/Arch ship it as `qemu-img`; Void's
+ * single `qemu` package bundles both.
+ */
+internal fun qemuPackagesFor(family: PackageFamily): List<String> = when (family) {
+    PackageFamily.APK -> listOf("qemu-system-x86_64", "qemu-img")
+    PackageFamily.APT -> listOf("qemu-system-x86", "qemu-utils")
+    PackageFamily.PACMAN -> listOf("qemu-system-x86", "qemu-img")
+    PackageFamily.XBPS -> listOf("qemu")
+    else -> listOf("qemu")
 }
 
 /** A free loopback TCP port (bound momentarily, then released for qemu to claim). */
