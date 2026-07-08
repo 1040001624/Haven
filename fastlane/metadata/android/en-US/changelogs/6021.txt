@@ -1,0 +1,7 @@
+🛡️ An agent action arriving while Haven is backgrounded now waits for you instead of being denied instantly (#337): the notification says it's waiting, and opening Haven shows the approval sheet for that same live call. Still denied automatically if unanswered, and never approved without you.
+
+📁 Folder upload from another app's storage (e.g. Termux) is much faster and no longer looks hung (#273): one query per folder instead of ~3 per file, plus a "Scanning… N files" indicator and mid-scan cancel.
+
+👻 New "Hide from recent apps" toggle (Settings → Advanced, off by default) — hides Haven's recents card; sessions keep running (#239).
+
+🔧 Dependency + CI maintenance: appcompat 1.7.1, hilt 2.60.1, datastore 1.2.1, smbj 0.14.0, xz 1.12, browser 1.10.0, rustls 0.23.41 (RDP native lib rebuilt for all ABIs).

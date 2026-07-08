@@ -5,6 +5,16 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.22
+
+🛡️ **An agent action that arrives while Haven is in the background now waits for you instead of being denied on the spot** (#337) — previously, if an AI agent called a tool needing your approval while you were in another app (even one Haven itself had launched, like the system installer), the call failed immediately with "denied", and nothing you'd done said no. Now the call holds, the heads-up notification tells you it's waiting, and opening Haven shows the approval sheet for that *same, still-live* call — tap Allow and it proceeds. It's still denied automatically if you never answer, and it can never be approved without you: Haven does not become a silent automation channel. Device-verified end to end, along with the pairing-loop guards from v5.68.21 (a spamming client can't stack duplicate prompts, gets a two-minute cooldown after a Deny, is rate-limited across renamed retries, and can be silenced with one tap on **Block**).
+
+📁 **Uploading a folder from another app's storage is dramatically faster and no longer looks hung** (#273) — picking a folder from, say, Termux could sit on a blank screen for half a minute even for a few megabytes: Haven asked that app for each file's name, type and size in separate cross-process queries, roughly three round trips per file. Each folder is now read in a single query, and the scan shows "Scanning… N files" while it works, so a slow source looks busy rather than dead. It can also be cancelled mid-scan now. (Measured against a simulated provider — if you hit this with a real Termux folder, please say whether it's fixed for you.)
+
+👻 **New "Hide from recent apps" toggle** (Settings → Advanced, off by default) (#239) — hides Haven's card in the recents screen while sessions keep running; reopen from the app icon.
+
+🔧 **Dependency and CI maintenance** — appcompat 1.7.1, hilt 2.60.1, datastore 1.2.1, smbj 0.14.0, xz 1.12, androidx.browser 1.10.0, hilt-work 1.4.0, mockk 1.14.11, and rustls 0.23.41 (the RDP native library is rebuilt for all three architectures). Two CI flake sources removed.
+
 ## v5.68.21
 
 🖥️ **Boot a full QEMU system VM and drive it from Haven's own viewer** (#326) — alongside the proot desktops there's now a "System VM" manager (Desktop → Manage): import a raw/qcow2 x86_64 disk image, and Haven boots it with `qemu-system-x86_64` inside the active proot, real kernel and all, with the display on a loopback VNC port rendered by the existing VNC viewer — keyboard input included. The agent gets the same lifecycle over MCP (system-VM `list/import/start/stop/delete` verbs). Honest caveats, by design: unrooted Android has no `/dev/kvm`, so the VM runs under TCG emulation — around two minutes to a login prompt and a visibly slow framebuffer (fine for a boot-once console or light desktop; heavy desktops will drag) — it needs a distro whose qemu ships VNC support (Debian's does; Alpine's stripped build doesn't), one VM at a time, and x86_64 guests only so far. This is what #325's qemu-user can't do: a real foreign-arch kernel with its own block/net stack, not just translated binaries.
