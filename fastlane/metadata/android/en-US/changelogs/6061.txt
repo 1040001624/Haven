@@ -1,0 +1,1 @@
+🔧 Build/CI reliability: raised the Gradle build heap to stop an intermittent out-of-memory while packaging the 32-bit ARM build (#356). No app-facing change.

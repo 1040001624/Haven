@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.26
+
+🔧 **Build/CI reliability** — raised the Gradle build heap so the release build stops intermittently failing while packaging the 32-bit ARM app (a bundletool out-of-memory that wasted release runs on reruns) (#356). No app-facing change.
+
 ## v5.68.25
 
 🔎 **The AI-assistant screen-reader tool worked only in debug builds — now it works in the shipped app** — `dump_haven_ui`, which lets a paired assistant read Haven's on-screen controls, returned "No Compose view in the foreground window" in every release build (the code optimiser renamed the classes it looks for). It never worked for anyone running a real build. Fixed, with a CI guard so it can't silently break again.
