@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.InstallMobile
@@ -247,6 +248,7 @@ fun SettingsScreen(
         }
     }
     var showBackupPasswordDialog by remember { mutableStateOf<BackupAction?>(null) }
+    var showBackupSyncDialog by remember { mutableStateOf(false) }
     var showLockTimeoutDialog by remember { mutableStateOf(false) }
     var showOsc133SetupDialog by remember { mutableStateOf(false) }
     var showScreenOrderDialog by remember { mutableStateOf(false) }
@@ -1207,6 +1209,25 @@ fun SettingsScreen(
                 importLauncher.launch(arrayOf("*/*"))
             },
         )
+        // Push/pull the encrypted backup to an existing SFTP/SMB/rclone
+        // connection, so config moves between devices without shuffling files
+        // by hand (#323).
+        run {
+            val syncCandidates by viewModel.backupSyncCandidates.collectAsState()
+            val syncProfileId by viewModel.backupSyncProfileId.collectAsState()
+            val syncPath by viewModel.backupSyncPath.collectAsState()
+            val destLabel = syncCandidates.firstOrNull { it.first == syncProfileId }?.second
+            SettingsItem(
+                icon = Icons.Filled.Sync,
+                title = stringResource(R.string.settings_backup_sync_title),
+                subtitle = if (destLabel != null) {
+                    stringResource(R.string.settings_backup_sync_subtitle_set, destLabel, syncPath)
+                } else {
+                    stringResource(R.string.settings_backup_sync_subtitle_unset)
+                },
+                onClick = { showBackupSyncDialog = true },
+            )
+        }
 
         if (backupStatus is SettingsViewModel.BackupStatus.InProgress) {
             ListItem(
@@ -1703,7 +1724,7 @@ fun SettingsScreen(
 
     showBackupPasswordDialog?.let { action ->
         BackupPasswordDialog(
-            isExport = action is BackupAction.Export,
+            isExport = action is BackupAction.Export || action is BackupAction.PushRemote,
             onDismiss = { showBackupPasswordDialog = null },
             onConfirm = { password ->
                 showBackupPasswordDialog = null
@@ -1715,8 +1736,35 @@ fun SettingsScreen(
                     is BackupAction.Restore -> {
                         viewModel.importBackup(action.uri, password)
                     }
+                    is BackupAction.PushRemote -> {
+                        viewModel.pushBackupToRemote(password)
+                    }
+                    is BackupAction.PullRemote -> {
+                        viewModel.pullBackupFromRemote(password)
+                    }
                 }
             },
+        )
+    }
+
+    if (showBackupSyncDialog) {
+        val syncCandidates by viewModel.backupSyncCandidates.collectAsState()
+        val syncProfileId by viewModel.backupSyncProfileId.collectAsState()
+        val syncPath by viewModel.backupSyncPath.collectAsState()
+        BackupSyncDialog(
+            candidates = syncCandidates,
+            selectedProfileId = syncProfileId,
+            path = syncPath,
+            onDestinationChange = { pid, p -> viewModel.setBackupSyncDestination(pid, p) },
+            onPush = {
+                showBackupSyncDialog = false
+                showBackupPasswordDialog = BackupAction.PushRemote
+            },
+            onPull = {
+                showBackupSyncDialog = false
+                showBackupPasswordDialog = BackupAction.PullRemote
+            },
+            onDismiss = { showBackupSyncDialog = false },
         )
     }
 
@@ -1800,6 +1848,107 @@ preexec() { __osc133 B; __osc133 C }"""
 private sealed interface BackupAction {
     data object Export : BackupAction
     data class Restore(val uri: Uri) : BackupAction
+
+    /** Push/pull to the configured remote (#323). Push encrypts (confirm password); Pull decrypts. */
+    data object PushRemote : BackupAction
+    data object PullRemote : BackupAction
+}
+
+/**
+ * Configure and trigger encrypted backup push/pull to an existing remote (#323).
+ * Destination = one of the user's SFTP/SMB/rclone connections + a file path;
+ * changes persist immediately. Push/Pull hand off to [BackupPasswordDialog] for
+ * the passphrase (Push encrypts, Pull decrypts + restores).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BackupSyncDialog(
+    candidates: List<Pair<String, String>>,
+    selectedProfileId: String?,
+    path: String,
+    onDestinationChange: (String?, String) -> Unit,
+    onPush: () -> Unit,
+    onPull: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var pathField by remember(path) { mutableStateOf(path) }
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = candidates.firstOrNull { it.first == selectedProfileId }?.second
+    val hasDestination = selectedProfileId != null && candidates.any { it.first == selectedProfileId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_backup_sync_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.settings_backup_sync_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                if (candidates.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_backup_sync_no_remotes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                        OutlinedTextField(
+                            value = selectedLabel ?: stringResource(R.string.settings_backup_sync_choose_remote),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_backup_sync_remote_label)) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            candidates.forEach { (id, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        onDestinationChange(id, pathField)
+                                        expanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pathField,
+                        onValueChange = {
+                            pathField = it
+                            onDestinationChange(selectedProfileId, it)
+                        },
+                        label = { Text(stringResource(R.string.settings_backup_sync_path_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.settings_backup_sync_connect_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onPull, enabled = hasDestination) {
+                    Text(stringResource(R.string.settings_backup_sync_pull_button))
+                }
+                TextButton(onClick = onPush, enabled = hasDestination) {
+                    Text(stringResource(R.string.settings_backup_sync_push_button))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
+        },
+    )
 }
 
 @Composable

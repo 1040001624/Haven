@@ -37,6 +37,7 @@ class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val authenticator: BiometricAuthenticator,
     private val backupService: BackupService,
+    private val backupSyncManager: sh.haven.core.data.backup.BackupSyncManager,
     private val agentAuditEventDao: AgentAuditEventDao,
     private val agentConsentManager: AgentConsentManager,
     private val terminalFontInstaller: TerminalFontInstaller,
@@ -206,6 +207,74 @@ class SettingsViewModel @Inject constructor(
     fun clearBackupStatus() {
         _backupStatus.value = BackupStatus.Idle
     }
+
+    // ── Encrypted backup sync to an existing remote (#323) ────────────────
+
+    /** SFTP/SMB/rclone profiles eligible as a backup destination (id + label). */
+    val backupSyncCandidates: StateFlow<List<Pair<String, String>>> =
+        connectionRepository.observeAll()
+            .map { list ->
+                list.filter { it.connectionType in BACKUP_SYNC_TYPES }
+                    .map { it.id to it.label }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val backupSyncProfileId: StateFlow<String?> = preferencesRepository.backupSyncProfileId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val backupSyncPath: StateFlow<String> = preferencesRepository.backupSyncPath
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "haven-backup.enc")
+
+    fun setBackupSyncDestination(profileId: String?, path: String) {
+        viewModelScope.launch { preferencesRepository.setBackupSyncDestination(profileId, path) }
+    }
+
+    /** Encrypt the config and write it to the configured remote. */
+    fun pushBackupToRemote(password: String) {
+        val profileId = backupSyncProfileId.value
+        if (profileId == null) {
+            _backupStatus.value = BackupStatus.Error("Choose a backup destination first")
+            return
+        }
+        viewModelScope.launch {
+            _backupStatus.value = BackupStatus.InProgress
+            try {
+                withContext(Dispatchers.IO) {
+                    backupSyncManager.push(profileId, backupSyncPath.value, password)
+                }
+                _backupStatus.value = BackupStatus.Success("Backup pushed to remote")
+            } catch (e: Exception) {
+                _backupStatus.value = BackupStatus.Error(backupSyncError(e))
+            }
+        }
+    }
+
+    /** Read the backup from the configured remote, decrypt, and restore it. */
+    fun pullBackupFromRemote(password: String) {
+        val profileId = backupSyncProfileId.value
+        if (profileId == null) {
+            _backupStatus.value = BackupStatus.Error("Choose a backup destination first")
+            return
+        }
+        viewModelScope.launch {
+            _backupStatus.value = BackupStatus.InProgress
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    backupSyncManager.pull(profileId, backupSyncPath.value, password)
+                }
+                val msg = "Restored ${result.count} items" +
+                    if (result.errors.isNotEmpty()) " (${result.errors.size} errors)" else ""
+                _backupStatus.value = BackupStatus.Success(msg)
+            } catch (e: javax.crypto.AEADBadTagException) {
+                _backupStatus.value = BackupStatus.Error("Wrong password")
+            } catch (e: Exception) {
+                _backupStatus.value = BackupStatus.Error(backupSyncError(e))
+            }
+        }
+    }
+
+    private fun backupSyncError(e: Exception): String =
+        "Backup sync failed: ${e.message ?: "${e.javaClass.simpleName} (no message)"}"
 
     val biometricEnabled: StateFlow<Boolean> = preferencesRepository.biometricEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -866,6 +935,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.setTerminalLocale(locale)
         }
+    }
+
+    companion object {
+        /** Connection types that can host a backup file (#323). LOCAL is excluded — it's the device itself, not a cross-device destination. */
+        private val BACKUP_SYNC_TYPES = setOf("SSH", "SMB", "RCLONE")
     }
 }
 

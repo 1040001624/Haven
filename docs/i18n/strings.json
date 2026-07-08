@@ -23587,6 +23587,218 @@
      }
     },
     {
+     "name": "settings_backup_sync_title",
+     "en": "Sync to a remote",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "المزامنة مع جهاز بعيد",
+      "bn": "রিমোটে সিঙ্ক করুন",
+      "de": "Mit Remote synchronisieren",
+      "es": "Sincronizar con un remoto",
+      "fr": "Synchroniser vers un distant",
+      "hi": "रिमोट से सिंक करें",
+      "ja": "リモートに同期",
+      "ko": "원격으로 동기화",
+      "pt": "Sincronizar com um remoto",
+      "ru": "Синхронизировать с удалённым",
+      "zh": "同步到远程"
+     }
+    },
+    {
+     "name": "settings_backup_sync_subtitle_set",
+     "en": "%1$s : %2$s",
+     "comment": "Backup section",
+     "args": [
+      "%1$s",
+      "%2$s"
+     ],
+     "t": {
+      "ar": "%1$s : %2$s",
+      "bn": "%1$s : %2$s",
+      "de": "%1$s : %2$s",
+      "es": "%1$s : %2$s",
+      "fr": "%1$s : %2$s",
+      "hi": "%1$s : %2$s",
+      "ja": "%1$s : %2$s",
+      "ko": "%1$s : %2$s",
+      "pt": "%1$s : %2$s",
+      "ru": "%1$s : %2$s",
+      "zh": "%1$s : %2$s"
+     }
+    },
+    {
+     "name": "settings_backup_sync_subtitle_unset",
+     "en": "Push/pull the encrypted backup to an SFTP/SMB/rclone connection",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "دفع/سحب النسخة المشفّرة إلى اتصال SFTP/SMB/rclone",
+      "bn": "এনক্রিপ্টেড ব্যাকআপ একটি SFTP/SMB/rclone সংযোগে পুশ/পুল করুন",
+      "de": "Verschlüsseltes Backup zu einer SFTP-/SMB-/rclone-Verbindung pushen/pullen",
+      "es": "Enviar/traer la copia cifrada a una conexión SFTP/SMB/rclone",
+      "fr": "Envoyer/récupérer la sauvegarde chiffrée vers une connexion SFTP/SMB/rclone",
+      "hi": "एन्क्रिप्टेड बैकअप को SFTP/SMB/rclone कनेक्शन पर पुश/पुल करें",
+      "ja": "暗号化バックアップを SFTP/SMB/rclone 接続にプッシュ/プル",
+      "ko": "암호화된 백업을 SFTP/SMB/rclone 연결로 푸시/풀",
+      "pt": "Enviar/obter o backup cifrado para uma conexão SFTP/SMB/rclone",
+      "ru": "Отправка/загрузка зашифрованной копии в подключение SFTP/SMB/rclone",
+      "zh": "将加密备份推送/拉取到 SFTP/SMB/rclone 连接"
+     }
+    },
+    {
+     "name": "settings_backup_sync_description",
+     "en": "Push or pull the encrypted backup to a connection you already have. The file is AES-256-GCM encrypted with your passphrase before it leaves the device — the remote never sees your config in the clear.",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "يدفع أو يسحب النسخة الاحتياطية المشفّرة إلى اتصال لديك بالفعل. يُشفَّر الملف بـ AES-256-GCM بعبارة مرورك قبل مغادرة الجهاز — لا يرى الطرف البعيد إعداداتك بنص واضح أبدًا.",
+      "bn": "এনক্রিপ্টেড ব্যাকআপ আপনার আগে থেকেই থাকা একটি সংযোগে পুশ বা পুল করে। ডিভাইস ছাড়ার আগে ফাইলটি আপনার পাসফ্রেজ দিয়ে AES-256-GCM এনক্রিপ্ট করা হয় — রিমোট কখনও আপনার কনফিগ প্লেইনটেক্সটে দেখে না।",
+      "de": "Pusht oder pullt das verschlüsselte Backup zu einer bereits vorhandenen Verbindung. Die Datei wird mit deiner Passphrase per AES-256-GCM verschlüsselt, bevor sie das Gerät verlässt – das Remote sieht deine Konfiguration nie im Klartext.",
+      "es": "Envía o trae la copia de seguridad cifrada a una conexión que ya tengas. El archivo se cifra con AES-256-GCM usando tu contraseña antes de salir del dispositivo; el remoto nunca ve tu configuración en claro.",
+      "fr": "Envoie ou récupère la sauvegarde chiffrée vers une connexion que vous avez déjà. Le fichier est chiffré en AES-256-GCM avec votre phrase secrète avant de quitter l’appareil — le distant ne voit jamais votre configuration en clair.",
+      "hi": "एन्क्रिप्टेड बैकअप को आपके पहले से मौजूद किसी कनेक्शन पर पुश या पुल करता है। डिवाइस छोड़ने से पहले फ़ाइल आपके पासफ़्रेज़ से AES-256-GCM एन्क्रिप्ट होती है — रिमोट को आपका कॉन्फ़िग कभी सादे रूप में नहीं दिखता।",
+      "ja": "暗号化バックアップを既存の接続にプッシュまたはプルします。ファイルは端末を離れる前にパスフレーズで AES-256-GCM 暗号化されます — リモートが設定を平文で見ることはありません。",
+      "ko": "암호화된 백업을 이미 있는 연결로 푸시하거나 풀합니다. 파일은 기기를 떠나기 전에 암호로 AES-256-GCM 암호화되며, 원격은 설정을 평문으로 보지 못합니다.",
+      "pt": "Envia ou obtém o backup cifrado para uma conexão que você já tem. O arquivo é cifrado com AES-256-GCM usando sua senha antes de sair do dispositivo — o remoto nunca vê sua configuração em texto claro.",
+      "ru": "Отправляет или загружает зашифрованную резервную копию в уже имеющееся подключение. Файл шифруется AES-256-GCM вашей парольной фразой до выхода с устройства — удалённая сторона никогда не видит конфигурацию в открытом виде.",
+      "zh": "将加密备份推送或拉取到你已有的连接。文件在离开设备前用你的口令进行 AES-256-GCM 加密——远程端永远看不到明文配置。"
+     }
+    },
+    {
+     "name": "settings_backup_sync_no_remotes",
+     "en": "No SFTP, SMB or rclone connections yet. Add one first, then it can hold your backup.",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "لا توجد اتصالات SFTP أو SMB أو rclone بعد. أضِف واحدًا أولًا ليحتفظ بنسختك.",
+      "bn": "এখনও কোনো SFTP, SMB বা rclone সংযোগ নেই। আগে একটি যোগ করুন, তবেই এটি আপনার ব্যাকআপ রাখতে পারবে।",
+      "de": "Noch keine SFTP-, SMB- oder rclone-Verbindung. Füge zuerst eine hinzu, damit sie dein Backup aufnehmen kann.",
+      "es": "Aún no hay conexiones SFTP, SMB ni rclone. Añade una primero para que pueda alojar tu copia.",
+      "fr": "Aucune connexion SFTP, SMB ou rclone pour l’instant. Ajoutez-en une d’abord pour héberger votre sauvegarde.",
+      "hi": "अभी कोई SFTP, SMB या rclone कनेक्शन नहीं है। पहले एक जोड़ें ताकि वह आपका बैकअप रख सके।",
+      "ja": "SFTP、SMB、rclone 接続がまだありません。まず追加すると、そこにバックアップを保存できます。",
+      "ko": "아직 SFTP, SMB, rclone 연결이 없습니다. 먼저 하나 추가하면 백업을 저장할 수 있습니다.",
+      "pt": "Ainda não há conexões SFTP, SMB ou rclone. Adicione uma primeiro para hospedar seu backup.",
+      "ru": "Пока нет подключений SFTP, SMB или rclone. Сначала добавьте одно, чтобы хранить копию.",
+      "zh": "还没有 SFTP、SMB 或 rclone 连接。请先添加一个，它才能保存你的备份。"
+     }
+    },
+    {
+     "name": "settings_backup_sync_choose_remote",
+     "en": "Choose a connection…",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "اختر اتصالًا…",
+      "bn": "একটি সংযোগ বেছে নিন…",
+      "de": "Verbindung wählen…",
+      "es": "Elige una conexión…",
+      "fr": "Choisir une connexion…",
+      "hi": "एक कनेक्शन चुनें…",
+      "ja": "接続を選択…",
+      "ko": "연결 선택…",
+      "pt": "Escolha uma conexão…",
+      "ru": "Выберите подключение…",
+      "zh": "选择一个连接…"
+     }
+    },
+    {
+     "name": "settings_backup_sync_remote_label",
+     "en": "Destination connection",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "اتصال الوجهة",
+      "bn": "গন্তব্য সংযোগ",
+      "de": "Zielverbindung",
+      "es": "Conexión de destino",
+      "fr": "Connexion de destination",
+      "hi": "गंतव्य कनेक्शन",
+      "ja": "保存先の接続",
+      "ko": "대상 연결",
+      "pt": "Conexão de destino",
+      "ru": "Подключение назначения",
+      "zh": "目标连接"
+     }
+    },
+    {
+     "name": "settings_backup_sync_path_label",
+     "en": "File path on the remote",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "مسار الملف على الجهاز البعيد",
+      "bn": "রিমোটে ফাইল পাথ",
+      "de": "Dateipfad auf dem Remote",
+      "es": "Ruta del archivo en el remoto",
+      "fr": "Chemin du fichier sur le distant",
+      "hi": "रिमोट पर फ़ाइल पथ",
+      "ja": "リモート上のファイルパス",
+      "ko": "원격의 파일 경로",
+      "pt": "Caminho do arquivo no remoto",
+      "ru": "Путь к файлу на удалённом",
+      "zh": "远程上的文件路径"
+     }
+    },
+    {
+     "name": "settings_backup_sync_connect_hint",
+     "en": "Connect the destination first (open it in the Files tab), then Push or Pull.",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "اتصل بالوجهة أولًا (افتحها في تبويب الملفات)، ثم ادفع أو اسحب.",
+      "bn": "আগে গন্তব্য সংযোগ করুন (ফাইল ট্যাবে খুলুন), তারপর পুশ বা পুল করুন।",
+      "de": "Verbinde zuerst das Ziel (öffne es im Dateien-Tab), dann Push oder Pull.",
+      "es": "Conecta primero el destino (ábrelo en la pestaña Archivos) y luego pulsa Enviar o Traer.",
+      "fr": "Connectez d’abord la destination (ouvrez-la dans l’onglet Fichiers), puis Envoyer ou Récupérer.",
+      "hi": "पहले गंतव्य कनेक्ट करें (Files टैब में खोलें), फिर पुश या पुल करें।",
+      "ja": "先に保存先を接続してください（「ファイル」タブで開く）。その後プッシュまたはプルします。",
+      "ko": "먼저 대상을 연결하세요(파일 탭에서 열기). 그런 다음 푸시 또는 풀하세요.",
+      "pt": "Conecte o destino primeiro (abra-o na aba Arquivos) e então Enviar ou Obter.",
+      "ru": "Сначала подключите назначение (откройте его на вкладке «Файлы»), затем «Отправить» или «Загрузить».",
+      "zh": "请先连接目标（在“文件”标签页中打开它），然后再推送或拉取。"
+     }
+    },
+    {
+     "name": "settings_backup_sync_push_button",
+     "en": "Push",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "دفع",
+      "bn": "পুশ",
+      "de": "Push",
+      "es": "Enviar",
+      "fr": "Envoyer",
+      "hi": "पुश",
+      "ja": "プッシュ",
+      "ko": "푸시",
+      "pt": "Enviar",
+      "ru": "Отправить",
+      "zh": "推送"
+     }
+    },
+    {
+     "name": "settings_backup_sync_pull_button",
+     "en": "Pull",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "سحب",
+      "bn": "পুল",
+      "de": "Pull",
+      "es": "Traer",
+      "fr": "Récupérer",
+      "hi": "पुल",
+      "ja": "プル",
+      "ko": "풀",
+      "pt": "Obter",
+      "ru": "Загрузить",
+      "zh": "拉取"
+     }
+    },
+    {
      "name": "settings_export_backup_title",
      "en": "Export backup",
      "comment": "Backup section",

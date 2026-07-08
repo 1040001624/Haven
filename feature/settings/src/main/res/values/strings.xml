@@ -116,6 +116,17 @@
     <string name="settings_terminal_locale_label">LANG</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">Sync to a remote</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">Push/pull the encrypted backup to an SFTP/SMB/rclone connection</string>
+    <string name="settings_backup_sync_description">Push or pull the encrypted backup to a connection you already have. The file is AES-256-GCM encrypted with your passphrase before it leaves the device — the remote never sees your config in the clear.</string>
+    <string name="settings_backup_sync_no_remotes">No SFTP, SMB or rclone connections yet. Add one first, then it can hold your backup.</string>
+    <string name="settings_backup_sync_choose_remote">Choose a connection…</string>
+    <string name="settings_backup_sync_remote_label">Destination connection</string>
+    <string name="settings_backup_sync_path_label">File path on the remote</string>
+    <string name="settings_backup_sync_connect_hint">Connect the destination first (open it in the Files tab), then Push or Pull.</string>
+    <string name="settings_backup_sync_push_button">Push</string>
+    <string name="settings_backup_sync_pull_button">Pull</string>
     <string name="settings_export_backup_title">Export backup</string>
     <string name="settings_export_backup_subtitle">Keys, connections, and settings</string>
     <string name="settings_restore_backup_title">Restore backup</string>

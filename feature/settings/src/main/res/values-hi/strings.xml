@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">बैटरी छूट और Wayland एक्सेस के लिए Shizuku इंस्टॉल करें</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">रिमोट से सिंक करें</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">एन्क्रिप्टेड बैकअप को SFTP/SMB/rclone कनेक्शन पर पुश/पुल करें</string>
+    <string name="settings_backup_sync_description">एन्क्रिप्टेड बैकअप को आपके पहले से मौजूद किसी कनेक्शन पर पुश या पुल करता है। डिवाइस छोड़ने से पहले फ़ाइल आपके पासफ़्रेज़ से AES-256-GCM एन्क्रिप्ट होती है — रिमोट को आपका कॉन्फ़िग कभी सादे रूप में नहीं दिखता।</string>
+    <string name="settings_backup_sync_no_remotes">अभी कोई SFTP, SMB या rclone कनेक्शन नहीं है। पहले एक जोड़ें ताकि वह आपका बैकअप रख सके।</string>
+    <string name="settings_backup_sync_choose_remote">एक कनेक्शन चुनें…</string>
+    <string name="settings_backup_sync_remote_label">गंतव्य कनेक्शन</string>
+    <string name="settings_backup_sync_path_label">रिमोट पर फ़ाइल पथ</string>
+    <string name="settings_backup_sync_connect_hint">पहले गंतव्य कनेक्ट करें (Files टैब में खोलें), फिर पुश या पुल करें।</string>
+    <string name="settings_backup_sync_push_button">पुश</string>
+    <string name="settings_backup_sync_pull_button">पुल</string>
     <string name="settings_export_backup_title">बैकअप निर्यात करें</string>
     <string name="settings_export_backup_subtitle">कुंजियाँ, कनेक्शन और सेटिंग्स</string>
     <string name="settings_restore_backup_title">बैकअप पुनर्स्थापित करें</string>

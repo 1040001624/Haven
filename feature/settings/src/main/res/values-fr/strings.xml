@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">Installer Shizuku pour exemption batterie et accès Wayland</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">Synchroniser vers un distant</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">Envoyer/récupérer la sauvegarde chiffrée vers une connexion SFTP/SMB/rclone</string>
+    <string name="settings_backup_sync_description">Envoie ou récupère la sauvegarde chiffrée vers une connexion que vous avez déjà. Le fichier est chiffré en AES-256-GCM avec votre phrase secrète avant de quitter l’appareil — le distant ne voit jamais votre configuration en clair.</string>
+    <string name="settings_backup_sync_no_remotes">Aucune connexion SFTP, SMB ou rclone pour l’instant. Ajoutez-en une d’abord pour héberger votre sauvegarde.</string>
+    <string name="settings_backup_sync_choose_remote">Choisir une connexion…</string>
+    <string name="settings_backup_sync_remote_label">Connexion de destination</string>
+    <string name="settings_backup_sync_path_label">Chemin du fichier sur le distant</string>
+    <string name="settings_backup_sync_connect_hint">Connectez d’abord la destination (ouvrez-la dans l’onglet Fichiers), puis Envoyer ou Récupérer.</string>
+    <string name="settings_backup_sync_push_button">Envoyer</string>
+    <string name="settings_backup_sync_pull_button">Récupérer</string>
     <string name="settings_export_backup_title">Exporter la sauvegarde</string>
     <string name="settings_export_backup_subtitle">Clés, connexions et paramètres</string>
     <string name="settings_restore_backup_title">Restaurer la sauvegarde</string>

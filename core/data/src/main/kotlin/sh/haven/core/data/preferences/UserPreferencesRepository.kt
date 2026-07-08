@@ -62,6 +62,8 @@ class UserPreferencesRepository @Inject constructor(
     private val keepScreenOnInTerminalKey = booleanPreferencesKey("keep_screen_on_in_terminal")
     private val connectionLoggingEnabledKey = booleanPreferencesKey("connection_logging_enabled")
     private val excludeFromRecentsKey = booleanPreferencesKey("exclude_from_recents")
+    private val backupSyncProfileIdKey = stringPreferencesKey("backup_sync_profile_id")
+    private val backupSyncPathKey = stringPreferencesKey("backup_sync_path")
     private val mailAutomationEnabledKey = booleanPreferencesKey("mail_automation_enabled")
     private val mailDeleteToBinKey = booleanPreferencesKey("mail_delete_to_bin")
     private val alwaysShowAllTabsKey = booleanPreferencesKey("always_show_all_tabs")
@@ -247,6 +249,27 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setExcludeFromRecents(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[excludeFromRecentsKey] = enabled
+        }
+    }
+
+    /**
+     * Destination for encrypted backup push/pull (#323): the id of an existing
+     * connection profile, and the file path on it. Null profile = not configured.
+     * The path defaults to `haven-backup.enc` when unset.
+     */
+    val backupSyncProfileId: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[backupSyncProfileIdKey]
+    }
+
+    val backupSyncPath: Flow<String> = dataStore.data.map { prefs ->
+        prefs[backupSyncPathKey] ?: "haven-backup.enc"
+    }
+
+    suspend fun setBackupSyncDestination(profileId: String?, path: String) {
+        dataStore.edit { prefs ->
+            if (profileId == null) prefs.remove(backupSyncProfileIdKey)
+            else prefs[backupSyncProfileIdKey] = profileId
+            prefs[backupSyncPathKey] = path.ifBlank { "haven-backup.enc" }
         }
     }
 
@@ -1062,9 +1085,20 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    /**
+     * Read a Float pref that a pre-v5.68.27 backup restore may have corrupted to
+     * a non-Float type. That restore stored Float prefs under an Int key (#323),
+     * so `prefs[floatKey]` throws ClassCastException and crash-loops the app on
+     * launch. A wrong stored type returns null here (→ caller's default) instead
+     * of throwing, so an already-corrupted store self-heals; the fix also
+     * corrects the import so it can't recur.
+     */
+    private fun Preferences.floatSafe(key: Preferences.Key<Float>): Float? =
+        runCatching { this[key] }.getOrNull()
+
     /** Mail message-list pinch-zoom factor (× the terminal font size). 1.0 = match terminal. */
     val mailFontScale: Flow<Float> = dataStore.data.map { prefs ->
-        (prefs[mailFontScaleKey] ?: DEFAULT_MAIL_FONT_SCALE)
+        (prefs.floatSafe(mailFontScaleKey) ?: DEFAULT_MAIL_FONT_SCALE)
             .coerceIn(MIN_MAIL_FONT_SCALE, MAX_MAIL_FONT_SCALE)
     }
 
@@ -1298,7 +1332,7 @@ class UserPreferencesRepository @Inject constructor(
 
     /** Global default cage output scale for app windows that don't set their own. */
     val appWindowDefaultScale: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[appWindowDefaultScaleKey] ?: 1f
+        prefs.floatSafe(appWindowDefaultScaleKey) ?: 1f
     }
 
     suspend fun setAppWindowDefaultScale(scale: Float) {
@@ -1423,7 +1457,7 @@ class UserPreferencesRepository @Inject constructor(
      * `ConnectionProfile.terminalBackgroundOpacity`).
      */
     val terminalBackgroundOpacity: Flow<Float> = dataStore.data.map { prefs ->
-        (prefs[terminalBackgroundOpacityKey] ?: 1f).coerceIn(0f, 1f)
+        (prefs.floatSafe(terminalBackgroundOpacityKey) ?: 1f).coerceIn(0f, 1f)
     }
 
     suspend fun setTerminalBackgroundOpacity(opacity: Float) {

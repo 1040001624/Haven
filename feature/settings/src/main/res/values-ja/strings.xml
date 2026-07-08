@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">バッテリー除外とWaylandアクセスにShizukuをインストール</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">リモートに同期</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">暗号化バックアップを SFTP/SMB/rclone 接続にプッシュ/プル</string>
+    <string name="settings_backup_sync_description">暗号化バックアップを既存の接続にプッシュまたはプルします。ファイルは端末を離れる前にパスフレーズで AES-256-GCM 暗号化されます — リモートが設定を平文で見ることはありません。</string>
+    <string name="settings_backup_sync_no_remotes">SFTP、SMB、rclone 接続がまだありません。まず追加すると、そこにバックアップを保存できます。</string>
+    <string name="settings_backup_sync_choose_remote">接続を選択…</string>
+    <string name="settings_backup_sync_remote_label">保存先の接続</string>
+    <string name="settings_backup_sync_path_label">リモート上のファイルパス</string>
+    <string name="settings_backup_sync_connect_hint">先に保存先を接続してください（「ファイル」タブで開く）。その後プッシュまたはプルします。</string>
+    <string name="settings_backup_sync_push_button">プッシュ</string>
+    <string name="settings_backup_sync_pull_button">プル</string>
     <string name="settings_export_backup_title">バックアップをエクスポート</string>
     <string name="settings_export_backup_subtitle">鍵、接続、設定</string>
     <string name="settings_restore_backup_title">バックアップを復元</string>

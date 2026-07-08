@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">تثبيت Shizuku للإعفاء من البطارية ومشاركة Wayland</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">المزامنة مع جهاز بعيد</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">دفع/سحب النسخة المشفّرة إلى اتصال SFTP/SMB/rclone</string>
+    <string name="settings_backup_sync_description">يدفع أو يسحب النسخة الاحتياطية المشفّرة إلى اتصال لديك بالفعل. يُشفَّر الملف بـ AES-256-GCM بعبارة مرورك قبل مغادرة الجهاز — لا يرى الطرف البعيد إعداداتك بنص واضح أبدًا.</string>
+    <string name="settings_backup_sync_no_remotes">لا توجد اتصالات SFTP أو SMB أو rclone بعد. أضِف واحدًا أولًا ليحتفظ بنسختك.</string>
+    <string name="settings_backup_sync_choose_remote">اختر اتصالًا…</string>
+    <string name="settings_backup_sync_remote_label">اتصال الوجهة</string>
+    <string name="settings_backup_sync_path_label">مسار الملف على الجهاز البعيد</string>
+    <string name="settings_backup_sync_connect_hint">اتصل بالوجهة أولًا (افتحها في تبويب الملفات)، ثم ادفع أو اسحب.</string>
+    <string name="settings_backup_sync_push_button">دفع</string>
+    <string name="settings_backup_sync_pull_button">سحب</string>
     <string name="settings_export_backup_title">تصدير نسخة احتياطية</string>
     <string name="settings_export_backup_subtitle">المفاتيح والاتصالات والإعدادات</string>
     <string name="settings_restore_backup_title">استعادة نسخة احتياطية</string>

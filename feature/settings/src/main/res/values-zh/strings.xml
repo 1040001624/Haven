@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">安装 Shizuku 以获取电池豁免和 Wayland 访问</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">同步到远程</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">将加密备份推送/拉取到 SFTP/SMB/rclone 连接</string>
+    <string name="settings_backup_sync_description">将加密备份推送或拉取到你已有的连接。文件在离开设备前用你的口令进行 AES-256-GCM 加密——远程端永远看不到明文配置。</string>
+    <string name="settings_backup_sync_no_remotes">还没有 SFTP、SMB 或 rclone 连接。请先添加一个，它才能保存你的备份。</string>
+    <string name="settings_backup_sync_choose_remote">选择一个连接…</string>
+    <string name="settings_backup_sync_remote_label">目标连接</string>
+    <string name="settings_backup_sync_path_label">远程上的文件路径</string>
+    <string name="settings_backup_sync_connect_hint">请先连接目标（在“文件”标签页中打开它），然后再推送或拉取。</string>
+    <string name="settings_backup_sync_push_button">推送</string>
+    <string name="settings_backup_sync_pull_button">拉取</string>
     <string name="settings_export_backup_title">导出备份</string>
     <string name="settings_export_backup_subtitle">密钥、连接和设置</string>
     <string name="settings_restore_backup_title">恢复备份</string>

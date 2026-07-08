@@ -81,6 +81,17 @@
     <string name="settings_shizuku_not_installed">Instalar Shizuku para isenção de bateria e acesso Wayland</string>
 
     <!-- Backup section -->
+    <string name="settings_backup_sync_title">Sincronizar com um remoto</string>
+    <string name="settings_backup_sync_subtitle_set">%1$s : %2$s</string>
+    <string name="settings_backup_sync_subtitle_unset">Enviar/obter o backup cifrado para uma conexão SFTP/SMB/rclone</string>
+    <string name="settings_backup_sync_description">Envia ou obtém o backup cifrado para uma conexão que você já tem. O arquivo é cifrado com AES-256-GCM usando sua senha antes de sair do dispositivo — o remoto nunca vê sua configuração em texto claro.</string>
+    <string name="settings_backup_sync_no_remotes">Ainda não há conexões SFTP, SMB ou rclone. Adicione uma primeiro para hospedar seu backup.</string>
+    <string name="settings_backup_sync_choose_remote">Escolha uma conexão…</string>
+    <string name="settings_backup_sync_remote_label">Conexão de destino</string>
+    <string name="settings_backup_sync_path_label">Caminho do arquivo no remoto</string>
+    <string name="settings_backup_sync_connect_hint">Conecte o destino primeiro (abra-o na aba Arquivos) e então Enviar ou Obter.</string>
+    <string name="settings_backup_sync_push_button">Enviar</string>
+    <string name="settings_backup_sync_pull_button">Obter</string>
     <string name="settings_export_backup_title">Exportar backup</string>
     <string name="settings_export_backup_subtitle">Chaves, conexões e configurações</string>
     <string name="settings_restore_backup_title">Restaurar backup</string>
