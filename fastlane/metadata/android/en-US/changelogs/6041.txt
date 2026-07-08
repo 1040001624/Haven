@@ -1,0 +1,3 @@
+📁 Uploading a folder with sub-folders to an SMB share now works (#273) — v5.68.23 fixed this for SFTP and missed the identical SMB bug. Local and rclone destinations were never affected.
+
+🛡️ An AI assistant can now see that its action is waiting for your approval rather than denied (#355). New read-only tool exposes the approval queue; it cannot answer a prompt — only you can, on the device.

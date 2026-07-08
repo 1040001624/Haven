@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.24
+
+📁 **Uploading a folder with sub-folders to an SMB share now works** (#273) — v5.68.23 fixed this for SFTP and missed the identical bug in the SMB path, where the first file inside a sub-folder failed because its parent directory was never created. (Local and cloud/rclone destinations were never affected.)
+
+🛡️ **An agent can now see that its action is waiting for your approval, instead of guessing** (#355) — since v5.68.22 a request that arrives while Haven is in the background waits for you rather than being denied outright, but nothing told the AI assistant that: a waiting request and a refused one looked identical from its side, so it would give up or retry pointlessly. A new read-only tool lets it observe the approval queue — what's being asked, by which client, and since when. It cannot answer a prompt: only you can, on the device. This also fixes the waiting request being invisible internally, which is what made the old behaviour indistinguishable.
+
 ## v5.68.23
 
 📁 **Uploading a folder that contains sub-folders now works** (#273) — it didn't. Folder upload asked the destination to create each file's parent directory one level at a time, so the very first file inside a sub-folder failed ("No such file") because its grandparent didn't exist yet, and the whole upload aborted. Only completely flat folders ever uploaded successfully. Parent directories are now created properly, once per directory. Found by testing a real Termux folder on a phone rather than trusting the code comment, which claimed this already worked.
