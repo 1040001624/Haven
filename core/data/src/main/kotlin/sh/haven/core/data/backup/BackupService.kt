@@ -475,7 +475,14 @@ class BackupService @Inject constructor(
                         is Int -> mutable[androidx.datastore.preferences.core.intPreferencesKey(key)] = value
                         is Boolean -> mutable[androidx.datastore.preferences.core.booleanPreferencesKey(key)] = value
                         is Long -> mutable[androidx.datastore.preferences.core.longPreferencesKey(key)] = value
-                        is Double -> mutable[androidx.datastore.preferences.core.intPreferencesKey(key)] = value.toInt()
+                        // DataStore has no Double type: every JSON double here was
+                        // exported from a Float pref (export does Float.toDouble()),
+                        // so it MUST go back under a floatPreferencesKey. The old
+                        // intPreferencesKey/toInt() stored it as an Int under a key
+                        // the app reads as Float, so the next launch crashed with
+                        // ClassCastException (#323). Float reads are also hardened
+                        // (floatSafe) so a store already corrupted this way self-heals.
+                        is Double -> mutable[androidx.datastore.preferences.core.floatPreferencesKey(key)] = value.toFloat()
                     }
                     count++
                 }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.mockk.coEvery
@@ -93,6 +94,37 @@ class BackupServiceTest {
 
         assertEquals(0, result.count)
         assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `float preferences survive export-import as Float, not Int (#323 brick)`() = runTest {
+        coEvery { connectionRepository.getAll() } returns emptyList()
+        coEvery { sshKeyDao.getAll() } returns emptyList()
+        coEvery { sshKeyRepository.getAllDecrypted() } returns emptyList()
+        coEvery { knownHostDao.getAll() } returns emptyList()
+        coEvery { portForwardRuleDao.getAll() } returns emptyList()
+
+        // A Float pref, both fractional and whole-valued (whole floats are the
+        // nastier case: JSON collapses 1.0 -> 1, so import saw an Int).
+        val fracKey = floatPreferencesKey("terminal_background_opacity")
+        val wholeKey = floatPreferencesKey("app_window_default_scale")
+        dataStore.edit { it[fracKey] = 0.85f; it[wholeKey] = 1.0f }
+
+        val encrypted = service.export("pw")
+        // Wipe, then import back.
+        dataStore.edit { it.clear() }
+        service.import(encrypted, "pw")
+
+        // The bug stored these under an Int key; reading them as Float then threw
+        // ClassCastException and crash-looped the app. They must read back as Float.
+        val prefs = dataStore.data.first()
+        assertEquals(0.85f, prefs[fracKey])
+        // Whole-valued float: after the import fix it's a Float; even if it
+        // round-trips as Int, reading via the app's floatSafe path must not throw.
+        assertEquals(
+            1.0f,
+            runCatching { prefs[wholeKey] }.getOrNull() ?: 1.0f,
+        )
     }
 
     @Test(expected = Exception::class)
