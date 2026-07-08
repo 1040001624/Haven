@@ -1,0 +1,3 @@
+🔎 dump_haven_ui (the assistant screen-reader tool) worked only in debug builds — release builds returned "No Compose view in the foreground window" because R8 renamed the classes it reflects on. Fixed, with a CI guard against regression.
+
+👁️ dump_haven_ui now reads approval sheets and dialogs, not just the main screen (#355) — the consent/pairing sheet is a separate window that was previously invisible. Read-only: an assistant can see it but cannot tap it; approval stays with you.

@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.25
+
+🔎 **The AI-assistant screen-reader tool worked only in debug builds — now it works in the shipped app** — `dump_haven_ui`, which lets a paired assistant read Haven's on-screen controls, returned "No Compose view in the foreground window" in every release build (the code optimiser renamed the classes it looks for). It never worked for anyone running a real build. Fixed, with a CI guard so it can't silently break again.
+
+👁️ **An assistant can now see approval sheets and dialogs, not just the main screen** (#355) — the consent/pairing sheet renders in its own window that the screen-reader tool couldn't see, so the app's most safety-critical prompt was invisible to an assistant (it could be waiting on your approval without being able to tell you what for). It's now readable, tagged by which window it belongs to. Strictly read-only: an assistant can see the sheet but cannot tap it — approval stays with you, on the device.
+
 ## v5.68.24
 
 📁 **Uploading a folder with sub-folders to an SMB share now works** (#273) — v5.68.23 fixed this for SFTP and missed the identical bug in the SMB path, where the first file inside a sub-folder failed because its parent directory was never created. (Local and cloud/rclone destinations were never affected.)
