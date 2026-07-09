@@ -85,12 +85,15 @@ private data class UnifiedSession(
     override val label: String,
     override val status: SessionStatus,
     override val transport: Transport,
+    override val sessionName: String? = null,
 ) : Session
 
 private fun mapStatus(name: String): SessionStatus = SessionStatus.valueOf(name)
 
+// Only SSH carries a session-manager (tmux/zellij/screen) name; other
+// transports have no equivalent, so their sessionName stays null.
 private fun SshSessionManager.SessionState.toSession() =
-    UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.SSH)
+    UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.SSH, chosenSessionName)
 
 private fun MoshSessionManager.SessionState.toSession() =
     UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.MOSH)

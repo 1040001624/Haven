@@ -54,7 +54,7 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         AgeIdentityEntity::class,
         SshIdentity::class,
     ],
-    version = 75,
+    version = 76,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -1229,6 +1229,14 @@ abstract class HavenDatabase : RoomDatabase() {
                 )
                 addColumnIfMissing(db, "connection_profiles", "identityId", "TEXT")
                 addColumnIfMissing(db, "connection_groups", "identityId", "TEXT")
+            }
+        }
+
+        // Workspace terminal items remember their tmux/zellij/screen session so
+        // restore reattaches by name instead of prompting (#360 follow-up).
+        val MIGRATION_75_76 = object : Migration(75, 76) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "workspace_item", "sessionName", "TEXT")
             }
         }
 

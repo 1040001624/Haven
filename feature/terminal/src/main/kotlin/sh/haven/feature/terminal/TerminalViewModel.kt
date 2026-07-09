@@ -462,8 +462,10 @@ class TerminalViewModel @Inject constructor(
                                     // no-ops if none is up. The workspace
                                     // launcher now dials cold profiles itself
                                     // (ConnectProfile) before emitting this, so
-                                    // it only reaches here once connected.
-                                    addSshTabForProfile(profile.id)
+                                    // it only reaches here once connected. A
+                                    // sessionName reattaches the tab to that
+                                    // tmux/zellij session, skipping the picker.
+                                    addSshTabForProfile(profile.id, command.sessionName)
                                 else -> {
                                     _newTabMessage.value =
                                         "${profile.label}: ${profile.connectionType} doesn't support new tabs from a workspace yet"
@@ -1999,7 +2001,7 @@ class TerminalViewModel @Inject constructor(
      * Called from [addTab] (clone current tab) and from the Connections screen
      * "New Session" context menu item.
      */
-    fun addSshTabForProfile(profileId: String) {
+    fun addSshTabForProfile(profileId: String, preselectedSessionName: String? = null) {
         val configPair = sessionManager.getConnectionConfigForProfile(profileId)
         if (configPair == null) {
             Log.w(TAG, "addSshTabForProfile: no connection config for profile $profileId")
@@ -2091,8 +2093,16 @@ class TerminalViewModel @Inject constructor(
                     }
                 }
 
+                // Restore path: attach straight to the saved session and skip the
+                // picker (mirrors ConnectionsViewModel.connectSsh's preselected
+                // branch). tmux/zellij "new-session -A -s <name>" attaches if it
+                // exists and creates it otherwise.
+                if (preselectedSessionName != null) {
+                    sessionManager.setChosenSessionName(sessionId, preselectedSessionName)
+                }
+
                 val listCmd = sshSessionMgr.listCommand
-                if (listCmd != null) {
+                if (preselectedSessionName == null && listCmd != null) {
                     val existingSessions = withContext(Dispatchers.IO) {
                         try {
                             val result = client.execCommand(listCmd)

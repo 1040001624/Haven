@@ -211,12 +211,14 @@ class WorkspaceViewModelTest {
         profileId: String,
         transport: Transport,
         status: SessionStatus,
+        sessionName: String? = null,
     ): Session = object : Session {
         override val sessionId = id
         override val profileId = profileId
         override val label = "$transport label"
         override val status = status
         override val transport = transport
+        override val sessionName = sessionName
     }
 
     private fun terminalItem(workspaceId: String, profileId: String) = WorkspaceItem(

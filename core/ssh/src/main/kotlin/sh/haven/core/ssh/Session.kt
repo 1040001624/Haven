@@ -13,6 +13,14 @@ interface Session {
     val label: String
     val status: SessionStatus
     val transport: Transport
+
+    /**
+     * The session-manager (tmux/zellij/screen) session this tab is attached
+     * to, or null for a plain shell / a transport without one. Captured into a
+     * workspace item so restore can reattach to the same session by name
+     * instead of prompting.
+     */
+    val sessionName: String?
 }
 
 enum class SessionStatus { CONNECTING, CONNECTED, RECONNECTING, DISCONNECTED, ERROR }

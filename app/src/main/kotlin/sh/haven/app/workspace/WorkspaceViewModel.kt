@@ -132,6 +132,9 @@ class WorkspaceViewModel @Inject constructor(
                     workspaceId = workspaceId,
                     kind = kind,
                     connectionProfileId = session.profileId,
+                    // Remember the tmux/zellij session (terminals only) so restore
+                    // reattaches to it by name rather than showing the picker.
+                    sessionName = if (kind == WorkspaceItem.Kind.TERMINAL) session.sessionName else null,
                     sortOrder = index,
                 )
             }

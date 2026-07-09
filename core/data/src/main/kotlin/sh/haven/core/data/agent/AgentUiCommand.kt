@@ -83,6 +83,12 @@ sealed class AgentUiCommand {
      */
     data class OpenTerminalSession(
         val profileId: String,
+        /**
+         * When non-null, the tab attaches directly to this session-manager
+         * (tmux/zellij/screen) session and skips the interactive picker — used
+         * by the workspace launcher to restore each tab to its saved session.
+         */
+        val sessionName: String? = null,
     ) : AgentUiCommand()
 
     /**

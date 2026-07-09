@@ -42,6 +42,13 @@ data class WorkspaceItem(
     val connectionProfileId: String? = null,
     /** Starting path for [Kind.FILE_BROWSER]; ignored otherwise. */
     val path: String? = null,
+    /**
+     * For [Kind.TERMINAL]: the session-manager (tmux/zellij/screen) session
+     * this tab was attached to when the workspace was saved. On restore the
+     * launcher reattaches to it by name so the tab comes back to the same
+     * session without the interactive picker. Null = plain shell / no manager.
+     */
+    val sessionName: String? = null,
     val sortOrder: Int = 0,
 ) {
     /**

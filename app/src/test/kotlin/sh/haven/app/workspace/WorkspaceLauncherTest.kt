@@ -262,8 +262,8 @@ class WorkspaceLauncherTest {
         val sshProfile = profile("ssh-1", connectionType = "SSH")
         val ws = WorkspaceProfile(id = "ws-1", name = "Work")
         val items = listOf(
-            item("ws-1", "term-a", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 0),
-            item("ws-1", "term-b", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 1),
+            item("ws-1", "term-a", WorkspaceItem.Kind.TERMINAL, "ssh-1", sessionName = "cctv", sortOrder = 0),
+            item("ws-1", "term-b", WorkspaceItem.Kind.TERMINAL, "ssh-1", sessionName = "civic", sortOrder = 1),
         )
 
         val workspaceRepo = mockk<WorkspaceRepository>()
@@ -296,6 +296,10 @@ class WorkspaceLauncherTest {
         assertEquals(2, emitted.size)
         assertTrue("first item should dial", emitted[0] is AgentUiCommand.ConnectProfile)
         assertTrue("second item should reuse", emitted[1] is AgentUiCommand.OpenTerminalSession)
+        // Each command carries its saved tmux session so restore reattaches by
+        // name instead of prompting.
+        assertEquals("cctv", (emitted[0] as AgentUiCommand.ConnectProfile).sessionName)
+        assertEquals("civic", (emitted[1] as AgentUiCommand.OpenTerminalSession).sessionName)
         val state = launcher.state.value as WorkspaceLaunchState.Completed
         assertTrue("both items succeed", state.items.all { it.status == ItemProgress.Status.Succeeded })
     }
@@ -306,6 +310,7 @@ class WorkspaceLauncherTest {
         kind: WorkspaceItem.Kind,
         connectionProfileId: String?,
         path: String? = null,
+        sessionName: String? = null,
         sortOrder: Int = 0,
     ) = WorkspaceItem(
         id = id,
@@ -313,6 +318,7 @@ class WorkspaceLauncherTest {
         kind = kind,
         connectionProfileId = connectionProfileId,
         path = path,
+        sessionName = sessionName,
         sortOrder = sortOrder,
     )
 

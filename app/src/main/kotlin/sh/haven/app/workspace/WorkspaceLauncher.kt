@@ -196,7 +196,10 @@ class WorkspaceLauncher @Inject constructor(
                         return DispatchOutcome(false, "connection unavailable")
                     }
                     dialed += profile.id
-                    if (!agentUiCommandBus.emit(AgentUiCommand.ConnectProfile(profile.id))) {
+                    // Dial with the saved session name so the first tab attaches
+                    // straight to its tmux/zellij session (ConnectProfile threads
+                    // it through as preselectedSessionName, skipping the picker).
+                    if (!agentUiCommandBus.emit(AgentUiCommand.ConnectProfile(profile.id, sessionName = item.sessionName))) {
                         return DispatchOutcome(false, "ui bus overflow")
                     }
                     return if (awaitProfileConnected(profile.id, CONNECT_TIMEOUT_MS)) {
@@ -205,7 +208,9 @@ class WorkspaceLauncher @Inject constructor(
                         DispatchOutcome(false, "connection did not come up")
                     }
                 }
-                AgentUiCommand.OpenTerminalSession(profile.id)
+                // Reuse the live connection for a further tab, reattaching to the
+                // saved session by name so it too skips the picker.
+                AgentUiCommand.OpenTerminalSession(profile.id, sessionName = item.sessionName)
             }
             WorkspaceItem.Kind.FILE_BROWSER -> {
                 val profile = item.connectionProfileId?.let { connectionRepository.getById(it) }
