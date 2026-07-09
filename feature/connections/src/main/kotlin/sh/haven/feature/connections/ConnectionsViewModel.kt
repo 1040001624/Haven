@@ -123,6 +123,7 @@ class ConnectionsViewModel @Inject constructor(
     private val sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository,
     private val portForwardRepository: PortForwardRepository,
     private val sshSessionManager: SshSessionManager,
+    private val sshSessionAttacher: sh.haven.core.ssh.SshSessionAttacher,
     private val reticulumSessionManager: ReticulumSessionManager,
     private val moshSessionManager: MoshSessionManager,
     private val etSessionManager: EtSessionManager,
@@ -1224,29 +1225,6 @@ class ConnectionsViewModel @Inject constructor(
             }
             if (sequence != null) {
                 recordKnockResult(verboseLogger, sequence, portKnocker.knock(profile.host, sequence))
-            }
-        }
-    }
-
-    /** Synchronous variant for `connectBlocking` reconnect paths. */
-    private fun buildKnockHookBlocking(
-        profile: ConnectionProfile,
-        verboseLogger: SshVerboseLogger?,
-    ): (() -> Unit)? {
-        val spa = parseSpaConfig(profile)
-        val sequence = KnockSequence.parse(
-            profile.portKnockSequence,
-            delayMs = profile.portKnockDelayMs,
-        ).getOrNull()
-        if (spa == null && sequence == null) return null
-        return {
-            kotlinx.coroutines.runBlocking {
-                if (spa != null) {
-                    recordSpaResult(verboseLogger, spa, spaSender.send(profile.host, spa))
-                }
-                if (sequence != null) {
-                    recordKnockResult(verboseLogger, sequence, portKnocker.knock(profile.host, sequence))
-                }
             }
         }
     }
@@ -3165,7 +3143,10 @@ class ConnectionsViewModel @Inject constructor(
     /**
      * Restore multiple previous sessions by opening one tab per session name.
      * The first session uses the existing SSH connection; additional sessions
-     * open new SSH connections to the same host.
+     * ride the same connection as extra shell channels via
+     * [sh.haven.core.ssh.SshSessionAttacher] — one SSH connection carrying
+     * several multiplexer sessions, the same model as a manual new tab —
+     * instead of dialing (and re-authenticating) once per name.
      */
     fun restorePreviousSessions(sessionId: String, sessionNames: List<String>) {
         val sel = _sessionSelection.value
@@ -3181,34 +3162,21 @@ class ConnectionsViewModel @Inject constructor(
                 sshSessionManager.setChosenSessionName(sessionId, sessionNames.first())
                 anyReady = finishConnect(sessionId, profileId, silent = true) || anyReady
 
-                // Additional sessions need new SSH connections
+                // A failed name doesn't abort the rest — restore what we can
+                // and report the last failure.
+                var lastFailure: String? = null
                 for (name in sessionNames.drop(1)) {
-                    val profile = repository.getById(profileId) ?: break
-                    val password = profile.sshPassword ?: ""
-                    // Reuse the stored connection config from the first session
-                    val configPair = sshSessionManager.getConnectionConfigForProfile(profileId) ?: break
-                    val (config, _) = configPair
-                    val totpProvider = buildTotpCodeProvider(profile)
-                    val newClient = withContext(Dispatchers.IO) {
-                        SshClient().apply {
-                            connectBlocking(
-                                config,
-                                keyboardInteractivePrompter = keyboardInteractivePrompter,
-                                totpCodeProvider = totpProvider,
-                                confirmOtp = profile.totpConfirmBeforeSend,
-                                preConnect = buildKnockHookBlocking(profile, verboseLogger = null),
-                            )
-                        }
+                    when (val r = sshSessionAttacher.ensureAttached(profileId, name)) {
+                        is sh.haven.core.ssh.SshSessionAttacher.Result.Attached,
+                        is sh.haven.core.ssh.SshSessionAttacher.Result.AlreadyLive,
+                        -> anyReady = true
+                        is sh.haven.core.ssh.SshSessionAttacher.Result.NoLiveConnection ->
+                            lastFailure = "connection is not up"
+                        is sh.haven.core.ssh.SshSessionAttacher.Result.Failed ->
+                            lastFailure = r.message
                     }
-                    val newSessionId = sshSessionManager.registerSession(profileId, profile.label, newClient)
-                    val manager = sel.manager
-                    val cmdOverride = withContext(Dispatchers.IO) {
-                        preferencesRepository.sessionCommandOverride.first()
-                    }
-                    sshSessionManager.storeConnectionConfig(newSessionId, config, manager, cmdOverride, profile.postLoginCommand)
-                    sshSessionManager.setChosenSessionName(newSessionId, name)
-                    anyReady = finishConnect(newSessionId, profileId, silent = true) || anyReady
                 }
+                lastFailure?.let { _error.value = "Restore failed: $it" }
                 // Navigate only if at least one session reached a live terminal
                 // (a host with no session manager closes the shell immediately).
                 if (anyReady) _navigateToTerminal.value = profileId

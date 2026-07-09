@@ -284,6 +284,7 @@ data class VncInfo(
 class TerminalViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
     private val sessionManager: SshSessionManager,
+    private val sshSessionAttacher: sh.haven.core.ssh.SshSessionAttacher,
     private val reticulumSessionManager: ReticulumSessionManager,
     private val moshSessionManager: MoshSessionManager,
     private val etSessionManager: EtSessionManager,
@@ -2016,6 +2017,31 @@ class TerminalViewModel @Inject constructor(
 
         viewModelScope.launch {
             _newTabLoading.value = true
+            // Named-reattach path (workspace restore / OpenTerminalSession with
+            // a session name): the shared SshSessionAttacher rides the live
+            // connection and is idempotent — relaunching a workspace reselects
+            // the existing tab instead of duplicating it. NoLiveConnection
+            // falls through to the fresh-dial path below.
+            if (preselectedSessionName != null) {
+                val attach = sshSessionAttacher.ensureAttached(profileId, preselectedSessionName)
+                val attachedId = when (attach) {
+                    is sh.haven.core.ssh.SshSessionAttacher.Result.Attached -> attach.sessionId
+                    is sh.haven.core.ssh.SshSessionAttacher.Result.AlreadyLive -> attach.sessionId
+                    else -> null
+                }
+                if (attachedId != null) {
+                    syncSessions()
+                    selectTabBySessionId(attachedId)
+                    _newTabLoading.value = false
+                    return@launch
+                }
+                if (attach is sh.haven.core.ssh.SshSessionAttacher.Result.Failed) {
+                    _newTabMessage.value =
+                        appContext.getString(R.string.terminal_new_tab_connection_failed, attach.message)
+                    _newTabLoading.value = false
+                    return@launch
+                }
+            }
             // Reuse a live SSH connection to this profile instead of dialing a
             // second flow — a 2nd dial over a WireGuard/Tailscale tunnel can't be
             // serviced by some peers (a FRITZ!Box drops the 2nd concurrent WG→LAN

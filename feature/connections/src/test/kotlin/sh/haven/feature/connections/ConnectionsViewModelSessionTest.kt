@@ -132,6 +132,7 @@ class ConnectionsViewModelSessionTest {
             repository = repository,
             portForwardRepository = portForwardRepository,
             sshSessionManager = sshSessionManager,
+            sshSessionAttacher = mockk(relaxed = true),
             reticulumSessionManager = reticulumSessionManager,
             moshSessionManager = moshSessionManager,
             etSessionManager = etSessionManager,

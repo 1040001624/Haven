@@ -47,6 +47,7 @@ class TerminalViewModelTest {
         viewModel = TerminalViewModel(
             mockk(relaxed = true),
             sessionManager,
+            mockk(relaxed = true), // SshSessionAttacher
             reticulumSessionManager,
             moshSessionManager,
             etSessionManager,
