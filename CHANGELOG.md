@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.29
+
+📟 **New: "Agent log" button on the ongoing notification** (#239) — while the agent (MCP) endpoint is running, the persistent notification carries an **Agent log** action that jumps straight to the Agent Activity screen, including from a cold start or from behind the biometric lock. The expanded notification also now lists each session on its own line, so the MCP status line (`running <tool>…` / last error) is no longer truncated behind other connection names.
+
 ## v5.68.28
 
 🖥️ **Fixed: tmux session manager failed on hosts addressed by IP** (#358) — sessions are auto-named after `user@host`, so an IP host produced a name like `user-10.0.0.5`; tmux treats `.` and `:` as pane separators and refused to attach, and the connection closed with the misleading *"Shell closed — is your session manager installed on this host?"* error. Dots and colons in session names are now replaced with dashes (`user-10-0-0-5`). Thanks @Panthaaaa for the precise diagnosis.

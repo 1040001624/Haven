@@ -1,0 +1,1 @@
+📟 New: "Agent log" button on the ongoing notification (#239) — jumps straight to the Agent Activity screen while the agent endpoint is running. The expanded notification lists each session on its own line, so the MCP status line (running tool / last error) is no longer truncated.
