@@ -193,6 +193,22 @@
     <string name="keys_age_label_hint">Label</string>
     <string name="keys_age_recipient_copied">Recipient copied</string>
 
+    <!-- Reusable SSH identities (#360) -->
+    <string name="keys_identity_section_header">Identities · %1$d</string>
+    <string name="keys_identity_add">Add identity</string>
+    <string name="keys_identity_add_hint">A reusable username, password and key for many hosts</string>
+    <string name="keys_identity_add_title">New identity</string>
+    <string name="keys_identity_edit_title">Edit identity</string>
+    <string name="keys_identity_name_label">Name</string>
+    <string name="keys_identity_username_label">Username</string>
+    <string name="keys_identity_password_label">Password (optional)</string>
+    <string name="keys_identity_password_keep_label">Password (leave blank to keep)</string>
+    <string name="keys_identity_clear_password">Remove the saved password</string>
+    <string name="keys_identity_key_label">Key: %1$s</string>
+    <string name="keys_identity_key_none">None</string>
+    <string name="keys_identity_no_username">No username</string>
+    <string name="keys_identity_has_password">password</string>
+
     <!-- FIDO2 touch / PIN dialog (mirrors connections_fido_* — used during discover) -->
     <string name="keys_fido_pin_title">Security key PIN</string>
     <string name="keys_fido_pin_label">PIN</string>

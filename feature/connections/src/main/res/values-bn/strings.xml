@@ -294,6 +294,12 @@
     <string name="connections_scan_network">নেটওয়ার্ক স্ক্যান করুন</string>
     <string name="connections_scanning">স্ক্যান করা হচ্ছে</string>
     <string name="connections_field_group">গ্রুপ</string>
+    <string name="connections_field_identity">পরিচয়</string>
+    <string name="connections_identity_inherit">গ্রুপ থেকে উত্তরাধিকার</string>
+    <string name="connections_identity_own">এই সংযোগের নিজস্ব ক্রেডেনশিয়াল</string>
+    <string name="connections_identity_hint">পরিচয় সংযোগের সময় ইউজারনেম, পাসওয়ার্ড ও কী সরবরাহ করে। পরিচয় কী ট্যাবে পরিচালনা করুন।</string>
+    <string name="connections_menu_group_identity">পরিচয় সেট করুন</string>
+    <string name="connections_group_identity_title">"%1$s"-এর পরিচয়</string>
     <string name="connections_field_provider">প্রদানকারী</string>
     <string name="connections_field_tunnel_through_ssh">SSH-এর মাধ্যমে টানেল</string>
     <string name="connections_field_ssh_connection">SSH সংযোগ</string>

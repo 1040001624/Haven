@@ -206,4 +206,18 @@
     <string name="keys_generate_age_title">새 age ID</string>
     <string name="keys_age_label_hint">라벨</string>
     <string name="keys_age_recipient_copied">수신자 복사됨</string>
+    <string name="keys_identity_section_header">ID · %1$d</string>
+    <string name="keys_identity_add">ID 추가</string>
+    <string name="keys_identity_add_hint">여러 호스트에서 재사용할 수 있는 사용자 이름, 비밀번호, 키</string>
+    <string name="keys_identity_add_title">새 ID</string>
+    <string name="keys_identity_edit_title">ID 편집</string>
+    <string name="keys_identity_name_label">이름</string>
+    <string name="keys_identity_username_label">사용자 이름</string>
+    <string name="keys_identity_password_label">비밀번호(선택 사항)</string>
+    <string name="keys_identity_password_keep_label">비밀번호(유지하려면 비워 두세요)</string>
+    <string name="keys_identity_clear_password">저장된 비밀번호 제거</string>
+    <string name="keys_identity_key_label">키: %1$s</string>
+    <string name="keys_identity_key_none">없음</string>
+    <string name="keys_identity_no_username">사용자 이름 없음</string>
+    <string name="keys_identity_has_password">비밀번호</string>
 </resources>

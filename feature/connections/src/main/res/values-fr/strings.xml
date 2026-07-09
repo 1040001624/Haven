@@ -294,6 +294,12 @@
     <string name="connections_scan_network">Analyser le réseau</string>
     <string name="connections_scanning">Analyse en cours</string>
     <string name="connections_field_group">Groupe</string>
+    <string name="connections_field_identity">Identité</string>
+    <string name="connections_identity_inherit">Hériter du groupe</string>
+    <string name="connections_identity_own">Identifiants propres à cette connexion</string>
+    <string name="connections_identity_hint">Une identité fournit le nom d’utilisateur, le mot de passe et la clé au moment de la connexion. Gérez les identités dans l’onglet Clés.</string>
+    <string name="connections_menu_group_identity">Définir l’identité</string>
+    <string name="connections_group_identity_title">Identité pour « %1$s »</string>
     <string name="connections_field_provider">Fournisseur</string>
     <string name="connections_field_tunnel_through_ssh">Tunnel via SSH</string>
     <string name="connections_field_ssh_connection">Connexion SSH</string>

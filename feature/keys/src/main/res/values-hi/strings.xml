@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">नई age पहचान</string>
     <string name="keys_age_label_hint">लेबल</string>
     <string name="keys_age_recipient_copied">प्राप्तकर्ता कॉपी हो गया</string>
+    <string name="keys_identity_section_header">पहचानें · %1$d</string>
+    <string name="keys_identity_add">पहचान जोड़ें</string>
+    <string name="keys_identity_add_hint">कई होस्ट के लिए पुन: उपयोग योग्य उपयोगकर्ता नाम, पासवर्ड और कुंजी</string>
+    <string name="keys_identity_add_title">नई पहचान</string>
+    <string name="keys_identity_edit_title">पहचान संपादित करें</string>
+    <string name="keys_identity_name_label">नाम</string>
+    <string name="keys_identity_username_label">उपयोगकर्ता नाम</string>
+    <string name="keys_identity_password_label">पासवर्ड (वैकल्पिक)</string>
+    <string name="keys_identity_password_keep_label">पासवर्ड (बनाए रखने के लिए खाली छोड़ें)</string>
+    <string name="keys_identity_clear_password">सहेजा गया पासवर्ड हटाएँ</string>
+    <string name="keys_identity_key_label">कुंजी: %1$s</string>
+    <string name="keys_identity_key_none">कोई नहीं</string>
+    <string name="keys_identity_no_username">कोई उपयोगकर्ता नाम नहीं</string>
+    <string name="keys_identity_has_password">पासवर्ड</string>
 </resources>

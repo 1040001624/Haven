@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">Новый идентификатор age</string>
     <string name="keys_age_label_hint">Метка</string>
     <string name="keys_age_recipient_copied">Получатель скопирован</string>
+    <string name="keys_identity_section_header">Идентификаторы · %1$d</string>
+    <string name="keys_identity_add">Добавить идентификатор</string>
+    <string name="keys_identity_add_hint">Имя пользователя, пароль и ключ для повторного использования на многих хостах</string>
+    <string name="keys_identity_add_title">Новый идентификатор</string>
+    <string name="keys_identity_edit_title">Изменить идентификатор</string>
+    <string name="keys_identity_name_label">Название</string>
+    <string name="keys_identity_username_label">Имя пользователя</string>
+    <string name="keys_identity_password_label">Пароль (необязательно)</string>
+    <string name="keys_identity_password_keep_label">Пароль (оставьте пустым, чтобы не менять)</string>
+    <string name="keys_identity_clear_password">Удалить сохранённый пароль</string>
+    <string name="keys_identity_key_label">Ключ: %1$s</string>
+    <string name="keys_identity_key_none">Нет</string>
+    <string name="keys_identity_no_username">Без имени пользователя</string>
+    <string name="keys_identity_has_password">пароль</string>
 </resources>

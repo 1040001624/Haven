@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
@@ -171,6 +172,7 @@ fun ConnectionsScreen(
     val connections by viewModel.connections.collectAsState()
     val groups by viewModel.groups.collectAsState()
     val sshKeys by viewModel.sshKeys.collectAsState()
+    val identities by viewModel.identities.collectAsState()
     val totpSecrets by viewModel.totpSecrets.collectAsState()
     val tunnelConfigs by viewModel.tunnelConfigs.collectAsState()
     // Installed distros for a LOCAL profile's "open in" picker. Snapshotted
@@ -473,6 +475,7 @@ fun ConnectionsScreen(
             discoveredSmbHosts = discoveredSmbHosts,
             sshProfiles = connections,
             groups = groups,
+            identities = identities,
             sshKeys = sshKeys,
             totpSecrets = totpSecrets,
             tunnelConfigs = tunnelConfigs,
@@ -645,6 +648,7 @@ fun ConnectionsScreen(
             discoveredSmbHosts = discoveredSmbHosts,
             sshProfiles = connections,
             groups = groups,
+            identities = identities,
             sshKeys = sshKeys,
             totpSecrets = totpSecrets,
             tunnelConfigs = tunnelConfigs,
@@ -1251,9 +1255,11 @@ fun ConnectionsScreen(
                                     launchProgress = groupLaunchState?.takeIf { it.groupId == group.id }?.let {
                                         "${it.succeeded}/${it.total}"
                                     },
+                                    identities = identities,
                                     onToggleCollapsed = { viewModel.toggleGroupCollapsed(group.id) },
                                     onRename = { newLabel -> viewModel.renameGroup(group.id, newLabel) },
                                     onDelete = { viewModel.deleteGroup(group.id) },
+                                    onSetIdentity = { id -> viewModel.setGroupIdentity(group.id, id) },
                                     onLaunchGroup = { viewModel.launchGroup(group.id) },
                                 )
                             }
@@ -2025,13 +2031,16 @@ private fun ConnectionGroupHeader(
     connectionCount: Int,
     isLaunching: Boolean = false,
     launchProgress: String? = null,
+    identities: List<sh.haven.core.data.db.entities.SshIdentity> = emptyList(),
     onToggleCollapsed: () -> Unit,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
+    onSetIdentity: (String?) -> Unit = {},
     onLaunchGroup: () -> Unit = {},
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showIdentityDialog by remember { mutableStateOf(false) }
 
     if (showRenameDialog) {
         RenameDialog(
@@ -2040,6 +2049,19 @@ private fun ConnectionGroupHeader(
             onRename = { newLabel ->
                 onRename(newLabel)
                 showRenameDialog = false
+            },
+        )
+    }
+
+    if (showIdentityDialog) {
+        GroupIdentityDialog(
+            groupLabel = group.label,
+            identities = identities,
+            selectedId = group.identityId,
+            onDismiss = { showIdentityDialog = false },
+            onSelect = { id ->
+                onSetIdentity(id)
+                showIdentityDialog = false
             },
         )
     }
@@ -2118,6 +2140,13 @@ private fun ConnectionGroupHeader(
                 leadingIcon = { Icon(Icons.Filled.DriveFileRenameOutline, null) },
                 onClick = { showMenu = false; showRenameDialog = true },
             )
+            if (identities.isNotEmpty()) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.connections_menu_group_identity)) },
+                    leadingIcon = { Icon(Icons.Filled.Badge, null) },
+                    onClick = { showMenu = false; showIdentityDialog = true },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.connections_menu_delete_group)) },
                 leadingIcon = { Icon(Icons.Filled.Delete, null) },
@@ -2126,4 +2155,47 @@ private fun ConnectionGroupHeader(
         }
     }
     HorizontalDivider()
+}
+
+/**
+ * Pick the default [SshIdentity] for a group (#360) — a member connection
+ * inherits it unless it sets its own. "None" clears the group default.
+ */
+@Composable
+private fun GroupIdentityDialog(
+    groupLabel: String,
+    identities: List<sh.haven.core.data.db.entities.SshIdentity>,
+    selectedId: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.connections_group_identity_title, groupLabel)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                androidx.compose.material3.ListItem(
+                    modifier = Modifier.clickable { onSelect(null) },
+                    headlineContent = { Text(stringResource(R.string.connections_dropdown_none)) },
+                    trailingContent = if (selectedId == null) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else null,
+                )
+                identities.forEach { ident ->
+                    androidx.compose.material3.ListItem(
+                        modifier = Modifier.clickable { onSelect(ident.id) },
+                        headlineContent = { Text(ident.name) },
+                        supportingContent = { Text(ident.username, style = MaterialTheme.typography.bodySmall) },
+                        trailingContent = if (selectedId == ident.id) {
+                            { Icon(Icons.Filled.Check, contentDescription = null) }
+                        } else null,
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
+        },
+    )
 }

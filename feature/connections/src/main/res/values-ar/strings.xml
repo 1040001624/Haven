@@ -294,6 +294,12 @@
     <string name="connections_scan_network">فحص الشبكة</string>
     <string name="connections_scanning">جارٍ الفحص</string>
     <string name="connections_field_group">المجموعة</string>
+    <string name="connections_field_identity">الهوية</string>
+    <string name="connections_identity_inherit">الوراثة من المجموعة</string>
+    <string name="connections_identity_own">بيانات اعتماد هذا الاتصال الخاصة</string>
+    <string name="connections_identity_hint">توفّر الهوية اسم المستخدم وكلمة المرور والمفتاح عند الاتصال. تُدار الهويات من تبويب المفاتيح.</string>
+    <string name="connections_menu_group_identity">تعيين الهوية</string>
+    <string name="connections_group_identity_title">هوية "%1$s"</string>
     <string name="connections_field_provider">المزوّد</string>
     <string name="connections_field_tunnel_through_ssh">نفق عبر SSH</string>
     <string name="connections_field_ssh_connection">اتصال SSH</string>

@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">新しい age アイデンティティ</string>
     <string name="keys_age_label_hint">ラベル</string>
     <string name="keys_age_recipient_copied">受信者をコピーしました</string>
+    <string name="keys_identity_section_header">アイデンティティ · %1$d</string>
+    <string name="keys_identity_add">アイデンティティを追加</string>
+    <string name="keys_identity_add_hint">多数のホストで再利用できるユーザー名・パスワード・鍵</string>
+    <string name="keys_identity_add_title">新しいアイデンティティ</string>
+    <string name="keys_identity_edit_title">アイデンティティを編集</string>
+    <string name="keys_identity_name_label">名前</string>
+    <string name="keys_identity_username_label">ユーザー名</string>
+    <string name="keys_identity_password_label">パスワード（任意）</string>
+    <string name="keys_identity_password_keep_label">パスワード（変更しない場合は空欄）</string>
+    <string name="keys_identity_clear_password">保存済みパスワードを削除</string>
+    <string name="keys_identity_key_label">鍵: %1$s</string>
+    <string name="keys_identity_key_none">なし</string>
+    <string name="keys_identity_no_username">ユーザー名なし</string>
+    <string name="keys_identity_has_password">パスワード</string>
 </resources>

@@ -11,4 +11,11 @@ data class ConnectionGroup(
     val colorTag: Int = 0,
     val sortOrder: Int = 0,
     val collapsed: Boolean = false,
+    /**
+     * Default [SshIdentity] for connections in this group (#360). A member
+     * connection uses it unless it sets its own
+     * `ConnectionProfile.identityId` (including the explicit
+     * [SshIdentity.NONE_ID] opt-out). Null = no group identity.
+     */
+    val identityId: String? = null,
 )

@@ -294,6 +294,12 @@
     <string name="connections_scan_network">Escanear rede</string>
     <string name="connections_scanning">Escaneando</string>
     <string name="connections_field_group">Grupo</string>
+    <string name="connections_field_identity">Identidade</string>
+    <string name="connections_identity_inherit">Herdar do grupo</string>
+    <string name="connections_identity_own">Credenciais próprias desta conexão</string>
+    <string name="connections_identity_hint">Uma identidade fornece o usuário, a senha e a chave ao conectar. Gerencie identidades na aba Chaves.</string>
+    <string name="connections_menu_group_identity">Definir identidade</string>
+    <string name="connections_group_identity_title">Identidade para "%1$s"</string>
     <string name="connections_field_provider">Provedor</string>
     <string name="connections_field_tunnel_through_ssh">Túnel através de SSH</string>
     <string name="connections_field_ssh_connection">Conexão SSH</string>

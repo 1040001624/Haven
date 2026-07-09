@@ -294,6 +294,12 @@
     <string name="connections_scan_network">Сканировать сеть</string>
     <string name="connections_scanning">Сканирование</string>
     <string name="connections_field_group">Группа</string>
+    <string name="connections_field_identity">Идентификация</string>
+    <string name="connections_identity_inherit">Наследовать от группы</string>
+    <string name="connections_identity_own">Собственные учётные данные подключения</string>
+    <string name="connections_identity_hint">Идентификация подставляет имя пользователя, пароль и ключ при подключении. Управляйте идентификациями на вкладке «Ключи».</string>
+    <string name="connections_menu_group_identity">Задать идентификацию</string>
+    <string name="connections_group_identity_title">Идентификация для «%1$s»</string>
     <string name="connections_field_provider">Поставщик</string>
     <string name="connections_field_tunnel_through_ssh">Туннель через SSH</string>
     <string name="connections_field_ssh_connection">SSH-подключение</string>

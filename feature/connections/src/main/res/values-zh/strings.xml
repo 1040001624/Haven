@@ -156,6 +156,12 @@
     <string name="connections_scan_network">扫描网络</string>
     <string name="connections_scanning">扫描中</string>
     <string name="connections_field_group">分组</string>
+    <string name="connections_field_identity">身份</string>
+    <string name="connections_identity_inherit">从分组继承</string>
+    <string name="connections_identity_own">此连接自己的凭据</string>
+    <string name="connections_identity_hint">身份会在连接时提供用户名、密码和密钥。请在密钥标签页管理身份。</string>
+    <string name="connections_menu_group_identity">设置身份</string>
+    <string name="connections_group_identity_title">“%1$s”的身份</string>
     <string name="connections_field_provider">提供商</string>
     <string name="connections_field_tunnel_through_ssh">通过 SSH 隧道</string>
     <string name="connections_field_ssh_connection">SSH 连接</string>

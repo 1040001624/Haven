@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">নতুন age পরিচয়</string>
     <string name="keys_age_label_hint">লেবেল</string>
     <string name="keys_age_recipient_copied">প্রাপক কপি হয়েছে</string>
+    <string name="keys_identity_section_header">পরিচয় · %1$d</string>
+    <string name="keys_identity_add">পরিচয় যোগ করুন</string>
+    <string name="keys_identity_add_hint">অনেক হোস্টে পুনর্ব্যবহারযোগ্য ব্যবহারকারীর নাম, পাসওয়ার্ড ও কী</string>
+    <string name="keys_identity_add_title">নতুন পরিচয়</string>
+    <string name="keys_identity_edit_title">পরিচয় সম্পাদনা করুন</string>
+    <string name="keys_identity_name_label">নাম</string>
+    <string name="keys_identity_username_label">ব্যবহারকারীর নাম</string>
+    <string name="keys_identity_password_label">পাসওয়ার্ড (ঐচ্ছিক)</string>
+    <string name="keys_identity_password_keep_label">পাসওয়ার্ড (আগেরটি রাখতে ফাঁকা রাখুন)</string>
+    <string name="keys_identity_clear_password">সংরক্ষিত পাসওয়ার্ড মুছে ফেলুন</string>
+    <string name="keys_identity_key_label">কী: %1$s</string>
+    <string name="keys_identity_key_none">কোনোটি নয়</string>
+    <string name="keys_identity_no_username">কোনো ব্যবহারকারীর নাম নেই</string>
+    <string name="keys_identity_has_password">পাসওয়ার্ড</string>
 </resources>

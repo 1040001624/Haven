@@ -131,6 +131,7 @@ fun ConnectionEditDialog(
     discoveredSmbHosts: List<DiscoveredHost> = emptyList(),
     sshProfiles: List<ConnectionProfile> = emptyList(),
     groups: List<sh.haven.core.data.db.entities.ConnectionGroup> = emptyList(),
+    identities: List<sh.haven.core.data.db.entities.SshIdentity> = emptyList(),
     sshKeys: List<sh.haven.core.data.db.entities.SshKey> = emptyList(),
     totpSecrets: List<sh.haven.core.data.db.entities.TotpSecret> = emptyList(),
     tunnelConfigs: List<sh.haven.core.data.db.entities.TunnelConfig> = emptyList(),
@@ -221,6 +222,7 @@ fun ConnectionEditDialog(
     var label by rememberSaveable { mutableStateOf(existing?.label ?: "") }
     var colorTag by rememberSaveable { mutableIntStateOf(existing?.colorTag ?: 0) }
     var groupId by rememberSaveable { mutableStateOf(existing?.groupId) }
+    var identityId by rememberSaveable { mutableStateOf(existing?.identityId) }
     var host by rememberSaveable { mutableStateOf(seed?.host ?: "") }
     var port by rememberSaveable {
         mutableStateOf(
@@ -2808,6 +2810,65 @@ fun ConnectionEditDialog(
 
                     }
                     CollapsibleSection(stringResource(R.string.connections_section_authentication), secAuthExpanded, { secAuthExpanded = !secAuthExpanded }) {
+                    // Identity picker (#360): a reusable credential bundle
+                    // overrides the fields below at connect time. "Inherit"
+                    // (null) takes the group's identity when set; "This
+                    // connection's own credentials" (NONE_ID) opts out even
+                    // inside a group; picking one uses its username/password/key.
+                    if (identities.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        var identityExpanded by remember { mutableStateOf(false) }
+                        val selectedIdentity = identities.firstOrNull { it.id == identityId }
+                        val identityFieldValue = when {
+                            selectedIdentity != null -> selectedIdentity.name
+                            identityId == sh.haven.core.data.db.entities.SshIdentity.NONE_ID ->
+                                stringResource(R.string.connections_identity_own)
+                            else -> stringResource(R.string.connections_identity_inherit)
+                        }
+                        ExposedDropdownMenuBox(
+                            expanded = identityExpanded,
+                            onExpandedChange = { identityExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = identityFieldValue,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.connections_field_identity)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(identityExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = identityExpanded,
+                                onDismissRequest = { identityExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.connections_identity_inherit)) },
+                                    onClick = { identityId = null; identityExpanded = false },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.connections_identity_own)) },
+                                    onClick = {
+                                        identityId = sh.haven.core.data.db.entities.SshIdentity.NONE_ID
+                                        identityExpanded = false
+                                    },
+                                )
+                                identities.forEach { ident ->
+                                    DropdownMenuItem(
+                                        text = { Text(ident.name) },
+                                        onClick = { identityId = ident.id; identityExpanded = false },
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            stringResource(R.string.connections_identity_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
                     // Agent forwarding toggle (OpenSSH ForwardAgent)
                     Spacer(Modifier.height(4.dp))
                     BooleanToggleRow(
@@ -3275,6 +3336,7 @@ fun ConnectionEditDialog(
                             prootDistroId = if (useAndroidShell) null else prootDistroId,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                         )
                     } else if (connectionType == "VNC") {
                         val vncPortInt = port.toIntOrNull() ?: 5900
@@ -3296,6 +3358,7 @@ fun ConnectionEditDialog(
                             vncColorDepth = vncColorDepth,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
                                 ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
@@ -3331,6 +3394,7 @@ fun ConnectionEditDialog(
                             rdpColorDepth = rdpColorDepth,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
                                 ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
@@ -3362,6 +3426,7 @@ fun ConnectionEditDialog(
                             spiceSshProfileId = if (spiceSshForward) spiceSshProfileId else null,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
                                 ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
@@ -3404,6 +3469,7 @@ fun ConnectionEditDialog(
                             rcloneProvider = rcloneProvider,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                         )
                     } else if (connectionType == "EMAIL") {
                         (existing ?: ConnectionProfile(
@@ -3434,6 +3500,7 @@ fun ConnectionEditDialog(
                             emailTls = emailTls,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             tunnelConfigId = tunnelConfigId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
@@ -3468,6 +3535,7 @@ fun ConnectionEditDialog(
                             smbSshProfileId = if (smbSshForward) smbSshProfileId else null,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
                                 ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
@@ -3565,6 +3633,7 @@ fun ConnectionEditDialog(
                             vncColorDepth = if (vncSettingsStored) vncColorDepth else "BPP_24_TRUE",
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                             portKnockSequence = portKnockSequence.ifBlank { null },
                             portKnockDelayMs = portKnockDelayMs.toIntOrNull()
                                 ?.coerceAtLeast(0) ?: KnockSequence.DEFAULT_DELAY_MS,
@@ -3601,6 +3670,7 @@ fun ConnectionEditDialog(
                             postLoginBeforeSessionManager = postLoginBeforeSessionManager,
                             colorTag = colorTag,
                             groupId = groupId,
+                            identityId = identityId,
                         )
                     }
                     // Embedded Cloudflare Tunnel transport input — only

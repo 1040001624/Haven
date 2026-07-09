@@ -52,9 +52,11 @@ import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,6 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -76,6 +79,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -133,6 +137,10 @@ fun KeysScreen(
     val stepCaConfigs by viewModel.stepCaConfigs.collectAsState()
     val totpSecrets by viewModel.totpSecrets.collectAsState()
     val ageIdentities by viewModel.ageIdentities.collectAsState()
+    val sshIdentities by viewModel.sshIdentities.collectAsState()
+    // Non-null while the identity editor is open: an existing row to edit, or
+    // a fresh blank row to create (#360).
+    var editingIdentity by remember { mutableStateOf<sh.haven.core.data.db.entities.SshIdentity?>(null) }
     // CA section ViewModel — separate hilt instance, shared with the
     // section composable inside the LazyColumn. (#133 phase 2b — CA
     // management moved out of Settings into the Keys tab.)
@@ -380,6 +388,20 @@ fun KeysScreen(
                     HorizontalDivider()
                 }
             }
+            if (sshIdentities.isNotEmpty()) {
+                item(key = "identity-header") {
+                    SectionHeader(stringResource(R.string.keys_identity_section_header, sshIdentities.size))
+                }
+                items(sshIdentities, key = { "identity-${it.id}" }) { ident ->
+                    SshIdentityRow(
+                        identity = ident,
+                        keyLabel = keys.firstOrNull { it.id == ident.keyId }?.label,
+                        onClick = { editingIdentity = ident },
+                        onDelete = { viewModel.deleteSshIdentity(ident.id) },
+                    )
+                    HorizontalDivider()
+                }
+            }
             item(key = "footer-spacer") { Spacer(Modifier.height(80.dp)) }
         }
     }
@@ -466,7 +488,25 @@ fun KeysScreen(
                 showAddKeyDialog = false
                 showGenerateAgeDialog = true
             },
+            onAddSshIdentity = {
+                showAddKeyDialog = false
+                editingIdentity = sh.haven.core.data.db.entities.SshIdentity(name = "", username = "")
+            },
             onDismiss = { showAddKeyDialog = false },
+        )
+    }
+
+    editingIdentity?.let { identity ->
+        SshIdentityDialog(
+            identity = identity,
+            sshKeys = keys,
+            onSave = { name, username, password, keyId ->
+                // identity.id is a fresh UUID for a new row or the existing
+                // one for an edit; upsertFromEditor resolves which by lookup.
+                viewModel.saveSshIdentity(identity.id, name, username, password, keyId)
+                editingIdentity = null
+            },
+            onDismiss = { editingIdentity = null },
         )
     }
 
@@ -656,6 +696,154 @@ private fun AgeIdentityRow(
     )
 }
 
+/**
+ * A reusable SSH identity (#360): name + username, with a password and/or
+ * SSH key. Tap to edit; the trailing button deletes. The password is never
+ * shown — only whether one is set.
+ */
+@Composable
+private fun SshIdentityRow(
+    identity: sh.haven.core.data.db.entities.SshIdentity,
+    keyLabel: String?,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val parts = buildList {
+        add(identity.username.ifBlank { stringResource(R.string.keys_identity_no_username) })
+        if (identity.password != null) add(stringResource(R.string.keys_identity_has_password))
+        keyLabel?.let { add(it) }
+    }
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = { Text(identity.name) },
+        supportingContent = {
+            Text(
+                parts.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingContent = { Icon(Icons.Filled.Badge, contentDescription = null) },
+        trailingContent = {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete))
+            }
+        },
+    )
+}
+
+/**
+ * Create/edit a reusable SSH identity (#360). On edit, the password field
+ * starts empty and is only written if the user types one — leaving it blank
+ * keeps the stored password (signalled by [onSave]'s null password arg); the
+ * "clear password" toggle removes it. Key is chosen from [sshKeys] or none.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SshIdentityDialog(
+    identity: sh.haven.core.data.db.entities.SshIdentity,
+    sshKeys: List<SshKey>,
+    onSave: (name: String, username: String, password: String?, keyId: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isEdit = identity.name.isNotEmpty()
+    var name by rememberSaveable { mutableStateOf(identity.name) }
+    var username by rememberSaveable { mutableStateOf(identity.username) }
+    var password by rememberSaveable { mutableStateOf("") }
+    // On edit, an existing password is retained unless the user clears it.
+    var clearPassword by rememberSaveable { mutableStateOf(false) }
+    var keyId by rememberSaveable { mutableStateOf(identity.keyId) }
+    var keyMenuOpen by remember { mutableStateOf(false) }
+    val hadPassword = identity.password != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (isEdit) R.string.keys_identity_edit_title else R.string.keys_identity_add_title,
+                ),
+            )
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.keys_identity_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text(stringResource(R.string.keys_identity_username_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                PasswordField(
+                    value = password,
+                    onValueChange = { password = it; if (it.isNotEmpty()) clearPassword = false },
+                    label = stringResource(
+                        if (hadPassword && !clearPassword) R.string.keys_identity_password_keep_label
+                        else R.string.keys_identity_password_label,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (hadPassword && password.isEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = clearPassword, onCheckedChange = { clearPassword = it })
+                        Text(
+                            stringResource(R.string.keys_identity_clear_password),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                // Key picker — "None" plus each stored SSH key.
+                val selectedKeyLabel = sshKeys.firstOrNull { it.id == keyId }?.label
+                    ?: stringResource(R.string.keys_identity_key_none)
+                Box {
+                    OutlinedButton(onClick = { keyMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.keys_identity_key_label, selectedKeyLabel))
+                    }
+                    DropdownMenu(expanded = keyMenuOpen, onDismissRequest = { keyMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.keys_identity_key_none)) },
+                            onClick = { keyId = null; keyMenuOpen = false },
+                        )
+                        sshKeys.forEach { k ->
+                            DropdownMenuItem(
+                                text = { Text(k.label) },
+                                onClick = { keyId = k.id; keyMenuOpen = false },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val pw = when {
+                        password.isNotEmpty() -> password
+                        clearPassword -> ""
+                        else -> null // keep stored (null on a new identity = no password)
+                    }
+                    onSave(name.trim(), username.trim(), pw, keyId)
+                },
+                enabled = name.isNotBlank() && username.isNotBlank(),
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
+}
+
 @Composable
 private fun AddKeyChooser(
     stepCaConfigCount: Int,
@@ -667,6 +855,7 @@ private fun AddKeyChooser(
     onAddTotpPaste: () -> Unit,
     onScanTotpQr: () -> Unit,
     onGenerateAgeIdentity: () -> Unit,
+    onAddSshIdentity: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -759,6 +948,14 @@ private fun AddKeyChooser(
                     supportingContent = { Text(stringResource(R.string.keys_generate_age_hint)) },
                     leadingContent = {
                         Icon(Icons.Filled.Lock, contentDescription = null)
+                    },
+                )
+                ListItem(
+                    modifier = Modifier.clickable { onAddSshIdentity() },
+                    headlineContent = { Text(stringResource(R.string.keys_identity_add)) },
+                    supportingContent = { Text(stringResource(R.string.keys_identity_add_hint)) },
+                    leadingContent = {
+                        Icon(Icons.Filled.Badge, contentDescription = null)
                     },
                 )
             }

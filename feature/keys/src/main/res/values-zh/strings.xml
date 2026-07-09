@@ -206,4 +206,18 @@
     <string name="keys_generate_age_title">新建 age 身份</string>
     <string name="keys_age_label_hint">标签</string>
     <string name="keys_age_recipient_copied">已复制接收者</string>
+    <string name="keys_identity_section_header">身份 · %1$d</string>
+    <string name="keys_identity_add">添加身份</string>
+    <string name="keys_identity_add_hint">可在多台主机上复用的用户名、密码和密钥</string>
+    <string name="keys_identity_add_title">新建身份</string>
+    <string name="keys_identity_edit_title">编辑身份</string>
+    <string name="keys_identity_name_label">名称</string>
+    <string name="keys_identity_username_label">用户名</string>
+    <string name="keys_identity_password_label">密码（可选）</string>
+    <string name="keys_identity_password_keep_label">密码（留空以保留）</string>
+    <string name="keys_identity_clear_password">删除已保存的密码</string>
+    <string name="keys_identity_key_label">密钥：%1$s</string>
+    <string name="keys_identity_key_none">无</string>
+    <string name="keys_identity_no_username">无用户名</string>
+    <string name="keys_identity_has_password">密码</string>
 </resources>

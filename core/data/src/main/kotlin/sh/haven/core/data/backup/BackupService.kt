@@ -15,6 +15,7 @@ import sh.haven.core.data.db.entities.ConnectionGroup
 import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.KnownHost
 import sh.haven.core.data.db.entities.PortForwardRule
+import sh.haven.core.data.db.entities.SshIdentity
 import sh.haven.core.data.db.entities.SshKey
 import sh.haven.core.data.db.entities.TunnelConfig
 import sh.haven.core.data.repository.TunnelConfigRepository
@@ -45,6 +46,7 @@ class BackupService @Inject constructor(
     private val knownHostDao: KnownHostDao,
     private val portForwardRuleDao: PortForwardRuleDao,
     private val tunnelConfigRepository: TunnelConfigRepository,
+    private val sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository,
     private val dataStore: DataStore<Preferences>,
 ) {
     data class BackupResult(val count: Int, val errors: List<String> = emptyList())
@@ -134,6 +136,7 @@ class BackupService @Inject constructor(
                 put("spaAllowMode", p.spaAllowMode)
                 put("spaExplicitIp", p.spaExplicitIp ?: JSONObject.NULL)
                 put("spaPort", p.spaPort)
+                put("identityId", p.identityId ?: JSONObject.NULL)
             })
         }
         json.put("connections", connections)
@@ -161,9 +164,25 @@ class BackupService @Inject constructor(
                 put("colorTag", g.colorTag)
                 put("sortOrder", g.sortOrder)
                 put("collapsed", g.collapsed)
+                put("identityId", g.identityId ?: JSONObject.NULL)
             })
         }
         json.put("groups", groups)
+
+        // SSH identities (#360). Decrypted — the backup file has its own
+        // AES-GCM layer. Absent from pre-#360 backups; the importer skips.
+        val identities = JSONArray()
+        sshIdentityRepository.getAllDecrypted().forEach { ident ->
+            identities.put(JSONObject().apply {
+                put("id", ident.id)
+                put("name", ident.name)
+                put("username", ident.username)
+                put("password", ident.password ?: JSONObject.NULL)
+                put("keyId", ident.keyId ?: JSONObject.NULL)
+                put("createdAt", ident.createdAt)
+            })
+        }
+        json.put("identities", identities)
 
         // SSH keys
         val keys = JSONArray()
@@ -243,6 +262,30 @@ class BackupService @Inject constructor(
         var count = 0
         val errors = mutableListOf<String>()
 
+        // SSH identities (#360; import before groups/connections, which
+        // reference identityId). Absent from pre-#360 backups — skipped.
+        val identities = json.optJSONArray("identities")
+        if (identities != null) {
+            for (i in 0 until identities.length()) {
+                try {
+                    val ident = identities.getJSONObject(i)
+                    sshIdentityRepository.save(
+                        SshIdentity(
+                            id = ident.getString("id"),
+                            name = ident.getString("name"),
+                            username = ident.getString("username"),
+                            password = ident.optStringOrNull("password"),
+                            keyId = ident.optStringOrNull("keyId"),
+                            createdAt = ident.optLong("createdAt", System.currentTimeMillis()),
+                        ),
+                    )
+                    count++
+                } catch (e: Exception) {
+                    errors.add("Identity ${i}: ${e.message}")
+                }
+            }
+        }
+
         // Connection groups (import before connections since connections reference groupId)
         val groups = json.optJSONArray("groups")
         if (groups != null) {
@@ -256,6 +299,7 @@ class BackupService @Inject constructor(
                             colorTag = g.optInt("colorTag", 0),
                             sortOrder = g.optInt("sortOrder", 0),
                             collapsed = g.optBoolean("collapsed", false),
+                            identityId = g.optStringOrNull("identityId"),
                         ),
                     )
                     count++
@@ -406,6 +450,7 @@ class BackupService @Inject constructor(
                             spaAllowMode = c.optString("spaAllowMode", "SOURCE"),
                             spaExplicitIp = c.optStringOrNull("spaExplicitIp"),
                             spaPort = c.optInt("spaPort", 62201),
+                            identityId = c.optStringOrNull("identityId"),
                         ),
                     )
                     count++

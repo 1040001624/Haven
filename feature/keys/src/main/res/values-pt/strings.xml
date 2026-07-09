@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">Nova identidade age</string>
     <string name="keys_age_label_hint">Rótulo</string>
     <string name="keys_age_recipient_copied">Destinatário copiado</string>
+    <string name="keys_identity_section_header">Identidades · %1$d</string>
+    <string name="keys_identity_add">Adicionar identidade</string>
+    <string name="keys_identity_add_hint">Usuário, senha e chave reutilizáveis para muitos hosts</string>
+    <string name="keys_identity_add_title">Nova identidade</string>
+    <string name="keys_identity_edit_title">Editar identidade</string>
+    <string name="keys_identity_name_label">Nome</string>
+    <string name="keys_identity_username_label">Usuário</string>
+    <string name="keys_identity_password_label">Senha (opcional)</string>
+    <string name="keys_identity_password_keep_label">Senha (deixe em branco para manter)</string>
+    <string name="keys_identity_clear_password">Remover a senha salva</string>
+    <string name="keys_identity_key_label">Chave: %1$s</string>
+    <string name="keys_identity_key_none">Nenhuma</string>
+    <string name="keys_identity_no_username">Sem usuário</string>
+    <string name="keys_identity_has_password">senha</string>
 </resources>

@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import sh.haven.core.data.db.entities.AgeIdentityEntity
+import sh.haven.core.data.db.entities.SshIdentity
 import sh.haven.core.data.db.entities.AgentAuditEvent
 import sh.haven.core.data.db.entities.ConnectionGroup
 import sh.haven.core.data.db.entities.ConnectionLog
@@ -51,8 +52,9 @@ import sh.haven.core.data.db.entities.WorkspaceProfile
         MailRulePendingAction::class,
         StandingPolicy::class,
         AgeIdentityEntity::class,
+        SshIdentity::class,
     ],
-    version = 74,
+    version = 75,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -77,6 +79,7 @@ abstract class HavenDatabase : RoomDatabase() {
     abstract fun mailRulePendingActionDao(): MailRulePendingActionDao
     abstract fun standingPolicyDao(): StandingPolicyDao
     abstract fun ageIdentityDao(): AgeIdentityDao
+    abstract fun sshIdentityDao(): SshIdentityDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1201,6 +1204,31 @@ abstract class HavenDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /**
+         * Reusable SSH identities (#360): a named username+password+key
+         * bundle, referenced by connections (own choice or NONE opt-out)
+         * and by groups (inherited default).
+         */
+        val MIGRATION_74_75 = object : Migration(74, 75) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ssh_identities` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `username` TEXT NOT NULL,
+                        `password` TEXT,
+                        `keyId` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+                addColumnIfMissing(db, "connection_profiles", "identityId", "TEXT")
+                addColumnIfMissing(db, "connection_groups", "identityId", "TEXT")
             }
         }
 

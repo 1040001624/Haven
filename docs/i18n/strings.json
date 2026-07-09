@@ -8672,6 +8672,122 @@
      }
     },
     {
+     "name": "connections_field_identity",
+     "en": "Identity",
+     "comment": "Group header",
+     "args": [],
+     "t": {
+      "ar": "الهوية",
+      "bn": "পরিচয়",
+      "de": "Identität",
+      "es": "Identidad",
+      "fr": "Identité",
+      "hi": "पहचान",
+      "ja": "アイデンティティ",
+      "ko": "아이덴티티",
+      "pt": "Identidade",
+      "ru": "Идентификация",
+      "zh": "身份"
+     }
+    },
+    {
+     "name": "connections_identity_inherit",
+     "en": "Inherit from group",
+     "comment": "Group header",
+     "args": [],
+     "t": {
+      "ar": "الوراثة من المجموعة",
+      "bn": "গ্রুপ থেকে উত্তরাধিকার",
+      "de": "Von der Gruppe erben",
+      "es": "Heredar del grupo",
+      "fr": "Hériter du groupe",
+      "hi": "समूह से विरासत में लें",
+      "ja": "グループから継承",
+      "ko": "그룹에서 상속",
+      "pt": "Herdar do grupo",
+      "ru": "Наследовать от группы",
+      "zh": "从分组继承"
+     }
+    },
+    {
+     "name": "connections_identity_own",
+     "en": "This connection\\'s own credentials",
+     "comment": "Group header",
+     "args": [],
+     "t": {
+      "ar": "بيانات اعتماد هذا الاتصال الخاصة",
+      "bn": "এই সংযোগের নিজস্ব ক্রেডেনশিয়াল",
+      "de": "Eigene Zugangsdaten dieser Verbindung",
+      "es": "Credenciales propias de esta conexión",
+      "fr": "Identifiants propres à cette connexion",
+      "hi": "इस कनेक्शन की अपनी क्रेडेंशियल",
+      "ja": "この接続専用の認証情報",
+      "ko": "이 연결 고유의 자격 증명",
+      "pt": "Credenciais próprias desta conexão",
+      "ru": "Собственные учётные данные подключения",
+      "zh": "此连接自己的凭据"
+     }
+    },
+    {
+     "name": "connections_identity_hint",
+     "en": "An identity supplies the username, password and key at connect time. Manage identities on the Keys tab.",
+     "comment": "Group header",
+     "args": [],
+     "t": {
+      "ar": "توفّر الهوية اسم المستخدم وكلمة المرور والمفتاح عند الاتصال. تُدار الهويات من تبويب المفاتيح.",
+      "bn": "পরিচয় সংযোগের সময় ইউজারনেম, পাসওয়ার্ড ও কী সরবরাহ করে। পরিচয় কী ট্যাবে পরিচালনা করুন।",
+      "de": "Eine Identität liefert Benutzername, Passwort und Schlüssel beim Verbinden. Verwalte Identitäten im Tab „Schlüssel“.",
+      "es": "Una identidad aporta el usuario, la contraseña y la clave al conectar. Gestiona las identidades en la pestaña Claves.",
+      "fr": "Une identité fournit le nom d’utilisateur, le mot de passe et la clé au moment de la connexion. Gérez les identités dans l’onglet Clés.",
+      "hi": "पहचान कनेक्ट होते समय उपयोगकर्ता नाम, पासवर्ड और की देती है। पहचान कुंजी टैब में प्रबंधित करें।",
+      "ja": "アイデンティティは接続時にユーザー名・パスワード・鍵を提供します。管理は「鍵」タブで行います。",
+      "ko": "아이덴티티는 연결 시 사용자 이름, 비밀번호, 키를 제공합니다. 키 탭에서 관리하세요.",
+      "pt": "Uma identidade fornece o usuário, a senha e a chave ao conectar. Gerencie identidades na aba Chaves.",
+      "ru": "Идентификация подставляет имя пользователя, пароль и ключ при подключении. Управляйте идентификациями на вкладке «Ключи».",
+      "zh": "身份会在连接时提供用户名、密码和密钥。请在密钥标签页管理身份。"
+     }
+    },
+    {
+     "name": "connections_menu_group_identity",
+     "en": "Set identity",
+     "comment": "Group header",
+     "args": [],
+     "t": {
+      "ar": "تعيين الهوية",
+      "bn": "পরিচয় সেট করুন",
+      "de": "Identität festlegen",
+      "es": "Establecer identidad",
+      "fr": "Définir l’identité",
+      "hi": "पहचान सेट करें",
+      "ja": "アイデンティティを設定",
+      "ko": "아이덴티티 설정",
+      "pt": "Definir identidade",
+      "ru": "Задать идентификацию",
+      "zh": "设置身份"
+     }
+    },
+    {
+     "name": "connections_group_identity_title",
+     "en": "Identity for \\\"%1$s\\\"",
+     "comment": "Group header",
+     "args": [
+      "%1$s"
+     ],
+     "t": {
+      "ar": "هوية \"%1$s\"",
+      "bn": "\"%1$s\"-এর পরিচয়",
+      "de": "Identität für „%1$s“",
+      "es": "Identidad para «%1$s»",
+      "fr": "Identité pour « %1$s »",
+      "hi": "\"%1$s\" के लिए पहचान",
+      "ja": "「%1$s」のアイデンティティ",
+      "ko": "\"%1$s\"의 아이덴티티",
+      "pt": "Identidade para \"%1$s\"",
+      "ru": "Идентификация для «%1$s»",
+      "zh": "“%1$s”的身份"
+     }
+    },
+    {
      "name": "connections_field_provider",
      "en": "Provider",
      "comment": "Group header",
@@ -18645,6 +18761,276 @@
       "pt": "Destinatário copiado",
       "ru": "Получатель скопирован",
       "zh": "已复制接收者"
+     }
+    },
+    {
+     "name": "keys_identity_section_header",
+     "en": "Identities · %1$d",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [
+      "%1$d"
+     ],
+     "t": {
+      "ar": "الهويات · %1$d",
+      "bn": "পরিচয় · %1$d",
+      "de": "Identitäten · %1$d",
+      "es": "Identidades · %1$d",
+      "fr": "Identités · %1$d",
+      "hi": "पहचानें · %1$d",
+      "ja": "アイデンティティ · %1$d",
+      "ko": "ID · %1$d",
+      "pt": "Identidades · %1$d",
+      "ru": "Идентификаторы · %1$d",
+      "zh": "身份 · %1$d"
+     }
+    },
+    {
+     "name": "keys_identity_add",
+     "en": "Add identity",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "إضافة هوية",
+      "bn": "পরিচয় যোগ করুন",
+      "de": "Identität hinzufügen",
+      "es": "Agregar identidad",
+      "fr": "Ajouter une identité",
+      "hi": "पहचान जोड़ें",
+      "ja": "アイデンティティを追加",
+      "ko": "ID 추가",
+      "pt": "Adicionar identidade",
+      "ru": "Добавить идентификатор",
+      "zh": "添加身份"
+     }
+    },
+    {
+     "name": "keys_identity_add_hint",
+     "en": "A reusable username, password and key for many hosts",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "اسم مستخدم وكلمة مرور ومفتاح لإعادة الاستخدام مع العديد من المضيفين",
+      "bn": "অনেক হোস্টে পুনর্ব্যবহারযোগ্য ব্যবহারকারীর নাম, পাসওয়ার্ড ও কী",
+      "de": "Benutzername, Passwort und Schlüssel, wiederverwendbar für viele Hosts",
+      "es": "Un usuario, contraseña y clave reutilizables para muchos hosts",
+      "fr": "Un nom d\\'utilisateur, un mot de passe et une clé réutilisables pour de nombreux hôtes",
+      "hi": "कई होस्ट के लिए पुन: उपयोग योग्य उपयोगकर्ता नाम, पासवर्ड और कुंजी",
+      "ja": "多数のホストで再利用できるユーザー名・パスワード・鍵",
+      "ko": "여러 호스트에서 재사용할 수 있는 사용자 이름, 비밀번호, 키",
+      "pt": "Usuário, senha e chave reutilizáveis para muitos hosts",
+      "ru": "Имя пользователя, пароль и ключ для повторного использования на многих хостах",
+      "zh": "可在多台主机上复用的用户名、密码和密钥"
+     }
+    },
+    {
+     "name": "keys_identity_add_title",
+     "en": "New identity",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "هوية جديدة",
+      "bn": "নতুন পরিচয়",
+      "de": "Neue Identität",
+      "es": "Nueva identidad",
+      "fr": "Nouvelle identité",
+      "hi": "नई पहचान",
+      "ja": "新しいアイデンティティ",
+      "ko": "새 ID",
+      "pt": "Nova identidade",
+      "ru": "Новый идентификатор",
+      "zh": "新建身份"
+     }
+    },
+    {
+     "name": "keys_identity_edit_title",
+     "en": "Edit identity",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "تعديل الهوية",
+      "bn": "পরিচয় সম্পাদনা করুন",
+      "de": "Identität bearbeiten",
+      "es": "Editar identidad",
+      "fr": "Modifier l\\'identité",
+      "hi": "पहचान संपादित करें",
+      "ja": "アイデンティティを編集",
+      "ko": "ID 편집",
+      "pt": "Editar identidade",
+      "ru": "Изменить идентификатор",
+      "zh": "编辑身份"
+     }
+    },
+    {
+     "name": "keys_identity_name_label",
+     "en": "Name",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "الاسم",
+      "bn": "নাম",
+      "de": "Name",
+      "es": "Nombre",
+      "fr": "Nom",
+      "hi": "नाम",
+      "ja": "名前",
+      "ko": "이름",
+      "pt": "Nome",
+      "ru": "Название",
+      "zh": "名称"
+     }
+    },
+    {
+     "name": "keys_identity_username_label",
+     "en": "Username",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "اسم المستخدم",
+      "bn": "ব্যবহারকারীর নাম",
+      "de": "Benutzername",
+      "es": "Usuario",
+      "fr": "Nom d\\'utilisateur",
+      "hi": "उपयोगकर्ता नाम",
+      "ja": "ユーザー名",
+      "ko": "사용자 이름",
+      "pt": "Usuário",
+      "ru": "Имя пользователя",
+      "zh": "用户名"
+     }
+    },
+    {
+     "name": "keys_identity_password_label",
+     "en": "Password (optional)",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "كلمة المرور (اختيارية)",
+      "bn": "পাসওয়ার্ড (ঐচ্ছিক)",
+      "de": "Passwort (optional)",
+      "es": "Contraseña (opcional)",
+      "fr": "Mot de passe (facultatif)",
+      "hi": "पासवर्ड (वैकल्पिक)",
+      "ja": "パスワード（任意）",
+      "ko": "비밀번호(선택 사항)",
+      "pt": "Senha (opcional)",
+      "ru": "Пароль (необязательно)",
+      "zh": "密码（可选）"
+     }
+    },
+    {
+     "name": "keys_identity_password_keep_label",
+     "en": "Password (leave blank to keep)",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "كلمة المرور (اتركها فارغة للإبقاء عليها)",
+      "bn": "পাসওয়ার্ড (আগেরটি রাখতে ফাঁকা রাখুন)",
+      "de": "Passwort (leer lassen zum Behalten)",
+      "es": "Contraseña (dejar en blanco para conservar)",
+      "fr": "Mot de passe (laisser vide pour conserver)",
+      "hi": "पासवर्ड (बनाए रखने के लिए खाली छोड़ें)",
+      "ja": "パスワード（変更しない場合は空欄）",
+      "ko": "비밀번호(유지하려면 비워 두세요)",
+      "pt": "Senha (deixe em branco para manter)",
+      "ru": "Пароль (оставьте пустым, чтобы не менять)",
+      "zh": "密码（留空以保留）"
+     }
+    },
+    {
+     "name": "keys_identity_clear_password",
+     "en": "Remove the saved password",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "إزالة كلمة المرور المحفوظة",
+      "bn": "সংরক্ষিত পাসওয়ার্ড মুছে ফেলুন",
+      "de": "Gespeichertes Passwort entfernen",
+      "es": "Eliminar la contraseña guardada",
+      "fr": "Supprimer le mot de passe enregistré",
+      "hi": "सहेजा गया पासवर्ड हटाएँ",
+      "ja": "保存済みパスワードを削除",
+      "ko": "저장된 비밀번호 제거",
+      "pt": "Remover a senha salva",
+      "ru": "Удалить сохранённый пароль",
+      "zh": "删除已保存的密码"
+     }
+    },
+    {
+     "name": "keys_identity_key_label",
+     "en": "Key: %1$s",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [
+      "%1$s"
+     ],
+     "t": {
+      "ar": "المفتاح: %1$s",
+      "bn": "কী: %1$s",
+      "de": "Schlüssel: %1$s",
+      "es": "Clave: %1$s",
+      "fr": "Clé : %1$s",
+      "hi": "कुंजी: %1$s",
+      "ja": "鍵: %1$s",
+      "ko": "키: %1$s",
+      "pt": "Chave: %1$s",
+      "ru": "Ключ: %1$s",
+      "zh": "密钥：%1$s"
+     }
+    },
+    {
+     "name": "keys_identity_key_none",
+     "en": "None",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "بلا",
+      "bn": "কোনোটি নয়",
+      "de": "Keiner",
+      "es": "Ninguna",
+      "fr": "Aucune",
+      "hi": "कोई नहीं",
+      "ja": "なし",
+      "ko": "없음",
+      "pt": "Nenhuma",
+      "ru": "Нет",
+      "zh": "无"
+     }
+    },
+    {
+     "name": "keys_identity_no_username",
+     "en": "No username",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "بدون اسم مستخدم",
+      "bn": "কোনো ব্যবহারকারীর নাম নেই",
+      "de": "Kein Benutzername",
+      "es": "Sin usuario",
+      "fr": "Aucun nom d\\'utilisateur",
+      "hi": "कोई उपयोगकर्ता नाम नहीं",
+      "ja": "ユーザー名なし",
+      "ko": "사용자 이름 없음",
+      "pt": "Sem usuário",
+      "ru": "Без имени пользователя",
+      "zh": "无用户名"
+     }
+    },
+    {
+     "name": "keys_identity_has_password",
+     "en": "password",
+     "comment": "Reusable SSH identities (#360)",
+     "args": [],
+     "t": {
+      "ar": "كلمة مرور",
+      "bn": "পাসওয়ার্ড",
+      "de": "Passwort",
+      "es": "contraseña",
+      "fr": "mot de passe",
+      "hi": "पासवर्ड",
+      "ja": "パスワード",
+      "ko": "비밀번호",
+      "pt": "senha",
+      "ru": "пароль",
+      "zh": "密码"
      }
     },
     {

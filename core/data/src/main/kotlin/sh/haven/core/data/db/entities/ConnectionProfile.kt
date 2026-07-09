@@ -124,6 +124,16 @@ data class ConnectionProfile(
     /** Proxy password for SOCKS5 (RFC 1929) / HTTP-CONNECT Basic auth (#227). Ignored for SOCKS4 (userid only). */
     val proxyPassword: String? = null,
     val groupId: String? = null,
+    /**
+     * Reusable credential bundle for SSH-family connects (#360). Semantics:
+     * null = inherit the group's [ConnectionGroup.identityId] when set;
+     * [SshIdentity.NONE_ID] = explicitly use this profile's inline
+     * credentials even inside a group with an identity; any other value =
+     * that [SshIdentity]. Resolved at connect time by
+     * `SshIdentityRepository.applyTo` — the inline fields below are left
+     * untouched at rest.
+     */
+    val identityId: String? = null,
     /** Last session manager session name used (for group launch restore). */
     val lastSessionName: String? = null,
     /** Disable alternate screen buffer (DECSET 1049) so scrollback works in screen/vim. */

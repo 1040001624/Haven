@@ -204,4 +204,18 @@
     <string name="keys_generate_age_title">هوية age جديدة</string>
     <string name="keys_age_label_hint">التسمية</string>
     <string name="keys_age_recipient_copied">تم نسخ المستلم</string>
+    <string name="keys_identity_section_header">الهويات · %1$d</string>
+    <string name="keys_identity_add">إضافة هوية</string>
+    <string name="keys_identity_add_hint">اسم مستخدم وكلمة مرور ومفتاح لإعادة الاستخدام مع العديد من المضيفين</string>
+    <string name="keys_identity_add_title">هوية جديدة</string>
+    <string name="keys_identity_edit_title">تعديل الهوية</string>
+    <string name="keys_identity_name_label">الاسم</string>
+    <string name="keys_identity_username_label">اسم المستخدم</string>
+    <string name="keys_identity_password_label">كلمة المرور (اختيارية)</string>
+    <string name="keys_identity_password_keep_label">كلمة المرور (اتركها فارغة للإبقاء عليها)</string>
+    <string name="keys_identity_clear_password">إزالة كلمة المرور المحفوظة</string>
+    <string name="keys_identity_key_label">المفتاح: %1$s</string>
+    <string name="keys_identity_key_none">بلا</string>
+    <string name="keys_identity_no_username">بدون اسم مستخدم</string>
+    <string name="keys_identity_has_password">كلمة مرور</string>
 </resources>

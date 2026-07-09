@@ -120,6 +120,7 @@ class ConnectionsViewModel @Inject constructor(
     private val repository: ConnectionRepository,
     private val agentActivityHolder: sh.haven.core.data.agent.AgentActivityHolder,
     private val connectionGroupDao: sh.haven.core.data.db.ConnectionGroupDao,
+    private val sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository,
     private val portForwardRepository: PortForwardRepository,
     private val sshSessionManager: SshSessionManager,
     private val reticulumSessionManager: ReticulumSessionManager,
@@ -264,6 +265,11 @@ class ConnectionsViewModel @Inject constructor(
 
     val sshKeys: StateFlow<List<SshKey>> = sshKeyRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Reusable SSH identities (#360), for the connection editor's picker. */
+    val identities: StateFlow<List<sh.haven.core.data.db.entities.SshIdentity>> =
+        sshIdentityRepository.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totpSecrets: StateFlow<List<sh.haven.core.data.db.entities.TotpSecret>> =
         totpSecretRepository.observeAll()
@@ -1171,6 +1177,15 @@ class ConnectionsViewModel @Inject constructor(
         }
     }
 
+    /** Set (or clear, id=null) the group's default identity (#360). */
+    fun setGroupIdentity(groupId: String, identityId: String?) {
+        viewModelScope.launch {
+            connectionGroupDao.getById(groupId)?.let {
+                connectionGroupDao.upsert(it.copy(identityId = identityId))
+            }
+        }
+    }
+
     /**
      * Returns true if the profile can connect without interactive dialogs.
      * VNC/RDP/SMB are excluded (they navigate to non-terminal screens).
@@ -1642,6 +1657,35 @@ class ConnectionsViewModel @Inject constructor(
         rememberPassword: Boolean? = null,
         usernameOverride: String? = null,
         sessionName: String? = null,
+    ) {
+        // Identity resolution (#360): for SSH-family profiles, substitute the
+        // effective identity's username/password/key just before dialing, so
+        // the whole downstream auth machinery sees ordinary inline
+        // credentials. A no-op (returns the profile unchanged) when no
+        // identity is assigned or resolvable, so existing per-host
+        // credentials behave exactly as before. Needs a DAO read → suspend.
+        if (profile.isSsh || profile.isReticulum) {
+            viewModelScope.launch {
+                val resolved = sshIdentityRepository.applyTo(profile)
+                // If the caller didn't already carry a typed password, adopt
+                // the identity's (mirrors the jump-host merge idiom).
+                val effectivePassword =
+                    if (password.isEmpty()) resolved.sshPassword.orEmpty() else password
+                connectAfterIdentity(resolved, effectivePassword, keyOnly, rememberPassword, usernameOverride, sessionName)
+            }
+            return
+        }
+        connectAfterIdentity(profile, password, keyOnly, rememberPassword, usernameOverride, sessionName)
+    }
+
+    /** Post-identity dispatch: USB-drive preflight, then [connectInner]. */
+    private fun connectAfterIdentity(
+        profile: ConnectionProfile,
+        password: String,
+        keyOnly: Boolean,
+        rememberPassword: Boolean?,
+        usernameOverride: String?,
+        sessionName: String?,
     ) {
         // USB-drive bookmarks (#287): the "USB: …" connection's VM stops on
         // eject/sleep/app-restart, leaving the profile pointing at a dead

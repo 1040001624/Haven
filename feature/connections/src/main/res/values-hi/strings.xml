@@ -294,6 +294,12 @@
     <string name="connections_scan_network">नेटवर्क स्कैन करें</string>
     <string name="connections_scanning">स्कैन हो रहा है</string>
     <string name="connections_field_group">समूह</string>
+    <string name="connections_field_identity">पहचान</string>
+    <string name="connections_identity_inherit">समूह से विरासत में लें</string>
+    <string name="connections_identity_own">इस कनेक्शन की अपनी क्रेडेंशियल</string>
+    <string name="connections_identity_hint">पहचान कनेक्ट होते समय उपयोगकर्ता नाम, पासवर्ड और की देती है। पहचान कुंजी टैब में प्रबंधित करें।</string>
+    <string name="connections_menu_group_identity">पहचान सेट करें</string>
+    <string name="connections_group_identity_title">"%1$s" के लिए पहचान</string>
     <string name="connections_field_provider">प्रदाता</string>
     <string name="connections_field_tunnel_through_ssh">SSH के माध्यम से टनल</string>
     <string name="connections_field_ssh_connection">SSH कनेक्शन</string>

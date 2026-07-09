@@ -65,6 +65,7 @@ private const val TAG = "McpTunnelManager"
 @Singleton
 class McpTunnelManager @Inject constructor(
     private val connectionRepository: ConnectionRepository,
+    private val sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository,
     private val sshKeyRepository: SshKeyRepository,
     private val sshSessionManager: SshSessionManager,
     private val preferencesRepository: UserPreferencesRepository,
@@ -365,15 +366,19 @@ class McpTunnelManager @Inject constructor(
             Log.i(TAG, "Nothing to carry on the MCP-tunnel headless session (no exposed adb port, no running guest MCP service) — not connecting")
             return Outcome.FATAL
         }
-        val profile = connectionRepository.getById(profileId)
-        if (profile == null) {
+        val storedProfile = connectionRepository.getById(profileId)
+        if (storedProfile == null) {
             Log.w(TAG, "MCP tunnel endpoint profile $profileId not found")
             return Outcome.FATAL
         }
-        if (!profile.isSsh) {
-            Log.w(TAG, "MCP tunnel endpoint profile ${profile.label} is not SSH — ignoring")
+        if (!storedProfile.isSsh) {
+            Log.w(TAG, "MCP tunnel endpoint profile ${storedProfile.label} is not SSH — ignoring")
             return Outcome.FATAL
         }
+        // Apply the effective SSH identity (#360) before resolving headless
+        // auth, so an agent-initiated connect honours the same credential
+        // bundle as an interactive one. No-op when no identity is assigned.
+        val profile = sshIdentityRepository.applyTo(storedProfile)
         val auth = resolveHeadlessAuth(profile)
         if (auth == null) {
             // Expected, not a failure: a touch-required / encrypted-only

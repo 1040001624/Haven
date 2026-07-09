@@ -171,6 +171,12 @@
     <string name="connections_scan_network">Scan Network</string>
     <string name="connections_scanning">Scanning</string>
     <string name="connections_field_group">Group</string>
+    <string name="connections_field_identity">Identity</string>
+    <string name="connections_identity_inherit">Inherit from group</string>
+    <string name="connections_identity_own">This connection\'s own credentials</string>
+    <string name="connections_identity_hint">An identity supplies the username, password and key at connect time. Manage identities on the Keys tab.</string>
+    <string name="connections_menu_group_identity">Set identity</string>
+    <string name="connections_group_identity_title">Identity for \"%1$s\"</string>
     <string name="connections_field_provider">Provider</string>
     <string name="connections_field_tunnel_through_ssh">Tunnel through SSH</string>
     <string name="connections_field_ssh_connection">SSH connection</string>

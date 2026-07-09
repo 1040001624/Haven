@@ -66,6 +66,7 @@ class KeysViewModel @Inject constructor(
     private val fidoAuthenticator: sh.haven.core.fido.FidoAuthenticator,
     private val totpSecretRepository: sh.haven.core.data.repository.TotpSecretRepository,
     private val ageIdentityRepository: sh.haven.core.data.repository.AgeIdentityRepository,
+    private val sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository,
     private val barcodeDecoder: sh.haven.core.scan.BarcodeDecoder,
     private val preferencesRepository: sh.haven.core.data.preferences.UserPreferencesRepository,
     agentUiCommandBus: AgentUiCommandBus,
@@ -106,6 +107,39 @@ class KeysViewModel @Inject constructor(
 
     fun deleteAgeIdentity(id: String) {
         viewModelScope.launch { ageIdentityRepository.delete(id) }
+    }
+
+    /** Reusable SSH identities (#360) — password left encrypted for display. */
+    val sshIdentities: StateFlow<List<sh.haven.core.data.db.entities.SshIdentity>> =
+        sshIdentityRepository.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Save an identity (#360). [password] is the plaintext from the editor:
+     * a non-null value (including blank = clear to key-only) is stored;
+     * null means "leave the stored password untouched" (edit where the user
+     * didn't retype it). The repository encrypts before persisting.
+     */
+    fun saveSshIdentity(
+        id: String?,
+        name: String,
+        username: String,
+        password: String?,
+        keyId: String?,
+    ) {
+        viewModelScope.launch {
+            sshIdentityRepository.upsertFromEditor(
+                id = id,
+                name = name.trim(),
+                username = username.trim(),
+                newPassword = password,
+                keyId = keyId,
+            )
+        }
+    }
+
+    fun deleteSshIdentity(id: String) {
+        viewModelScope.launch { sshIdentityRepository.delete(id) }
     }
 
     val keys: StateFlow<List<SshKey>> = combine(

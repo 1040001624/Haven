@@ -57,6 +57,7 @@ class BackupServiceTest {
     private lateinit var knownHostDao: KnownHostDao
     private lateinit var portForwardRuleDao: PortForwardRuleDao
     private lateinit var tunnelConfigRepository: TunnelConfigRepository
+    private lateinit var sshIdentityRepository: sh.haven.core.data.repository.SshIdentityRepository
     private lateinit var dataStore: DataStore<Preferences>
     private lateinit var service: BackupService
 
@@ -70,13 +71,15 @@ class BackupServiceTest {
         knownHostDao = mockk(relaxed = true)
         portForwardRuleDao = mockk(relaxed = true)
         tunnelConfigRepository = mockk(relaxed = true)
-        // Default: no tunnels stored. Individual tests override as needed.
+        sshIdentityRepository = mockk(relaxed = true)
+        // Default: no tunnels / identities stored. Individual tests override.
         coEvery { tunnelConfigRepository.getAllDecrypted() } returns emptyList()
+        coEvery { sshIdentityRepository.getAllDecrypted() } returns emptyList()
 
         val prefsFile = File(tempFolder.root, "test.preferences_pb")
         dataStore = PreferenceDataStoreFactory.create { prefsFile }
 
-        service = BackupService(connectionDao, connectionRepository, connectionGroupDao, sshKeyDao, sshKeyRepository, knownHostDao, portForwardRuleDao, tunnelConfigRepository, dataStore)
+        service = BackupService(connectionDao, connectionRepository, connectionGroupDao, sshKeyDao, sshKeyRepository, knownHostDao, portForwardRuleDao, tunnelConfigRepository, sshIdentityRepository, dataStore)
     }
 
     // -- Encrypt/Decrypt roundtrip --
@@ -711,11 +714,13 @@ class BackupServiceTest {
         val pfd = mockk<PortForwardRuleDao>(relaxed = true)
         val tcr = mockk<TunnelConfigRepository>(relaxed = true)
         coEvery { tcr.getAllDecrypted() } returns emptyList()
+        val sir = mockk<sh.haven.core.data.repository.SshIdentityRepository>(relaxed = true)
+        coEvery { sir.getAllDecrypted() } returns emptyList()
         val ds = PreferenceDataStoreFactory.create {
             File(tempFolder.root, "importer-${System.nanoTime()}.preferences_pb")
         }
         return BackupServicePair(
-            service = BackupService(cd, cr, cgd, skd, skr, khd, pfd, tcr, ds),
+            service = BackupService(cd, cr, cgd, skd, skr, khd, pfd, tcr, sir, ds),
             connectionRepository = cr,
             sshKeyRepository = skr,
             knownHostDao = khd,

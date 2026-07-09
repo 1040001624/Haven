@@ -294,6 +294,12 @@
     <string name="connections_scan_network">ネットワークをスキャン</string>
     <string name="connections_scanning">スキャン中</string>
     <string name="connections_field_group">グループ</string>
+    <string name="connections_field_identity">アイデンティティ</string>
+    <string name="connections_identity_inherit">グループから継承</string>
+    <string name="connections_identity_own">この接続専用の認証情報</string>
+    <string name="connections_identity_hint">アイデンティティは接続時にユーザー名・パスワード・鍵を提供します。管理は「鍵」タブで行います。</string>
+    <string name="connections_menu_group_identity">アイデンティティを設定</string>
+    <string name="connections_group_identity_title">「%1$s」のアイデンティティ</string>
     <string name="connections_field_provider">プロバイダー</string>
     <string name="connections_field_tunnel_through_ssh">SSH経由でトンネル</string>
     <string name="connections_field_ssh_connection">SSH接続</string>
