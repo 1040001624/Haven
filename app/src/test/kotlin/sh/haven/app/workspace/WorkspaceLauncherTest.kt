@@ -1,9 +1,12 @@
 package sh.haven.app.workspace
 
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -92,7 +95,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("vnc-1") } returns vncProfile
 
         val (bus, emitted) = recordingBus()
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", "main") } returns
             SshSessionAttacher.Result.Attached("s-1")
 
@@ -192,7 +195,7 @@ class WorkspaceLauncherTest {
         // Cancel lands while the terminal attach is in flight — the desktop
         // item behind it must skip, and no navigation fires post-cancel.
         lateinit var launcher: WorkspaceLauncher
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", "main") } answers {
             launcher.cancel()
             SshSessionAttacher.Result.Attached("s-1")
@@ -251,7 +254,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("ssh-1") } returns sshProfile
         val (bus, emitted) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", "cctv") } returns
             SshSessionAttacher.Result.NoLiveConnection
         coEvery { attacher.ensureAttached("ssh-1", "civic") } returns
@@ -282,11 +285,13 @@ class WorkspaceLauncherTest {
         )
         val workspaceRepo = mockk<WorkspaceRepository>()
         coEvery { workspaceRepo.getWorkspace("ws-1") } returns WorkspaceWithItems(ws, items)
+        val savedItems = slot<List<WorkspaceItem>>()
+        coEvery { workspaceRepo.save(any(), capture(savedItems)) } just Runs
         val connRepo = mockk<ConnectionRepository>()
         coEvery { connRepo.getById("ssh-1") } returns sshProfile
         val (bus, emitted) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", "cctv") } returns
             SshSessionAttacher.Result.NoLiveConnection
         coEvery { attacher.ensureAttached("ssh-1", "civic") } returns
@@ -297,6 +302,47 @@ class WorkspaceLauncherTest {
 
         assertEquals("cctv", (emitted[0] as AgentUiCommand.ConnectProfile).sessionName)
         coVerify { attacher.ensureAttached("ssh-1", "civic") }
+        // Self-heal: the fallback-resolved names are written back onto the
+        // items (same ids), so the next restore pins them explicitly.
+        assertEquals(
+            mapOf("term-a" to "cctv", "term-b" to "civic"),
+            savedItems.captured.associate { it.id to it.sessionName },
+        )
+    }
+
+    @Test
+    fun staleSessionNameIsReportedAsRecreated() = runBlocking {
+        // The host's list command knows only "cctv" — attaching "civic" will
+        // recreate it (`new-session -A`), and the item says so instead of
+        // silently handing back an empty session.
+        val sshProfile = profile("ssh-1", connectionType = "SSH")
+        val ws = WorkspaceProfile(id = "ws-1", name = "Work")
+        val items = listOf(
+            item("ws-1", "term-a", WorkspaceItem.Kind.TERMINAL, "ssh-1", sessionName = "cctv"),
+            item("ws-1", "term-b", WorkspaceItem.Kind.TERMINAL, "ssh-1", sessionName = "civic"),
+        )
+        val workspaceRepo = mockk<WorkspaceRepository>()
+        coEvery { workspaceRepo.getWorkspace("ws-1") } returns WorkspaceWithItems(ws, items)
+        val connRepo = mockk<ConnectionRepository>()
+        coEvery { connRepo.getById("ssh-1") } returns sshProfile
+        val (bus, _) = recordingBus()
+
+        val attacher = mockk<SshSessionAttacher>()
+        coEvery { attacher.listRemoteSessions("ssh-1") } returns listOf("cctv")
+        coEvery { attacher.ensureAttached("ssh-1", "cctv") } returns
+            SshSessionAttacher.Result.Attached("s-a")
+        coEvery { attacher.ensureAttached("ssh-1", "civic") } returns
+            SshSessionAttacher.Result.Attached("s-b")
+
+        val launcher = launcher(workspaceRepo, connRepo, bus, mockk(), attacher)
+        launcher.launch("ws-1")
+
+        val state = launcher.state.value as WorkspaceLaunchState.Completed
+        val byId = state.items.associateBy { it.itemId }
+        assertEquals(ItemProgress.Status.Succeeded, byId.getValue("term-a").status)
+        assertEquals(null, byId.getValue("term-a").message)
+        assertEquals(ItemProgress.Status.Succeeded, byId.getValue("term-b").status)
+        assertTrue(byId.getValue("term-b").message!!.contains("recreated"))
     }
 
     @Test
@@ -315,7 +361,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("ssh-1") } returns sshProfile
         val (bus, emitted) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", "cctv") } returns
             SshSessionAttacher.Result.AlreadyLive("s-a")
         coEvery { attacher.ensureAttached("ssh-1", "civic") } returns
@@ -346,7 +392,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("ssh-b") } returns profileB
         val (bus, _) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-a", "one") } returns
             SshSessionAttacher.Result.Failed("shell closed")
         coEvery { attacher.ensureAttached("ssh-b", "two") } returns
@@ -381,7 +427,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("ssh-b") } returns profileB
         val (bus, _) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-a", "one") } returns
             SshSessionAttacher.Result.NoLiveConnection
         coEvery { attacher.ensureAttached("ssh-b", "two") } returns
@@ -418,7 +464,7 @@ class WorkspaceLauncherTest {
         coEvery { connRepo.getById("ssh-1") } returns sshProfile
         val (bus, emitted) = recordingBus()
 
-        val attacher = mockk<SshSessionAttacher>()
+        val attacher = attacherMock()
         coEvery { attacher.ensureAttached("ssh-1", null) } returns
             SshSessionAttacher.Result.NoLiveConnection
 
@@ -444,6 +490,15 @@ class WorkspaceLauncherTest {
         sessionManager: SshSessionManager,
         attacher: SshSessionAttacher,
     ) = WorkspaceLauncher(workspaceRepo, connRepo, bus, sessionManager, attacher)
+
+    /**
+     * A strict attacher mock with the reconciliation probe defaulted to
+     * "unknowable" (null) so tests opt in to remote-list ground truth
+     * explicitly; stub `ensureAttached` per test.
+     */
+    private fun attacherMock(): SshSessionAttacher = mockk {
+        coEvery { listRemoteSessions(any()) } returns null
+    }
 
     private fun recordingBus(): Pair<AgentUiCommandBus, MutableList<AgentUiCommand>> {
         val bus = mockk<AgentUiCommandBus>()

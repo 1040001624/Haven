@@ -16,6 +16,8 @@ import sh.haven.core.data.db.entities.ConnectionProfile
 import sh.haven.core.data.db.entities.WorkspaceItem
 import sh.haven.core.data.repository.ConnectionRepository
 import sh.haven.core.data.repository.WorkspaceRepository
+import sh.haven.core.data.repository.WorkspaceWithItems
+import sh.haven.core.ssh.SessionManager
 import sh.haven.core.ssh.SshSessionAttacher
 import sh.haven.core.ssh.SshSessionManager
 import javax.inject.Inject
@@ -154,6 +156,48 @@ class WorkspaceLauncher @Inject constructor(
             "launch ${workspace.profile.name} done: " +
                 "${final.items.count { it.status == ItemProgress.Status.Succeeded }}/${final.items.size}",
         )
+
+        writeBackResolvedNames(workspace, sessionNames, final.items)
+    }
+
+    /**
+     * Self-heal pre-v76 workspaces: an item saved without a session name
+     * that just launched under a fallback-resolved one gets that name
+     * written back, so the next restore pins it explicitly instead of
+     * re-deriving from [ConnectionProfile.lastSessionName] (which shifts
+     * with whatever the user last had open). Only items that actually
+     * succeeded are pinned; a failed dial proves nothing about the name.
+     */
+    private suspend fun writeBackResolvedNames(
+        workspace: WorkspaceWithItems,
+        sessionNames: Map<String, String?>,
+        final: List<ItemProgress>,
+    ) {
+        val succeeded = final
+            .filter { it.status == ItemProgress.Status.Succeeded }
+            .map { it.itemId }
+            .toSet()
+        val patched = workspace.items.map { item ->
+            val resolved = sessionNames[item.id]
+            if (item.kind == WorkspaceItem.Kind.TERMINAL &&
+                item.sessionName == null &&
+                resolved != null &&
+                item.id in succeeded
+            ) {
+                item.copy(sessionName = resolved)
+            } else {
+                item
+            }
+        }
+        if (patched == workspace.items) return
+        try {
+            workspaceRepository.save(workspace.profile, patched.sortedBy { it.sortOrder })
+            Log.i(TAG, "pinned ${patched.count { it !in workspace.items }} resolved session name(s) onto ${workspace.profile.name}")
+        } catch (e: Exception) {
+            // Best-effort: the launch already succeeded; a failed write-back
+            // just means the next restore re-derives the names again.
+            Log.w(TAG, "session-name write-back failed for ${workspace.profile.name}: ${e.message}")
+        }
     }
 
     /** Cooperative cancel — items not yet started mark Skipped. */
@@ -197,6 +241,12 @@ class WorkspaceLauncher @Inject constructor(
 
         var dialed = false
         var liveSessionId: String? = null
+        // Ground truth from the host's own list command, fetched once as soon
+        // as a connection is available (null until then / when unknowable). A
+        // saved name missing from it still attaches — `new-session -A`
+        // recreates it — but gets reported as recreated rather than silently
+        // handing back an empty session (stale workspace vs. live server).
+        var remoteNames: Set<String>? = null
         for (item in items) {
             if (cancelRequested) {
                 progress.update(item.id, ItemProgress.Status.Skipped, "cancelled")
@@ -204,6 +254,13 @@ class WorkspaceLauncher @Inject constructor(
             }
             progress.update(item.id, ItemProgress.Status.Running)
             val name = sessionNames[item.id]
+            if (isPlainSsh && name != null && remoteNames == null) {
+                remoteNames = sshSessionAttacher.listRemoteSessions(profile.id)
+                    ?.map { SessionManager.sanitizeSessionName(it) }
+                    ?.toSet()
+            }
+            val wasGone = name != null &&
+                remoteNames?.let { SessionManager.sanitizeSessionName(name) !in it } == true
 
             if (!isPlainSsh) {
                 // Mosh/ET/Reticulum/Local: single-session transports, tab-only
@@ -224,7 +281,14 @@ class WorkspaceLauncher @Inject constructor(
                 }
                 is SshSessionAttacher.Result.Attached -> {
                     liveSessionId = liveSessionId ?: r.sessionId
-                    progress.update(item.id, ItemProgress.Status.Succeeded)
+                    if (wasGone) {
+                        Log.i(TAG, "session '$name' was gone on ${profile.label} — recreated")
+                    }
+                    progress.update(
+                        item.id,
+                        ItemProgress.Status.Succeeded,
+                        if (wasGone) "session '$name' was gone — recreated" else null,
+                    )
                 }
                 is SshSessionAttacher.Result.Failed ->
                     progress.update(item.id, ItemProgress.Status.Failed, r.message)

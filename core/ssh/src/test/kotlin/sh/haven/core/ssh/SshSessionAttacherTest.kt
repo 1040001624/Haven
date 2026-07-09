@@ -180,6 +180,53 @@ class SshSessionAttacherTest {
     }
 
     @Test
+    fun listRemoteSessionsParsesTheHostListCommand() = runBlocking {
+        val client = mockk<SshClient>()
+        coEvery { client.execCommand(any()) } returns
+            ExecResult(exitStatus = 0, stdout = "cctv\nciv ic\n", stderr = "")
+        val sm = mockk<SshSessionManager>()
+        every { sm.getSshClientForProfile("p1") } returns client
+        val (repo, prefs) = repos()
+        val attacher = SshSessionAttacher(sm, repo, prefs)
+
+        assertEquals(listOf("cctv", "civ ic"), attacher.listRemoteSessions("p1"))
+    }
+
+    @Test
+    fun listRemoteSessionsNullWhenNoLiveClient() = runBlocking {
+        val sm = mockk<SshSessionManager>()
+        every { sm.getSshClientForProfile("p1") } returns null
+        val (repo, prefs) = repos()
+        val attacher = SshSessionAttacher(sm, repo, prefs)
+
+        assertEquals(null, attacher.listRemoteSessions("p1"))
+    }
+
+    @Test
+    fun listRemoteSessionsNullWithoutASessionManager() = runBlocking {
+        val (repo, _) = repos()
+        val prefs = mockk<UserPreferencesRepository>()
+        every { prefs.sessionManager } returns flowOf(UserPreferencesRepository.SessionManager.NONE)
+        // NONE has no list command — the client must never be consulted.
+        val attacher = SshSessionAttacher(mockk(), repo, prefs)
+
+        assertEquals(null, attacher.listRemoteSessions("p1"))
+    }
+
+    @Test
+    fun listRemoteSessionsNullOnListCommandFailure() = runBlocking {
+        val client = mockk<SshClient>()
+        coEvery { client.execCommand(any()) } returns
+            ExecResult(exitStatus = 1, stdout = "", stderr = "no server running")
+        val sm = mockk<SshSessionManager>()
+        every { sm.getSshClientForProfile("p1") } returns client
+        val (repo, prefs) = repos()
+        val attacher = SshSessionAttacher(sm, repo, prefs)
+
+        assertEquals(null, attacher.listRemoteSessions("p1"))
+    }
+
+    @Test
     fun shellFailureRemovesSessionAndFailsWithReason() = runBlocking {
         val sm = mockk<SshSessionManager>(relaxed = true)
         every { sm.getSessionsForProfile("p1") } returns emptyList()

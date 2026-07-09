@@ -125,6 +125,33 @@ class SshSessionAttacher @Inject constructor(
     }
 
     /**
+     * The multiplexer sessions currently live on the host for [profileId],
+     * or null when unknowable (no live client, no session manager
+     * configured, or the list command failed). One-shot ground truth for
+     * the workspace launcher's reconciliation: a saved name missing from
+     * this list will be *recreated* by the attach (`new-session -A`), and
+     * the launcher reports that instead of silently handing back an empty
+     * session.
+     */
+    suspend fun listRemoteSessions(profileId: String): List<String>? {
+        val profile = connectionRepository.getById(profileId) ?: return null
+        val manager = resolveSessionManager(profile)
+        val listCmd = manager.listCommand ?: return null
+        val client = sessionManager.getSshClientForProfile(profileId) ?: return null
+        return try {
+            val result = client.execCommand(listCmd)
+            if (result.exitStatus == 0) {
+                SessionManager.parseSessionList(manager, result.stdout)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "listRemoteSessions($profileId) failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
      * Persist every open multiplexer session name for the profile
      * (pipe-delimited [ConnectionProfile.lastSessionName]) — same
      * bookkeeping `finishConnect` does on a primary dial, so "remembered
