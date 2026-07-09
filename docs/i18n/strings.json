@@ -23799,6 +23799,82 @@
      }
     },
     {
+     "name": "settings_backup_auto_sync_label",
+     "en": "Push automatically",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "الدفع تلقائيًا",
+      "bn": "স্বয়ংক্রিয় পুশ",
+      "de": "Automatisch pushen",
+      "es": "Enviar automáticamente",
+      "fr": "Envoi automatique",
+      "hi": "अपने आप पुश करें",
+      "ja": "自動プッシュ",
+      "ko": "자동 푸시",
+      "pt": "Enviar automaticamente",
+      "ru": "Отправлять автоматически",
+      "zh": "自动推送"
+     }
+    },
+    {
+     "name": "settings_backup_auto_sync_hint",
+     "en": "Re-pushes the encrypted backup a couple of minutes after settings change, plus a daily catch-up. Requires storing your backup passphrase (encrypted) on this device so pushes can run in the background. Pull always stays manual.",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "يعيد دفع النسخة الاحتياطية المشفّرة بعد دقائق من تغيير الإعدادات، مع دفعة تدارُك يومية. يتطلب حفظ كلمة مرور النسخ الاحتياطي (مشفّرة) على هذا الجهاز ليعمل الدفع في الخلفية. يبقى السحب يدويًا دائمًا.",
+      "bn": "সেটিংস বদলানোর কয়েক মিনিট পরে এনক্রিপ্ট করা ব্যাকআপ আবার পুশ করে, সাথে প্রতিদিন একবার ক্যাচ-আপ পুশ। ব্যাকগ্রাউন্ডে পুশ চালাতে আপনার ব্যাকআপ পাসওয়ার্ড (এনক্রিপ্ট করে) এই ডিভাইসে রাখা দরকার। পুল সবসময় ম্যানুয়াল থাকে।",
+      "de": "Pusht die verschlüsselte Sicherung einige Minuten nach Einstellungsänderungen erneut, dazu täglich ein Auffang-Push. Erfordert, dass dein Backup-Passwort (verschlüsselt) auf diesem Gerät gespeichert wird, damit Pushes im Hintergrund laufen können. Pull bleibt immer manuell.",
+      "es": "Reenvía el respaldo cifrado unos minutos después de cambiar la configuración, más un envío diario de recuperación. Requiere guardar tu contraseña del respaldo (cifrada) en este dispositivo para que los envíos se ejecuten en segundo plano. Traer siempre es manual.",
+      "fr": "Renvoie la sauvegarde chiffrée quelques minutes après un changement de réglages, plus un rattrapage quotidien. Nécessite de conserver votre mot de passe de sauvegarde (chiffré) sur cet appareil pour que les envois s’exécutent en arrière-plan. La récupération reste toujours manuelle.",
+      "hi": "सेटिंग बदलने के कुछ मिनट बाद एन्क्रिप्टेड बैकअप फिर से पुश करता है, साथ ही रोज़ एक कैच-अप पुश। बैकग्राउंड में पुश चलाने के लिए आपका बैकअप पासवर्ड (एन्क्रिप्ट करके) इस डिवाइस पर रखना ज़रूरी है। पुल हमेशा मैनुअल रहता है।",
+      "ja": "設定変更の数分後に暗号化バックアップを自動で再プッシュし、さらに毎日1回まとめてプッシュします。バックグラウンドでプッシュを実行するため、バックアップのパスワードを（暗号化して）この端末に保存する必要があります。プルは常に手動です。",
+      "ko": "설정이 변경되면 몇 분 후 암호화된 백업을 다시 푸시하고, 매일 한 번 보충 푸시를 실행합니다. 백그라운드에서 푸시하려면 백업 비밀번호를 (암호화하여) 이 기기에 저장해야 합니다. 풀은 항상 수동입니다.",
+      "pt": "Reenvia o backup criptografado alguns minutos após mudanças nas configurações, além de um envio diário de recuperação. Exige guardar sua senha do backup (criptografada) neste dispositivo para que os envios rodem em segundo plano. Obter permanece sempre manual.",
+      "ru": "Повторно отправляет зашифрованную резервную копию через пару минут после изменения настроек, плюс ежедневная контрольная отправка. Для этого пароль резервной копии хранится (в зашифрованном виде) на этом устройстве, чтобы отправка работала в фоне. Загрузка всегда выполняется вручную.",
+      "zh": "设置更改约几分钟后自动重新推送加密备份，并每天补推一次。需要在本设备上（加密）保存备份密码，以便在后台执行推送。拉取始终为手动操作。"
+     }
+    },
+    {
+     "name": "settings_backup_auto_sync_dialog_title",
+     "en": "Enable automatic push",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "تفعيل الدفع التلقائي",
+      "bn": "স্বয়ংক্রিয় পুশ চালু করুন",
+      "de": "Automatischen Push aktivieren",
+      "es": "Activar el envío automático",
+      "fr": "Activer l’envoi automatique",
+      "hi": "ऑटो पुश चालू करें",
+      "ja": "自動プッシュを有効にする",
+      "ko": "자동 푸시 사용",
+      "pt": "Ativar envio automático",
+      "ru": "Включить автоматическую отправку",
+      "zh": "启用自动推送"
+     }
+    },
+    {
+     "name": "settings_backup_auto_sync_dialog_description",
+     "en": "Set the passphrase that will encrypt every automatic backup. It is kept encrypted on this device — turning auto-push off deletes it.",
+     "comment": "Backup section",
+     "args": [],
+     "t": {
+      "ar": "عيّن كلمة المرور التي ستُشفَّر بها كل نسخة احتياطية تلقائية. تُحفظ مشفّرة على هذا الجهاز — ويؤدي إيقاف الدفع التلقائي إلى حذفها.",
+      "bn": "প্রতিটি স্বয়ংক্রিয় ব্যাকআপ যে পাসওয়ার্ড দিয়ে এনক্রিপ্ট হবে তা সেট করুন। এটি এই ডিভাইসে এনক্রিপ্ট করে রাখা হয় — স্বয়ংক্রিয় পুশ বন্ধ করলে এটি মুছে যায়।",
+      "de": "Lege das Passwort fest, mit dem jede automatische Sicherung verschlüsselt wird. Es wird verschlüsselt auf diesem Gerät gespeichert — beim Deaktivieren des Auto-Push wird es gelöscht.",
+      "es": "Define la contraseña que cifrará cada respaldo automático. Se guarda cifrada en este dispositivo — al desactivar el envío automático se elimina.",
+      "fr": "Définissez le mot de passe qui chiffrera chaque sauvegarde automatique. Il est conservé chiffré sur cet appareil — désactiver l’envoi automatique le supprime.",
+      "hi": "वह पासवर्ड सेट करें जिससे हर ऑटो बैकअप एन्क्रिप्ट होगा। यह इस डिवाइस पर एन्क्रिप्ट करके रखा जाता है — ऑटो पुश बंद करने पर यह हट जाता है।",
+      "ja": "自動バックアップごとに暗号化に使うパスワードを設定します。パスワードは暗号化してこの端末に保存され、自動プッシュをオフにすると削除されます。",
+      "ko": "모든 자동 백업을 암호화할 비밀번호를 설정하세요. 비밀번호는 이 기기에 암호화되어 저장되며, 자동 푸시를 끄면 삭제됩니다.",
+      "pt": "Defina a senha que criptografará cada backup automático. Ela fica guardada criptografada neste dispositivo — desativar o envio automático a exclui.",
+      "ru": "Задайте пароль, которым будет шифроваться каждая автоматическая резервная копия. Он хранится в зашифрованном виде на этом устройстве — при отключении автоотправки он удаляется.",
+      "zh": "设置用于加密每次自动备份的密码。它加密保存在本设备上——关闭自动推送即会删除。"
+     }
+    },
+    {
      "name": "settings_export_backup_title",
      "en": "Export backup",
      "comment": "Backup section",
