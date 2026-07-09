@@ -381,7 +381,10 @@ class WorkspaceLauncher @Inject constructor(
      * handed out in order to that profile's un-named terminal items — so an
      * existing workspace reattaches its sessions without a re-save. Names a
      * later item already claims explicitly are removed from the fallback pool
-     * to avoid handing the same session to two tabs.
+     * to avoid handing the same session to two tabs; the pool is also
+     * de-duplicated (a `lastSessionName` that lists the same session more than
+     * once must not hand it to two items — they'd collapse to one via the
+     * attacher's AlreadyLive check, silently dropping a tab the user expects).
      */
     private suspend fun resolveSessionNames(items: List<WorkspaceItem>): Map<String, String?> {
         val terminals = items.filter { it.kind == WorkspaceItem.Kind.TERMINAL }
@@ -395,6 +398,7 @@ class WorkspaceLauncher @Inject constructor(
                 ?.split("|")
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() && it !in explicit }
+                ?.distinct()
                 ?: emptyList()
             fallback[profileId] = ArrayDeque(remembered)
         }

@@ -346,6 +346,37 @@ class WorkspaceLauncherTest {
     }
 
     @Test
+    fun duplicateNamesInRememberedPoolAreNotHandedToTwoItems() = runBlocking {
+        // A lastSessionName that lists the same session twice ("cctv|cctv|haven")
+        // must not resolve two nameless items to "cctv" — the second would
+        // collapse into the first via AlreadyLive, silently dropping a tab. The
+        // pool is de-duped, so the third item gets the distinct "haven".
+        val sshProfile = profile("ssh-1", connectionType = "SSH", lastSessionName = "cctv|cctv|haven")
+        val ws = WorkspaceProfile(id = "ws-1", name = "Work")
+        val items = listOf(
+            item("ws-1", "term-a", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 0),
+            item("ws-1", "term-b", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 1),
+        )
+        val workspaceRepo = mockk<WorkspaceRepository>()
+        coEvery { workspaceRepo.getWorkspace("ws-1") } returns WorkspaceWithItems(ws, items)
+        coEvery { workspaceRepo.save(any(), any()) } just Runs
+        val connRepo = mockk<ConnectionRepository>()
+        coEvery { connRepo.getById("ssh-1") } returns sshProfile
+        val (bus, _) = recordingBus()
+
+        val attacher = attacherMock()
+        coEvery { attacher.ensureAttached("ssh-1", any()) } returns
+            SshSessionAttacher.Result.Attached("s")
+
+        launcher(workspaceRepo, connRepo, bus, mockk(), attacher).launch("ws-1")
+
+        // term-a → cctv, term-b → haven (NOT the duplicate cctv).
+        coVerify { attacher.ensureAttached("ssh-1", "cctv") }
+        coVerify { attacher.ensureAttached("ssh-1", "haven") }
+        coVerify(exactly = 0) { attacher.ensureAttached("ssh-1", "civic") }
+    }
+
+    @Test
     fun relaunchOverLiveSessionsIsIdempotent() = runBlocking {
         // Everything already up: no dial, no duplicate tabs — items succeed
         // via AlreadyLive and the launcher just refocuses the terminal.
