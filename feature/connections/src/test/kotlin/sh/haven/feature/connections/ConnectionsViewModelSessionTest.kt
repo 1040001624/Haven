@@ -159,6 +159,12 @@ class ConnectionsViewModelSessionTest {
             connectionGroupDao = mockk(relaxed = true) {
                 every { observeAll() } returns flowOf(emptyList())
             },
+            sshIdentityRepository = mockk(relaxed = true) {
+                every { observeAll() } returns flowOf(emptyList())
+                // No identity assigned in these tests: applyTo is a pass-through
+                // so the connect path sees the profile's inline credentials.
+                coEvery { applyTo(any()) } answers { firstArg() }
+            },
             hostKeyVerifier = mockk(relaxed = true),
             connectionLogRepository = mockk(relaxed = true),
             tunnelResolver = mockk(relaxed = true),
