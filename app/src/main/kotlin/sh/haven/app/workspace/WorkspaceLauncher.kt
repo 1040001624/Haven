@@ -89,6 +89,7 @@ class WorkspaceLauncher @Inject constructor(
         }
 
         val sortedItems = sortByKindPriority(workspace.items)
+        val sessionNames = resolveSessionNames(sortedItems)
 
         val initialProgress = sortedItems.map { item ->
             ItemProgress(
@@ -127,7 +128,7 @@ class WorkspaceLauncher @Inject constructor(
             )
             publishLaunching(workspace.profile.id, workspace.profile.name, progressMap, sortedItems)
 
-            val outcome = dispatch(item, dialed)
+            val outcome = dispatch(item, sessionNames[item.id], dialed)
             progressMap[item.id] = progressMap.getValue(item.id).copy(
                 status = if (outcome.success) ItemProgress.Status.Succeeded
                 else ItemProgress.Status.Failed,
@@ -170,7 +171,11 @@ class WorkspaceLauncher @Inject constructor(
         }
     }
 
-    private suspend fun dispatch(item: WorkspaceItem, dialed: MutableSet<String>): DispatchOutcome {
+    private suspend fun dispatch(
+        item: WorkspaceItem,
+        sessionName: String?,
+        dialed: MutableSet<String>,
+    ): DispatchOutcome {
         val command = when (item.kind) {
             WorkspaceItem.Kind.WAYLAND -> AgentUiCommand.OpenWaylandDesktop
             WorkspaceItem.Kind.TERMINAL -> {
@@ -184,10 +189,8 @@ class WorkspaceLauncher @Inject constructor(
                 // one). On a cold workspace restore none is up, so it would
                 // no-op with "Connection config not found". Dial the profile
                 // instead — connect() establishes the SSH session AND opens the
-                // first tab — and wait until it is CONNECTED so the remaining
-                // items on the same profile reuse the connection rather than
-                // racing the in-flight dial. Mosh/ET/Reticulum/Local keep the
-                // tab-only path (separate session managers; not this bug).
+                // first tab. Mosh/ET/Reticulum/Local keep the tab-only path
+                // (separate session managers; not this bug).
                 val isPlainSsh = profile.isSsh && !profile.isMosh && !profile.isEternalTerminal
                 if (isPlainSsh && !sshSessionManager.isProfileConnected(profile.id)) {
                     if (profile.id in dialed) {
@@ -196,21 +199,28 @@ class WorkspaceLauncher @Inject constructor(
                         return DispatchOutcome(false, "connection unavailable")
                     }
                     dialed += profile.id
-                    // Dial with the saved session name so the first tab attaches
-                    // straight to its tmux/zellij session (ConnectProfile threads
-                    // it through as preselectedSessionName, skipping the picker).
-                    if (!agentUiCommandBus.emit(AgentUiCommand.ConnectProfile(profile.id, sessionName = item.sessionName))) {
+                    // Dial with the resolved session name so the first tab
+                    // attaches straight to its tmux/zellij session (ConnectProfile
+                    // threads it through as preselectedSessionName, skipping the
+                    // picker).
+                    if (!agentUiCommandBus.emit(AgentUiCommand.ConnectProfile(profile.id, sessionName = sessionName))) {
                         return DispatchOutcome(false, "ui bus overflow")
                     }
-                    return if (awaitProfileConnected(profile.id, CONNECT_TIMEOUT_MS)) {
-                        DispatchOutcome(true, null)
-                    } else {
-                        DispatchOutcome(false, "connection did not come up")
+                    // With a session name the connect auto-attaches and reaches
+                    // CONNECTED, so wait — the remaining tabs on this profile then
+                    // reuse it. Without one the connect shows the session picker,
+                    // which never reaches CONNECTED until the user picks; don't
+                    // block the whole launch on that (the dialed guard drops the
+                    // rest so we don't stack more pickers either).
+                    return when {
+                        sessionName == null -> DispatchOutcome(true, null)
+                        awaitProfileConnected(profile.id, CONNECT_TIMEOUT_MS) -> DispatchOutcome(true, null)
+                        else -> DispatchOutcome(false, "connection did not come up")
                     }
                 }
                 // Reuse the live connection for a further tab, reattaching to the
-                // saved session by name so it too skips the picker.
-                AgentUiCommand.OpenTerminalSession(profile.id, sessionName = item.sessionName)
+                // resolved session by name so it too skips the picker.
+                AgentUiCommand.OpenTerminalSession(profile.id, sessionName = sessionName)
             }
             WorkspaceItem.Kind.FILE_BROWSER -> {
                 val profile = item.connectionProfileId?.let { connectionRepository.getById(it) }
@@ -239,6 +249,38 @@ class WorkspaceLauncher @Inject constructor(
             // Bus overflow is rare (1-element extra buffer) but real if
             // the same caller emits faster than the collector drains.
             DispatchOutcome(false, "ui bus overflow")
+        }
+    }
+
+    /**
+     * The tmux/zellij session each terminal item should reattach to, keyed by
+     * item id. A workspace saved with the session-name feature carries it on
+     * the item; older ones don't, so we fall back to the profile's remembered
+     * open sessions ([ConnectionProfile.lastSessionName], pipe-delimited),
+     * handed out in order to that profile's un-named terminal items — so an
+     * existing workspace reattaches its sessions without a re-save. Names a
+     * later item already claims explicitly are removed from the fallback pool
+     * to avoid handing the same session to two tabs.
+     */
+    private suspend fun resolveSessionNames(items: List<WorkspaceItem>): Map<String, String?> {
+        val terminals = items.filter { it.kind == WorkspaceItem.Kind.TERMINAL }
+        val fallback = mutableMapOf<String, ArrayDeque<String>>()
+        for (profileId in terminals.mapNotNull { it.connectionProfileId }.distinct()) {
+            val explicit = terminals
+                .filter { it.connectionProfileId == profileId }
+                .mapNotNull { it.sessionName }
+                .toSet()
+            val remembered = connectionRepository.getById(profileId)?.lastSessionName
+                ?.split("|")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() && it !in explicit }
+                ?: emptyList()
+            fallback[profileId] = ArrayDeque(remembered)
+        }
+        return terminals.associate { item ->
+            val name = item.sessionName
+                ?: item.connectionProfileId?.let { fallback[it]?.removeFirstOrNull() }
+            item.id to name
         }
     }
 

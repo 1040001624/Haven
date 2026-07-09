@@ -304,6 +304,42 @@ class WorkspaceLauncherTest {
         assertTrue("both items succeed", state.items.all { it.status == ItemProgress.Status.Succeeded })
     }
 
+    @Test
+    fun oldWorkspaceWithoutSessionNamesFallsBackToProfileRememberedSessions() = runBlocking {
+        // Workspace saved before the feature: items carry no sessionName. The
+        // profile still remembers its open sessions (lastSessionName), so restore
+        // reattaches by those in order instead of showing the picker.
+        val sshProfile = profile("ssh-1", connectionType = "SSH", lastSessionName = "cctv|civic")
+        val ws = WorkspaceProfile(id = "ws-1", name = "Work")
+        val items = listOf(
+            item("ws-1", "term-a", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 0),
+            item("ws-1", "term-b", WorkspaceItem.Kind.TERMINAL, "ssh-1", sortOrder = 1),
+        )
+        val workspaceRepo = mockk<WorkspaceRepository>()
+        coEvery { workspaceRepo.getWorkspace("ws-1") } returns WorkspaceWithItems(ws, items)
+        val connRepo = mockk<ConnectionRepository>()
+        coEvery { connRepo.getById("ssh-1") } returns sshProfile
+
+        val bus = mockk<AgentUiCommandBus>()
+        val emitted = mutableListOf<AgentUiCommand>()
+        every { bus.emit(any()) } answers { emitted += firstArg<AgentUiCommand>(); true }
+
+        val sm = mockk<SshSessionManager>()
+        val session = mockk<SshSessionManager.SessionState> {
+            every { profileId } returns "ssh-1"
+            every { status } returns SshSessionManager.SessionState.Status.CONNECTED
+        }
+        every { sm.sessions } returns MutableStateFlow(mapOf("s-1" to session))
+        var connectedYet = false
+        every { sm.isProfileConnected("ssh-1") } answers { connectedYet.also { connectedYet = true } }
+
+        WorkspaceLauncher(workspaceRepo, connRepo, bus, sm).launch("ws-1")
+
+        assertEquals(2, emitted.size)
+        assertEquals("cctv", (emitted[0] as AgentUiCommand.ConnectProfile).sessionName)
+        assertEquals("civic", (emitted[1] as AgentUiCommand.OpenTerminalSession).sessionName)
+    }
+
     private fun item(
         workspaceId: String,
         id: String,
@@ -325,6 +361,7 @@ class WorkspaceLauncherTest {
     private fun profile(
         id: String,
         connectionType: String,
+        lastSessionName: String? = null,
     ) = ConnectionProfile(
         id = id,
         label = "$id label",
@@ -332,5 +369,6 @@ class WorkspaceLauncherTest {
         port = 22,
         username = "user",
         connectionType = connectionType,
+        lastSessionName = lastSessionName,
     )
 }
