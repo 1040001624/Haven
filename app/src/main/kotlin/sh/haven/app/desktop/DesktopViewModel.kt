@@ -400,6 +400,24 @@ class DesktopViewModel @Inject constructor(
         }
     }
 
+    /** Session command for the Custom (X11) desktop (#361); blank = unset. */
+    val customDesktopCommand: StateFlow<String> = preferencesRepository.customDesktopCommand
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    /**
+     * Persist the custom command; [thenStart] launches the Custom desktop
+     * after the write commits (sequenced here — starting from the UI right
+     * after an async save would race the launch path's preference read).
+     */
+    fun setCustomDesktopCommand(command: String, thenStart: Boolean = false) {
+        viewModelScope.launch {
+            preferencesRepository.setCustomDesktopCommand(command)
+            if (thenStart && command.isNotBlank()) {
+                startDesktop(ProotManager.DesktopEnvironment.CUSTOM_X11)
+            }
+        }
+    }
+
     /**
      * Start a DE and add it as a tab in the Desktop session viewer.
      * Replaces the old _navigateToVnc → ConnectionsScreen → DesktopViewModel

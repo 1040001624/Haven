@@ -109,6 +109,12 @@
     <string name="app_desktop_error">오류</string>
     <string name="app_desktop_install_distro_first">" · 먼저 배포판 설치"</string>
     <string name="app_desktop_vnc_port_stored">VNC 포트 %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">먼저 세션 명령을 설정하세요</string>
+    <string name="app_desktop_custom_cmd_edit">세션 명령 편집</string>
+    <string name="app_desktop_custom_cmd_title">사용자 지정 세션 명령</string>
+    <string name="app_desktop_custom_cmd_description">활성 배포판 안에서 Haven의 X 서버를 대상으로 실행됩니다 — termux-x11 방식, 예: dbus-launch startxfce4. 먼저 배포판에 데스크톱 패키지를 설치하세요. X11 데스크톱은 소프트웨어 렌더링을 사용하므로 GL 컴포지터가 필요한 데스크톱(GNOME Shell, KWin)은 시작되지 않습니다.</string>
+    <string name="app_desktop_custom_cmd_label">세션 명령</string>
+    <string name="app_desktop_custom_cmd_save_start">저장 후 시작</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">%1$s에서 실험적</string>
     <string name="app_desktop_vnc_port_label">VNC 포트</string>

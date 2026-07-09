@@ -694,6 +694,34 @@ object DesktopCatalog {
         sizeEstimateMb = 100,
     )
 
+    /**
+     * User-defined X11 session (#361, termux-x11 parity) — Haven still owns
+     * the X server (Xvnc :N over the same VNC pipeline as Openbox/Xfce4);
+     * the session command comes from
+     * `UserPreferencesRepository.customDesktopCommand` at launch, substituted
+     * by DesktopManager for the empty [LaunchSpec.X11Vnc.startCommands]
+     * placeholder below. Packages install only the X server + dbus glue +
+     * xterm (a debug surface) — the WM/DE itself is the user's to install
+     * inside the distro. Same software-rendering constraints as every X11Vnc
+     * desktop: GL-compositor DEs (GNOME Shell, KWin) won't render regardless
+     * of the command.
+     */
+    val CUSTOM_X11 = DesktopEnvironmentSpec(
+        id = "custom-x11",
+        label = "Custom command (X11)",
+        packagesPerFamily = mapOf(
+            PackageFamily.APK to listOf("tigervnc", "dbus-x11", "xterm", "font-noto"),
+            PackageFamily.APT to listOf(
+                "tigervnc-standalone-server", "dbus-x11", "xterm", "fonts-noto-core",
+            ),
+            PackageFamily.PACMAN to listOf("tigervnc", "dbus", "xterm", "noto-fonts"),
+            PackageFamily.XBPS to listOf("tigervnc", "dbus", "xterm", "noto-fonts-ttf"),
+        ),
+        verifyBinary = "usr/bin/xterm",
+        launch = LaunchSpec.X11Vnc(startCommands = ""),
+        sizeEstimateMb = 15,
+    )
+
     val LABWC_NATIVE = DesktopEnvironmentSpec(
         id = "labwc-native",
         label = "Native Wayland",
@@ -999,7 +1027,7 @@ object DesktopCatalog {
     )
 
     val all: List<DesktopEnvironmentSpec> = listOf(
-        OPENBOX, XFCE4, LABWC_NATIVE, X11_NATIVE,
+        OPENBOX, XFCE4, CUSTOM_X11, LABWC_NATIVE, X11_NATIVE,
         SWAY, HYPRLAND, NIRI, CAGE,
     )
 

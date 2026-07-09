@@ -3535,6 +3535,120 @@
      }
     },
     {
+     "name": "app_desktop_custom_cmd_unset",
+     "en": "Set the session command to start",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "عيّن أمر الجلسة أولًا",
+      "bn": "আগে সেশন কমান্ড সেট করুন",
+      "de": "Zuerst das Sitzungskommando festlegen",
+      "es": "Configura primero el comando de sesión",
+      "fr": "Définissez d’abord la commande de session",
+      "hi": "पहले सेशन कमांड सेट करें",
+      "ja": "先にセッションコマンドを設定してください",
+      "ko": "먼저 세션 명령을 설정하세요",
+      "pt": "Defina primeiro o comando de sessão",
+      "ru": "Сначала задайте команду сеанса",
+      "zh": "请先设置会话启动命令"
+     }
+    },
+    {
+     "name": "app_desktop_custom_cmd_edit",
+     "en": "Edit session command",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "تحرير أمر الجلسة",
+      "bn": "সেশন কমান্ড সম্পাদনা",
+      "de": "Sitzungskommando bearbeiten",
+      "es": "Editar comando de sesión",
+      "fr": "Modifier la commande de session",
+      "hi": "सेशन कमांड संपादित करें",
+      "ja": "セッションコマンドを編集",
+      "ko": "세션 명령 편집",
+      "pt": "Editar comando de sessão",
+      "ru": "Изменить команду сеанса",
+      "zh": "编辑会话命令"
+     }
+    },
+    {
+     "name": "app_desktop_custom_cmd_title",
+     "en": "Custom session command",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "أمر جلسة مخصّص",
+      "bn": "কাস্টম সেশন কমান্ড",
+      "de": "Eigenes Sitzungskommando",
+      "es": "Comando de sesión personalizado",
+      "fr": "Commande de session personnalisée",
+      "hi": "कस्टम सेशन कमांड",
+      "ja": "カスタムセッションコマンド",
+      "ko": "사용자 지정 세션 명령",
+      "pt": "Comando de sessão personalizado",
+      "ru": "Своя команда сеанса",
+      "zh": "自定义会话命令"
+     }
+    },
+    {
+     "name": "app_desktop_custom_cmd_description",
+     "en": "Runs against Haven\\'s X server inside the active distro — the termux-x11 pattern, e.g. dbus-launch startxfce4. Install the desktop\\'s packages in the distro first. X11 desktops render in software: desktops that require a GL compositor (GNOME Shell, KWin) won\\'t start.",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "يعمل على خادم X الخاص بـ Haven داخل التوزيعة النشطة — بنمط termux-x11، مثل dbus-launch startxfce4. ثبّت حزم سطح المكتب في التوزيعة أولًا. تستخدم أسطح مكتب X11 العرض البرمجي: أسطح المكتب التي تتطلب مُركِّب GL (GNOME Shell وKWin) لن تعمل.",
+      "bn": "সক্রিয় ডিস্ট্রোর ভেতরে Haven-এর X সার্ভারে চলে — termux-x11 প্যাটার্ন, যেমন dbus-launch startxfce4। আগে ডিস্ট্রোতে ডেস্কটপের প্যাকেজ ইনস্টল করুন। X11 ডেস্কটপ সফটওয়্যার রেন্ডারিং ব্যবহার করে: যেসব ডেস্কটপে GL কম্পোজিটর লাগে (GNOME Shell, KWin) সেগুলো চালু হবে না।",
+      "de": "Läuft gegen Havens X-Server in der aktiven Distro — das termux-x11-Muster, z. B. dbus-launch startxfce4. Installiere die Pakete des Desktops zuerst in der Distro. X11-Desktops rendern in Software: Desktops, die einen GL-Compositor brauchen (GNOME Shell, KWin), starten nicht.",
+      "es": "Se ejecuta contra el servidor X de Haven dentro de la distro activa — el patrón de termux-x11, p. ej. dbus-launch startxfce4. Instala antes los paquetes del escritorio en la distro. Los escritorios X11 usan renderizado por software: los que requieren un compositor GL (GNOME Shell, KWin) no arrancarán.",
+      "fr": "S’exécute sur le serveur X de Haven dans la distribution active — le schéma termux-x11, p. ex. dbus-launch startxfce4. Installez d’abord les paquets du bureau dans la distribution. Les bureaux X11 utilisent le rendu logiciel : les bureaux exigeant un compositeur GL (GNOME Shell, KWin) ne démarreront pas.",
+      "hi": "सक्रिय डिस्ट्रो के अंदर Haven के X सर्वर पर चलता है — termux-x11 वाला तरीका, जैसे dbus-launch startxfce4। पहले डिस्ट्रो में डेस्कटॉप के पैकेज इंस्टॉल करें। X11 डेस्कटॉप सॉफ़्टवेयर रेंडरिंग इस्तेमाल करते हैं: जिन डेस्कटॉप को GL कंपोज़िटर चाहिए (GNOME Shell, KWin), वे शुरू नहीं होंगे।",
+      "ja": "アクティブなディストリ内で Haven の X サーバーに対して実行します（termux-x11 方式、例: dbus-launch startxfce4）。先にディストリへデスクトップのパッケージをインストールしてください。X11 デスクトップはソフトウェアレンダリングのため、GL コンポジターを必要とするデスクトップ（GNOME Shell、KWin）は起動しません。",
+      "ko": "활성 배포판 안에서 Haven의 X 서버를 대상으로 실행됩니다 — termux-x11 방식, 예: dbus-launch startxfce4. 먼저 배포판에 데스크톱 패키지를 설치하세요. X11 데스크톱은 소프트웨어 렌더링을 사용하므로 GL 컴포지터가 필요한 데스크톱(GNOME Shell, KWin)은 시작되지 않습니다.",
+      "pt": "Executa contra o servidor X do Haven dentro da distro ativa — o padrão do termux-x11, ex.: dbus-launch startxfce4. Instale antes os pacotes do desktop na distro. Desktops X11 usam renderização por software: desktops que exigem um compositor GL (GNOME Shell, KWin) não iniciarão.",
+      "ru": "Выполняется на X-сервере Haven внутри активного дистрибутива — схема termux-x11, например dbus-launch startxfce4. Сначала установите пакеты рабочего стола в дистрибутиве. X11-рабочие столы используют программный рендеринг: окружения, требующие GL-композитор (GNOME Shell, KWin), не запустятся.",
+      "zh": "在当前发行版内、针对 Haven 的 X 服务器运行——即 termux-x11 的用法，例如 dbus-launch startxfce4。请先在发行版里安装对应桌面的软件包。X11 桌面为软件渲染：依赖 GL 合成器的桌面（GNOME Shell、KWin）无法启动。"
+     }
+    },
+    {
+     "name": "app_desktop_custom_cmd_label",
+     "en": "Session command",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "أمر الجلسة",
+      "bn": "সেশন কমান্ড",
+      "de": "Sitzungskommando",
+      "es": "Comando de sesión",
+      "fr": "Commande de session",
+      "hi": "सेशन कमांड",
+      "ja": "セッションコマンド",
+      "ko": "세션 명령",
+      "pt": "Comando de sessão",
+      "ru": "Команда сеанса",
+      "zh": "会话命令"
+     }
+    },
+    {
+     "name": "app_desktop_custom_cmd_save_start",
+     "en": "Save &amp; start",
+     "comment": "Custom (X11) desktop command (#361)",
+     "args": [],
+     "t": {
+      "ar": "حفظ وتشغيل",
+      "bn": "সংরক্ষণ করে চালু করুন",
+      "de": "Speichern &amp; starten",
+      "es": "Guardar e iniciar",
+      "fr": "Enregistrer et démarrer",
+      "hi": "सहेजें और शुरू करें",
+      "ja": "保存して起動",
+      "ko": "저장 후 시작",
+      "pt": "Salvar e iniciar",
+      "ru": "Сохранить и запустить",
+      "zh": "保存并启动"
+     }
+    },
+    {
      "name": "app_desktop_de_with_size",
      "en": "%1$s (%2$s)",
      "comment": "Desktop setup dialog",

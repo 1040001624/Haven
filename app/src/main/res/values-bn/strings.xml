@@ -103,6 +103,12 @@
     <string name="app_desktop_error">ত্রুটি</string>
     <string name="app_desktop_install_distro_first">" · আগে distro ইনস্টল করুন"</string>
     <string name="app_desktop_vnc_port_stored">VNC পোর্ট %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">আগে সেশন কমান্ড সেট করুন</string>
+    <string name="app_desktop_custom_cmd_edit">সেশন কমান্ড সম্পাদনা</string>
+    <string name="app_desktop_custom_cmd_title">কাস্টম সেশন কমান্ড</string>
+    <string name="app_desktop_custom_cmd_description">সক্রিয় ডিস্ট্রোর ভেতরে Haven-এর X সার্ভারে চলে — termux-x11 প্যাটার্ন, যেমন dbus-launch startxfce4। আগে ডিস্ট্রোতে ডেস্কটপের প্যাকেজ ইনস্টল করুন। X11 ডেস্কটপ সফটওয়্যার রেন্ডারিং ব্যবহার করে: যেসব ডেস্কটপে GL কম্পোজিটর লাগে (GNOME Shell, KWin) সেগুলো চালু হবে না।</string>
+    <string name="app_desktop_custom_cmd_label">সেশন কমান্ড</string>
+    <string name="app_desktop_custom_cmd_save_start">সংরক্ষণ করে চালু করুন</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">%1$s-এ পরীক্ষামূলক</string>
     <string name="app_desktop_vnc_port_label">VNC পোর্ট</string>

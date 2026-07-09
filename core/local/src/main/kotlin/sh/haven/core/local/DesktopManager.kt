@@ -764,6 +764,23 @@ class DesktopManager @Inject constructor(
 
         val launch = de.spec.launch as LaunchSpec.X11Vnc
 
+        // #361: the Custom DE's startCommands placeholder is empty — the real
+        // session command is the user's preference, read here at launch so
+        // edits apply on the next start without reinstalling. `; ` (not the
+        // catalog entries' trailing `&`) separates it from the shell's `wait`,
+        // so a blocking command like `dbus-launch startxfce4` doesn't swallow
+        // `wait` as an argument. Blank = misconfigured: fail loudly into the
+        // DE row's error state rather than render an empty desktop.
+        val startCommands = if (de == ProotManager.DesktopEnvironment.CUSTOM_X11) {
+            val cmd = runBlocking { userPreferencesRepository.customDesktopCommand.first() }
+            if (cmd.isBlank()) {
+                throw IllegalStateException("No custom desktop command set — configure it in the Desktops view")
+            }
+            "$cmd ; "
+        } else {
+            launch.startCommands
+        }
+
         // Clean lock files for this display
         File(context.cacheDir, ".X${display}-lock").delete()
         File(rootHome, ".ICEauthority").apply { if (!exists()) createNewFile() }
@@ -795,7 +812,7 @@ class DesktopManager @Inject constructor(
                 // best-effort — never fail the launch if the tool is absent.
                 "export LIBGL_ALWAYS_SOFTWARE=1; export GALLIUM_DRIVER=llvmpipe; " +
                 "xsetroot -solid '#202830' 2>/dev/null || true; " +
-                "${launch.startCommands} " +
+                "$startCommands " +
                 "wait"
 
         val prootArgs = mutableListOf(

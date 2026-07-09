@@ -103,6 +103,12 @@
     <string name="app_desktop_error">错误</string>
     <string name="app_desktop_install_distro_first">" · 请先安装发行版"</string>
     <string name="app_desktop_vnc_port_stored">VNC 端口 %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">请先设置会话启动命令</string>
+    <string name="app_desktop_custom_cmd_edit">编辑会话命令</string>
+    <string name="app_desktop_custom_cmd_title">自定义会话命令</string>
+    <string name="app_desktop_custom_cmd_description">在当前发行版内、针对 Haven 的 X 服务器运行——即 termux-x11 的用法，例如 dbus-launch startxfce4。请先在发行版里安装对应桌面的软件包。X11 桌面为软件渲染：依赖 GL 合成器的桌面（GNOME Shell、KWin）无法启动。</string>
+    <string name="app_desktop_custom_cmd_label">会话命令</string>
+    <string name="app_desktop_custom_cmd_save_start">保存并启动</string>
     <string name="app_desktop_de_with_size">%1$s（%2$s）</string>
     <string name="app_desktop_experimental_on">%1$s（实验性）</string>
     <string name="app_desktop_vnc_port_label">VNC 端口</string>

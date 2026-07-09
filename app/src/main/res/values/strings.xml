@@ -213,6 +213,14 @@
     <string name="app_desktop_install_distro_first">" · install distro first"</string>
     <string name="app_desktop_vnc_port_stored">VNC port %1$d</string>
 
+    <!-- Custom (X11) desktop command (#361) -->
+    <string name="app_desktop_custom_cmd_unset">Set the session command to start</string>
+    <string name="app_desktop_custom_cmd_edit">Edit session command</string>
+    <string name="app_desktop_custom_cmd_title">Custom session command</string>
+    <string name="app_desktop_custom_cmd_description">Runs against Haven\'s X server inside the active distro — the termux-x11 pattern, e.g. dbus-launch startxfce4. Install the desktop\'s packages in the distro first. X11 desktops render in software: desktops that require a GL compositor (GNOME Shell, KWin) won\'t start.</string>
+    <string name="app_desktop_custom_cmd_label">Session command</string>
+    <string name="app_desktop_custom_cmd_save_start">Save &amp; start</string>
+
     <!-- Desktop setup dialog -->
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">Experimental on %1$s</string>

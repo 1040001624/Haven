@@ -103,6 +103,12 @@
     <string name="app_desktop_error">Fehler</string>
     <string name="app_desktop_install_distro_first">" · zuerst Distribution installieren"</string>
     <string name="app_desktop_vnc_port_stored">VNC-Port %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">Zuerst das Sitzungskommando festlegen</string>
+    <string name="app_desktop_custom_cmd_edit">Sitzungskommando bearbeiten</string>
+    <string name="app_desktop_custom_cmd_title">Eigenes Sitzungskommando</string>
+    <string name="app_desktop_custom_cmd_description">Läuft gegen Havens X-Server in der aktiven Distro — das termux-x11-Muster, z. B. dbus-launch startxfce4. Installiere die Pakete des Desktops zuerst in der Distro. X11-Desktops rendern in Software: Desktops, die einen GL-Compositor brauchen (GNOME Shell, KWin), starten nicht.</string>
+    <string name="app_desktop_custom_cmd_label">Sitzungskommando</string>
+    <string name="app_desktop_custom_cmd_save_start">Speichern &amp; starten</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">Experimentell auf %1$s</string>
     <string name="app_desktop_vnc_port_label">VNC-Port</string>

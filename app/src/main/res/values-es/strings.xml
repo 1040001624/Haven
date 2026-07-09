@@ -105,6 +105,12 @@
     <string name="app_desktop_error">Error</string>
     <string name="app_desktop_install_distro_first">" · instalar distro primero"</string>
     <string name="app_desktop_vnc_port_stored">Puerto VNC %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">Configura primero el comando de sesión</string>
+    <string name="app_desktop_custom_cmd_edit">Editar comando de sesión</string>
+    <string name="app_desktop_custom_cmd_title">Comando de sesión personalizado</string>
+    <string name="app_desktop_custom_cmd_description">Se ejecuta contra el servidor X de Haven dentro de la distro activa — el patrón de termux-x11, p. ej. dbus-launch startxfce4. Instala antes los paquetes del escritorio en la distro. Los escritorios X11 usan renderizado por software: los que requieren un compositor GL (GNOME Shell, KWin) no arrancarán.</string>
+    <string name="app_desktop_custom_cmd_label">Comando de sesión</string>
+    <string name="app_desktop_custom_cmd_save_start">Guardar e iniciar</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">Experimental en %1$s</string>
     <string name="app_desktop_vnc_port_label">Puerto VNC</string>

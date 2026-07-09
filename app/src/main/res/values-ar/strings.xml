@@ -103,6 +103,12 @@
     <string name="app_desktop_error">خطأ</string>
     <string name="app_desktop_install_distro_first">" · ثبّت التوزيعة أولًا"</string>
     <string name="app_desktop_vnc_port_stored">منفذ VNC %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">عيّن أمر الجلسة أولًا</string>
+    <string name="app_desktop_custom_cmd_edit">تحرير أمر الجلسة</string>
+    <string name="app_desktop_custom_cmd_title">أمر جلسة مخصّص</string>
+    <string name="app_desktop_custom_cmd_description">يعمل على خادم X الخاص بـ Haven داخل التوزيعة النشطة — بنمط termux-x11، مثل dbus-launch startxfce4. ثبّت حزم سطح المكتب في التوزيعة أولًا. تستخدم أسطح مكتب X11 العرض البرمجي: أسطح المكتب التي تتطلب مُركِّب GL (GNOME Shell وKWin) لن تعمل.</string>
+    <string name="app_desktop_custom_cmd_label">أمر الجلسة</string>
+    <string name="app_desktop_custom_cmd_save_start">حفظ وتشغيل</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">تجريبي على %1$s</string>
     <string name="app_desktop_vnc_port_label">منفذ VNC</string>

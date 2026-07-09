@@ -740,6 +740,18 @@ class ProotManager @Inject constructor(
             sizeEstimate = "~100MB",
             extraBinaries = listOf("usr/bin/xfwm4", "usr/bin/xfce4-panel", "usr/bin/xfdesktop"),
         ),
+        // User-defined X11 session (#361): startCommands stays empty here —
+        // DesktopManager substitutes UserPreferencesRepository.customDesktopCommand
+        // at launch. Packages are only the X server + dbus glue + xterm; the
+        // user installs their own WM/DE in the distro.
+        CUSTOM_X11(
+            id = "custom-x11",
+            label = "Custom command (X11)",
+            packages = "tigervnc dbus-x11 xterm font-noto",
+            verifyBinary = "usr/bin/xterm",
+            startCommands = "",
+            sizeEstimate = "~15MB",
+        ),
         WAYLAND_NATIVE(
             id = "labwc-native",
             label = "Native Wayland",

@@ -105,6 +105,12 @@
     <string name="app_desktop_error">Ошибка</string>
     <string name="app_desktop_install_distro_first">" · сначала установите дистрибутив"</string>
     <string name="app_desktop_vnc_port_stored">Порт VNC %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">Сначала задайте команду сеанса</string>
+    <string name="app_desktop_custom_cmd_edit">Изменить команду сеанса</string>
+    <string name="app_desktop_custom_cmd_title">Своя команда сеанса</string>
+    <string name="app_desktop_custom_cmd_description">Выполняется на X-сервере Haven внутри активного дистрибутива — схема termux-x11, например dbus-launch startxfce4. Сначала установите пакеты рабочего стола в дистрибутиве. X11-рабочие столы используют программный рендеринг: окружения, требующие GL-композитор (GNOME Shell, KWin), не запустятся.</string>
+    <string name="app_desktop_custom_cmd_label">Команда сеанса</string>
+    <string name="app_desktop_custom_cmd_save_start">Сохранить и запустить</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">Экспериментально на %1$s</string>
     <string name="app_desktop_vnc_port_label">Порт VNC</string>

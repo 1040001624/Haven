@@ -48,6 +48,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -119,6 +120,7 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
     val customBindsRev by viewModel.customBindsRev.collectAsState()
     val usbDriveSessions by viewModel.usbDriveSessions.collectAsState()
     val applianceProvisioned by viewModel.applianceProvisioned.collectAsState()
+    val customDesktopCommand by viewModel.customDesktopCommand.collectAsState()
 
     var setupDesktopDe by remember {
         mutableStateOf<ProotManager.DesktopEnvironment?>(null)
@@ -184,6 +186,8 @@ fun DesktopManagerScreen(viewModel: DesktopViewModel = hiltViewModel()) {
             onOpenTerminalInDesktop = { viewModel.openTerminalInDesktop(it) },
             onUninstall = { viewModel.uninstallDesktop(it) },
             onRetryRootfs = { viewModel.retryRootfsInstall() },
+            customDesktopCommand = customDesktopCommand,
+            onSetCustomDesktopCommand = { cmd, thenStart -> viewModel.setCustomDesktopCommand(cmd, thenStart) },
         )
 
         AppWindowsSection(
@@ -941,10 +945,15 @@ private fun DesktopManagerSection(
     onOpenTerminalInDesktop: (ProotManager.DesktopEnvironment) -> Unit,
     onUninstall: (ProotManager.DesktopEnvironment) -> Unit,
     onRetryRootfs: () -> Unit,
+    customDesktopCommand: String,
+    onSetCustomDesktopCommand: (command: String, thenStart: Boolean) -> Unit,
 ) {
     var distroMenuOpen by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showCustomBindsDialog by remember { mutableStateOf(false) }
+    // #361: non-null while the Custom (X11) command dialog is open; true =
+    // opened via Start on a blank command, so Save also starts the desktop.
+    var customCmdDialogStartAfter by remember { mutableStateOf<Boolean?>(null) }
     var showWritableConfirm by remember { mutableStateOf(false) }
     // Which locked partition's unlock dialog is open (null = none) — the
     // owning session's busid + the mount-dir name (e.g. "sdb2").
@@ -1397,6 +1406,7 @@ private fun DesktopManagerSection(
             compatibleDes.forEach { de ->
                 val isInstalled = de in installedDesktops
                 val instance = desktopStates[de]
+                val isCustom = de == ProotManager.DesktopEnvironment.CUSTOM_X11
                 DesktopRow(
                     de = de,
                     isInstalled = isInstalled,
@@ -1405,8 +1415,18 @@ private fun DesktopManagerSection(
                     activeFamily = activeDistro?.family,
                     isRootfsReady = isRootfsReady,
                     storedVncPort = storedVncPortFor(de),
+                    customCommand = if (isCustom) customDesktopCommand else null,
+                    onEditCommand = if (isCustom) {
+                        { customCmdDialogStartAfter = false }
+                    } else null,
                     onInstall = { onInstall(de) },
-                    onStart = { onStart(de) },
+                    onStart = {
+                        // #361: a blank custom command can't launch anything —
+                        // route Start into the command dialog instead.
+                        if (isCustom && customDesktopCommand.isBlank()) {
+                            customCmdDialogStartAfter = true
+                        } else onStart(de)
+                    },
                     onStop = { onStop(de) },
                     onOpenTerminal = { onOpenTerminalInDesktop(de) },
                     onUninstall = { onUninstall(de) },
@@ -1415,6 +1435,17 @@ private fun DesktopManagerSection(
         }
     }
 
+    customCmdDialogStartAfter?.let { startAfter ->
+        CustomDesktopCommandDialog(
+            initial = customDesktopCommand,
+            startAfterSave = startAfter,
+            onDismiss = { customCmdDialogStartAfter = null },
+            onSave = { cmd ->
+                onSetCustomDesktopCommand(cmd, startAfter)
+                customCmdDialogStartAfter = null
+            },
+        )
+    }
     if (showImportDialog) {
         ImportRootfsDialog(
             onDismiss = { showImportDialog = false },
@@ -1462,6 +1493,59 @@ private fun DesktopManagerSection(
             },
         )
     }
+}
+
+/**
+ * Set the session command for the Custom (X11) desktop (#361). Saved to
+ * preferences; applied on the next start (the launch path reads it live).
+ * [startAfterSave] relabels the confirm button when the dialog was reached
+ * via Start on a blank command — saving then also launches the desktop.
+ */
+@Composable
+private fun CustomDesktopCommandDialog(
+    initial: String,
+    startAfterSave: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var command by rememberSaveable { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(AppR.string.app_desktop_custom_cmd_title)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(AppR.string.app_desktop_custom_cmd_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = command,
+                    onValueChange = { command = it },
+                    label = { Text(stringResource(AppR.string.app_desktop_custom_cmd_label)) },
+                    textStyle = LocalTextStyle.current.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(command.trim()) }, enabled = command.isNotBlank()) {
+                Text(
+                    stringResource(
+                        if (startAfterSave) AppR.string.app_desktop_custom_cmd_save_start
+                        else R.string.common_save,
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }
 
 @Composable
@@ -1659,6 +1743,10 @@ private fun DesktopRow(
     activeFamily: PackageFamily? = null,
     isRootfsReady: Boolean = true,
     storedVncPort: Int? = null,
+    // #361: non-null only for the Custom (X11) DE — the user's session command
+    // ("" = unset) and the affordance to edit it.
+    customCommand: String? = null,
+    onEditCommand: (() -> Unit)? = null,
     onInstall: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -1744,6 +1832,20 @@ private fun DesktopRow(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                // #361: surface the custom session command (or its absence) on
+                // the idle row — the launch refuses to start on a blank one.
+                isInstalled && customCommand != null &&
+                    instance?.state != DesktopManager.DesktopState.RUNNING &&
+                    instance?.state != DesktopManager.DesktopState.STARTING ->
+                    Text(
+                        customCommand.ifBlank { stringResource(AppR.string.app_desktop_custom_cmd_unset) },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = if (customCommand.isBlank()) null else androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = if (customCommand.isBlank()) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
                 isInstalled && instance?.state != DesktopManager.DesktopState.RUNNING &&
                     instance?.state != DesktopManager.DesktopState.STARTING && storedVncPort != null && !de.isNative ->
                     Text(
@@ -1781,6 +1883,16 @@ private fun DesktopRow(
                 DesktopManager.DesktopState.STARTING ->
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 else -> {
+                    if (onEditCommand != null) {
+                        IconButton(onClick = onEditCommand) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = stringResource(AppR.string.app_desktop_custom_cmd_edit),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     IconButton(onClick = onStart) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.connections_desktop_start))
                     }

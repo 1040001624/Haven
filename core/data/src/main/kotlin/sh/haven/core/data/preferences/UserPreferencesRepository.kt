@@ -72,6 +72,8 @@ class UserPreferencesRepository @Inject constructor(
     private val backupAutoSyncEnabledKey = booleanPreferencesKey("backup_auto_sync_enabled")
     // CredentialEncryption-wrapped backup passphrase for background pushes (#359).
     private val backupSyncPassphraseKey = stringPreferencesKey("backup_sync_passphrase")
+    // Session command for the Custom (X11) desktop (#361).
+    private val customDesktopCommandKey = stringPreferencesKey("custom_desktop_command")
     private val mailAutomationEnabledKey = booleanPreferencesKey("mail_automation_enabled")
     private val mailDeleteToBinKey = booleanPreferencesKey("mail_delete_to_bin")
     private val alwaysShowAllTabsKey = booleanPreferencesKey("always_show_all_tabs")
@@ -312,6 +314,20 @@ class UserPreferencesRepository @Inject constructor(
      * outside core/data don't need the DataStore types on their classpath.
      */
     val preferenceChanges: Flow<Unit> = dataStore.data.map { }
+
+    /**
+     * User-supplied session command for the "Custom command (X11)" desktop
+     * (#361) — what runs against the Haven-owned Xvnc display in place of a
+     * catalog DE's fixed startCommands (e.g. `dbus-launch startxfce4`).
+     * Blank = not configured; the launch path refuses to start on blank.
+     */
+    val customDesktopCommand: Flow<String> = dataStore.data.map { prefs ->
+        prefs[customDesktopCommandKey] ?: ""
+    }
+
+    suspend fun setCustomDesktopCommand(command: String) {
+        dataStore.edit { prefs -> prefs[customDesktopCommandKey] = command.trim() }
+    }
 
     /**
      * Master switch for inbound-email automation (Mail Rules). Off by default. While on

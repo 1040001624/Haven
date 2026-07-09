@@ -103,6 +103,12 @@
     <string name="app_desktop_error">エラー</string>
     <string name="app_desktop_install_distro_first">" · 先にディストリビューションをインストール"</string>
     <string name="app_desktop_vnc_port_stored">VNC ポート %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">先にセッションコマンドを設定してください</string>
+    <string name="app_desktop_custom_cmd_edit">セッションコマンドを編集</string>
+    <string name="app_desktop_custom_cmd_title">カスタムセッションコマンド</string>
+    <string name="app_desktop_custom_cmd_description">アクティブなディストリ内で Haven の X サーバーに対して実行します（termux-x11 方式、例: dbus-launch startxfce4）。先にディストリへデスクトップのパッケージをインストールしてください。X11 デスクトップはソフトウェアレンダリングのため、GL コンポジターを必要とするデスクトップ（GNOME Shell、KWin）は起動しません。</string>
+    <string name="app_desktop_custom_cmd_label">セッションコマンド</string>
+    <string name="app_desktop_custom_cmd_save_start">保存して起動</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">%1$s（試験的）</string>
     <string name="app_desktop_vnc_port_label">VNC ポート</string>

@@ -103,6 +103,12 @@
     <string name="app_desktop_error">Erreur</string>
     <string name="app_desktop_install_distro_first">" · installer d\'abord la distro"</string>
     <string name="app_desktop_vnc_port_stored">Port VNC %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">Définissez d’abord la commande de session</string>
+    <string name="app_desktop_custom_cmd_edit">Modifier la commande de session</string>
+    <string name="app_desktop_custom_cmd_title">Commande de session personnalisée</string>
+    <string name="app_desktop_custom_cmd_description">S’exécute sur le serveur X de Haven dans la distribution active — le schéma termux-x11, p. ex. dbus-launch startxfce4. Installez d’abord les paquets du bureau dans la distribution. Les bureaux X11 utilisent le rendu logiciel : les bureaux exigeant un compositeur GL (GNOME Shell, KWin) ne démarreront pas.</string>
+    <string name="app_desktop_custom_cmd_label">Commande de session</string>
+    <string name="app_desktop_custom_cmd_save_start">Enregistrer et démarrer</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">Expérimental sur %1$s</string>
     <string name="app_desktop_vnc_port_label">Port VNC</string>

@@ -103,6 +103,12 @@
     <string name="app_desktop_error">त्रुटि</string>
     <string name="app_desktop_install_distro_first">" · पहले distro इंस्टॉल करें"</string>
     <string name="app_desktop_vnc_port_stored">VNC port %1$d</string>
+    <string name="app_desktop_custom_cmd_unset">पहले सेशन कमांड सेट करें</string>
+    <string name="app_desktop_custom_cmd_edit">सेशन कमांड संपादित करें</string>
+    <string name="app_desktop_custom_cmd_title">कस्टम सेशन कमांड</string>
+    <string name="app_desktop_custom_cmd_description">सक्रिय डिस्ट्रो के अंदर Haven के X सर्वर पर चलता है — termux-x11 वाला तरीका, जैसे dbus-launch startxfce4। पहले डिस्ट्रो में डेस्कटॉप के पैकेज इंस्टॉल करें। X11 डेस्कटॉप सॉफ़्टवेयर रेंडरिंग इस्तेमाल करते हैं: जिन डेस्कटॉप को GL कंपोज़िटर चाहिए (GNOME Shell, KWin), वे शुरू नहीं होंगे।</string>
+    <string name="app_desktop_custom_cmd_label">सेशन कमांड</string>
+    <string name="app_desktop_custom_cmd_save_start">सहेजें और शुरू करें</string>
     <string name="app_desktop_de_with_size">%1$s (%2$s)</string>
     <string name="app_desktop_experimental_on">%1$s पर प्रयोगात्मक</string>
     <string name="app_desktop_vnc_port_label">VNC port</string>
