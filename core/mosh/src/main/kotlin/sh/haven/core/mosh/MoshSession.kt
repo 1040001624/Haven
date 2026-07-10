@@ -66,9 +66,14 @@ class MoshSession(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var transport: MoshTransport? = null
 
-    /** Forwarded from [MoshTransport.secondsUntilDisconnect]; null while healthy. */
-    private val _secondsUntilDisconnect = MutableStateFlow<Int?>(null)
-    val secondsUntilDisconnect: StateFlow<Int?> = _secondsUntilDisconnect.asStateFlow()
+    /**
+     * Forwarded from [MoshTransport.stallSeconds]: seconds since the last
+     * server packet once the connection has stalled, null while healthy.
+     * The transport retries indefinitely — this is an indicator, not a
+     * countdown to disconnect.
+     */
+    private val _stallSeconds = MutableStateFlow<Int?>(null)
+    val stallSeconds: StateFlow<Int?> = _stallSeconds.asStateFlow()
 
     /**
      * Start the mosh transport: opens UDP socket, begins send/receive loops.
@@ -117,7 +122,7 @@ class MoshSession(
         transport = t
         t.start(scope)
         scope.launch {
-            t.secondsUntilDisconnect.collect { _secondsUntilDisconnect.value = it }
+            t.stallSeconds.collect { _stallSeconds.value = it }
         }
     }
 

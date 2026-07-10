@@ -1202,8 +1202,8 @@ fun TerminalScreen(
                             )
                         }
 
-                        DisconnectCountdownBanner(
-                            stallFlow = activeTab.secondsUntilDisconnect,
+                        StallBanner(
+                            stallFlow = activeTab.stallSeconds,
                             modifier = Modifier.align(Alignment.TopCenter),
                         )
 
@@ -1628,11 +1628,13 @@ private fun VncSettingsDialog(
 
 /**
  * Top-aligned banner shown over the terminal when the transport has gone
- * silent and is counting down to a forced disconnect. Hidden when the flow
- * is null. Currently driven by Mosh; other transports always emit null.
+ * silent: displays how long the server has been unreachable while the
+ * transport keeps retrying (it recovers by itself when the network
+ * returns). Hidden when the flow is null. Currently driven by Mosh; other
+ * transports always emit null.
  */
 @Composable
-private fun DisconnectCountdownBanner(
+private fun StallBanner(
     stallFlow: kotlinx.coroutines.flow.StateFlow<Int?>,
     modifier: Modifier = Modifier,
 ) {
@@ -1664,11 +1666,7 @@ private fun DisconnectCountdownBanner(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (s > 0) {
-                        stringResource(R.string.terminal_disconnect_countdown, s)
-                    } else {
-                        stringResource(R.string.terminal_disconnect_now)
-                    },
+                    text = stringResource(R.string.terminal_no_contact, s),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }

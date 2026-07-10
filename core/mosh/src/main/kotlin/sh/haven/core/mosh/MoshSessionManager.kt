@@ -19,7 +19,10 @@ private const val TAG = "MoshSessionManager"
 /**
  * Manages active Mosh sessions across the app.
  * Parallel to ReticulumSessionManager: simple connect/disconnect lifecycle,
- * no reconnect logic (mosh handles roaming internally over UDP).
+ * no reconnect logic — the transport itself survives network outages of
+ * any length (it keeps re-syncing against the same key/port and rebinds
+ * its socket for IP roaming), so a DISCONNECTED status here always means
+ * the session is genuinely over (shell exited or fatal transport error).
  *
  * Uses pure Kotlin MoshTransport — no native binary or PTY needed.
  */
@@ -155,18 +158,17 @@ class MoshSessionManager @Inject constructor(
             moshPort = session.moshPort,
             moshKey = session.moshKey,
             onDataReceived = onDataReceived,
-            onDisconnected = { _ ->
-                // Mosh's UDP transport handles roaming internally — short
-                // network flips don't reach this callback, the transport
-                // re-syncs against the same (port, key). When this DOES
-                // fire it's because mosh-server died or the UDP path
-                // gave up after a long outage. App-level reconnect for
-                // that case needs SSH bootstrap re-execution (rerun
-                // mosh-server, parse MOSH CONNECT) which is non-trivial
-                // and isn't wired here yet — the per-profile
-                // autoReconnect flag from #150 has no effect on Mosh
-                // until that follow-up lands. Track in #150 phase notes.
-                Log.d(TAG, "Mosh session $sessionId disconnected — UDP roaming gave up; user must reconnect manually")
+            onDisconnected = { cleanExit ->
+                // The transport never gives up on network silence — it
+                // retries with the same (port, key) until connectivity
+                // returns and SSP re-syncs, so outages of any length
+                // never reach this callback. It fires only when the
+                // server announced shutdown (shell exited, clean=true)
+                // or the transport hit a fatal local error (clean=false).
+                // Either way the session is over; DISCONNECTED removes
+                // the tab.
+                Log.d(TAG, "Mosh session $sessionId disconnected — " +
+                    "clean=$cleanExit, server=${session.serverIp}:${session.moshPort}")
                 updateStatus(sessionId, SessionState.Status.DISCONNECTED)
             },
             verboseBuffer = session.verboseBuffer,

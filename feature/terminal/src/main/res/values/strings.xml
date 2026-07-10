@@ -30,8 +30,7 @@
 
     <!-- Tab bar -->
     <string name="terminal_reconnecting">Reconnecting</string>
-    <string name="terminal_disconnect_countdown">Disconnected — closing in %1$ds</string>
-    <string name="terminal_disconnect_now">Disconnected — closing</string>
+    <string name="terminal_no_contact">No server contact for %1$ds — retrying</string>
     <string name="terminal_sessions">Sessions</string>
     <string name="terminal_move_left">Move left</string>
     <string name="terminal_move_right">Move right</string>

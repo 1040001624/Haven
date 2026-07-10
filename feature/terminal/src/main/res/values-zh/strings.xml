@@ -68,8 +68,7 @@
     <string name="terminal_new_tab_reticulum_no_session">没有可克隆的活动 Reticulum 会话</string>
     <string name="terminal_new_tab_connecting">连接中…</string>
     <!-- Backfilled translations (i18n drift fix) -->
-    <string name="terminal_disconnect_countdown">已断开 — 将在 %1$ds 后关闭</string>
-    <string name="terminal_disconnect_now">已断开 — 正在关闭</string>
+    <string name="terminal_no_contact">服务器 %1$ds 无响应 — 正在重试</string>
     <string name="terminal_new_session_create">创建</string>
     <string name="terminal_vnc_username_label">用户名（可选 — 仅 VeNCrypt）</string>
     <string name="terminal_vnc_username_placeholder">留空使用经典 VncAuth</string>

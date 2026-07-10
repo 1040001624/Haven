@@ -30,8 +30,7 @@
 
     <!-- Tab bar -->
     <string name="terminal_reconnecting">다시 연결 중</string>
-    <string name="terminal_disconnect_countdown">연결 끊김 — %1$d초 후 닫힘</string>
-    <string name="terminal_disconnect_now">연결 끊김 — 닫는 중</string>
+    <string name="terminal_no_contact">서버 응답 없음(%1$d초) — 재시도 중</string>
     <string name="terminal_sessions">세션</string>
     <string name="terminal_move_left">왼쪽으로 이동</string>
     <string name="terminal_move_right">오른쪽으로 이동</string>

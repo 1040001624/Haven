@@ -34875,43 +34875,24 @@
      }
     },
     {
-     "name": "terminal_disconnect_countdown",
-     "en": "Disconnected — closing in %1$ds",
+     "name": "terminal_no_contact",
+     "en": "No server contact for %1$ds — retrying",
      "comment": "Tab bar",
      "args": [
       "%1$d"
      ],
      "t": {
-      "ar": "تم قطع الاتصال — يُغلق خلال %1$ds",
-      "bn": "সংযোগ বিচ্ছিন্ন — %1$ds-এ বন্ধ হচ্ছে",
-      "de": "Getrennt — schließt in %1$ds",
-      "es": "Desconectado — cerrando en %1$ds",
-      "fr": "Déconnecté — fermeture dans %1$ds",
-      "hi": "डिसकनेक्ट हो गया — %1$ds में बंद हो रहा है",
-      "ja": "切断 — %1$d 秒後に閉じます",
-      "ko": "연결 끊김 — %1$d초 후 닫힘",
-      "pt": "Desconectado — fechando em %1$ds",
-      "ru": "Соединение разорвано — закрытие через %1$dс",
-      "zh": "已断开 — 将在 %1$ds 后关闭"
-     }
-    },
-    {
-     "name": "terminal_disconnect_now",
-     "en": "Disconnected — closing",
-     "comment": "Tab bar",
-     "args": [],
-     "t": {
-      "ar": "تم قطع الاتصال — يُغلق",
-      "bn": "সংযোগ বিচ্ছিন্ন — বন্ধ হচ্ছে",
-      "de": "Getrennt — wird geschlossen",
-      "es": "Desconectado — cerrando",
-      "fr": "Déconnecté — fermeture",
-      "hi": "डिसकनेक्ट हो गया — बंद हो रहा है",
-      "ja": "切断 — クローズ中",
-      "ko": "연결 끊김 — 닫는 중",
-      "pt": "Desconectado — fechando",
-      "ru": "Соединение разорвано — закрывается",
-      "zh": "已断开 — 正在关闭"
+      "ar": "لا استجابة من الخادم منذ %1$d ث — تجري إعادة المحاولة",
+      "bn": "সার্ভার থেকে %1$d সেকেন্ড ধরে সাড়া নেই — পুনরায় চেষ্টা চলছে",
+      "de": "Seit %1$ds keine Serverantwort — erneuter Versuch",
+      "es": "Sin respuesta del servidor desde hace %1$ds — reintentando",
+      "fr": "Aucune réponse du serveur depuis %1$ds — nouvelle tentative",
+      "hi": "सर्वर से %1$d सेकंड से कोई प्रतिक्रिया नहीं — पुनः प्रयास जारी",
+      "ja": "サーバー応答なし（%1$d 秒）— 再試行中",
+      "ko": "서버 응답 없음(%1$d초) — 재시도 중",
+      "pt": "Sem resposta do servidor há %1$ds — tentando novamente",
+      "ru": "Нет ответа от сервера %1$dс — повторная попытка",
+      "zh": "服务器 %1$ds 无响应 — 正在重试"
      }
     },
     {
