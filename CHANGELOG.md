@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.39
+
+🔌 **Mosh sessions survive network outages of any length** — the client no longer kills a session after 8 seconds of silence. It turns out mosh-server explicitly announces shutdown when your shell exits; Haven's client now listens for that announcement, so silence only ever means the network is away. The transport keeps retrying with the same session key until connectivity returns (exactly like desktop mosh), rebinds its socket periodically so IP changes — Wi-Fi to mobile data, switching networks — recover on their own, and the old "Disconnected — closing in Ns" countdown is now a calmer "No server contact for Ns — retrying" indicator that clears the moment the server answers. Typing `exit` still closes the tab promptly, because that's the announced shutdown, not a guess. Thanks to Biotoza for the report and the groundwork in #365.
+
 ## v5.68.38
 
 🧰 **Dependency and toolchain updates** — no user-facing changes, just keeping the build current and secure: Kotlin 2.4.0 (with its matching KSP), OkHttp 5.4.0, the RDP transport's uniffi bindings to 0.32, and sha2 0.11 in the RDP native library. The RDP native library (`librdp_transport.so`) was rebuilt for all three ABIs against the updated bindings, and the whole app was re-verified green (build, unit tests, lint). If your RDP connections behaved before, they behave the same now.
