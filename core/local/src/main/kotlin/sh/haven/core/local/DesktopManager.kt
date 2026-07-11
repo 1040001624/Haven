@@ -749,6 +749,36 @@ class DesktopManager @Inject constructor(
 
     // ---- X11/VNC desktop launch (software rendering, no virgl) ----
 
+    /**
+     * `/usr/bin/env -i` prefix giving guest desktop sessions a clean,
+     * guest-semantic environment. ProcessBuilder.environment() inherits the
+     * whole Android process env, and proot copies the outer env into the
+     * tracee — so every desktop session carried BOOTCLASSPATH, ANDROID_*,
+     * zygote sockets etc. and no LANG (#373; 13 leaked vars measured on
+     * device). Resetting inside the guest matches the terminal path
+     * (LocalSessionManager env array) and the one-shot path
+     * (ProotManager.runCommandInProot's `env -i`). Launch scripts re-export
+     * their own DISPLAY/XDG_RUNTIME_DIR/etc. on top of this base.
+     */
+    private fun cleanGuestEnv(): List<String> {
+        val locale = runBlocking { userPreferencesRepository.terminalLocale.first() }
+        return listOf(
+            "/usr/bin/env", "-i",
+            "HOME=/root",
+            "TERM=xterm-256color",
+            "LANG=$locale",
+            "LC_ALL=$locale",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SHELL=/bin/sh",
+            "TMPDIR=/tmp",
+            "XDG_RUNTIME_DIR=/tmp",
+            "XDG_DATA_HOME=/root/.local/share",
+            "XDG_DATA_DIRS=/usr/local/share:/usr/share",
+            "XDG_CONFIG_HOME=/root/.config",
+            "XDG_CACHE_HOME=/root/.cache",
+        )
+    }
+
     private fun launchX11Desktop(
         de: ProotManager.DesktopEnvironment,
         display: Int,
@@ -848,7 +878,7 @@ class DesktopManager @Inject constructor(
         prootArgs.addAll(prootManager.customBindShortArgs(prootManager.activeDistroId))
         // /bin/sh works on both Alpine (symlink to busybox) and Debian
         // (symlink to dash). See ProotManager.runCommandInProot.
-        prootArgs.addAll(listOf("-w", "/root", "/bin/sh", "-c", shellCmd))
+        prootArgs.addAll(listOf("-w", "/root") + cleanGuestEnv() + listOf("/bin/sh", "-c", shellCmd))
 
         return ProcessBuilder(prootArgs).apply {
             environment().apply {
@@ -1137,7 +1167,7 @@ class DesktopManager @Inject constructor(
         if (prootManager.remapLowPorts) prootArgs.add("-p")
         // #301: per-distro user-defined extra binds.
         prootArgs.addAll(prootManager.customBindShortArgs(prootManager.activeDistroId))
-        prootArgs.addAll(listOf("-w", "/root", "/bin/sh", "-c", shellCmd))
+        prootArgs.addAll(listOf("-w", "/root") + cleanGuestEnv() + listOf("/bin/sh", "-c", shellCmd))
 
         Log.d(TAG, "Starting $label (nested wayland) on port $port (display $display)")
 
@@ -1631,6 +1661,7 @@ class DesktopManager @Inject constructor(
                 *prootManager.androidSystemBindArgs(longForm = false),
                 *customBinds,
                 "-w", "/root",
+                *cleanGuestEnv().toTypedArray(),
                 "/bin/sh", "-c",
                 "export HOME=/root; " +
                     // Audio bridge (#257): pick up PULSE_SERVER if the bridge
