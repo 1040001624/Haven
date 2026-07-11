@@ -41,9 +41,9 @@ Tools are grouped into sections by what they touch, and each tool is collapsed �
 expand one for its description and arguments. The tag after each name is its
 consent level:
 
-- **asks every call** — side-effectful or sensitive; a consent sheet describing the specific action on every call (64 tools).
+- **asks every call** — side-effectful or sensitive; a consent sheet describing the specific action on every call (65 tools).
 - **asks once per session** — reversible actions and screen-reading; prompts the first time each session, then proceeds (47 tools).
-- **no per-call prompt** — read-only queries and tap-equivalent UI actions; still behind the endpoint being enabled and the client paired (78 tools).
+- **no per-call prompt** — read-only queries and tap-equivalent UI actions; still behind the endpoint being enabled and the client paired (79 tools).
 
 ## Sections
 
@@ -55,7 +55,7 @@ consent level:
 - [**Linux guest (proot) & desktops**](#sec-linux) — 44 tools
 - [**Networking — tunnels & port forwarding**](#sec-networking) — 11 tools
 - [**USB & host-device brokers**](#sec-usb) — 17 tools
-- [**Security — SSH keys, TOTP & age**](#sec-security) — 9 tools
+- [**Security — SSH keys, host keys, TOTP & age**](#sec-security) — 11 tools
 - [**Agent ↔ you (attention & self-drive)**](#sec-agent-you) — 12 tools
 - [**Agent endpoint, device & diagnostics**](#sec-agent-endpoint) — 13 tools
 
@@ -1732,9 +1732,9 @@ Perform a USB endpoint-0 control transfer on an opened device. Args: deviceName,
 
 <a id="sec-security"></a>
 
-## Security — SSH keys, TOTP & age (9)
+## Security — SSH keys, host keys, TOTP & age (11)
 
-The SSH key store, TOTP secrets, and age encryption identities.
+The SSH key store, pinned host keys (TOFU), TOTP secrets, and age encryption identities.
 
 <details markdown="1">
 <summary><code>create_age_identity</code> · asks every call</summary>
@@ -1775,6 +1775,16 @@ Delete a saved TOTP secret by id. Profiles referencing it via a TOTP auth elemen
 </details>
 
 <details markdown="1">
+<summary><code>forget_known_host</code> · asks every call</summary>
+
+Forget a pinned SSH host key by hostname + port, so the next connect re-pins on first-use trust (TOFU). Use when a server has legitimately rotated its host key, or to clear a stale pin. `hostname` and `port` are required (from list_known_hosts). No-op if none matches; returns removed=true/false.
+
+- `hostname` (string, required) — Host of the pinned key (from list_known_hosts).
+- `port` (integer, required) — Port of the pinned key (SSH default 22).
+
+</details>
+
+<details markdown="1">
 <summary><code>import_ssh_key</code> · asks every call</summary>
 
 Import an OpenSSH / PEM / PKCS#8 / PuTTY PPK private key into the Haven key store. Pass `privateKey` (the text body, e.g. starting with `-----BEGIN OPENSSH PRIVATE KEY-----`), `label` (user-facing name), and optional `passphrase` (only if the key is encrypted). Returns the new key id, keyType, publicKeyOpenSsh (suitable for an `authorized_keys` line), and fingerprintSha256.
@@ -1789,6 +1799,13 @@ Import an OpenSSH / PEM / PKCS#8 / PuTTY PPK private key into the Haven key stor
 <summary><code>list_age_identities</code> · no per-call prompt</summary>
 
 List saved age file-encryption identities (VISION §2). Returns id, label, the public `age1…` recipient (encrypt to this with encrypt_file or the file browser's Encrypt action), and createdAt. The private key (AGE-SECRET-KEY-1…) is NEVER returned — it stays encrypted at rest.
+
+</details>
+
+<details markdown="1">
+<summary><code>list_known_hosts</code> · no per-call prompt</summary>
+
+List pinned SSH host keys (the TOFU known_hosts store). Returns hostname, port, keyType, fingerprint (SHA-256), and firstSeen (epoch ms). Use forget_known_host to remove one.
 
 </details>
 
