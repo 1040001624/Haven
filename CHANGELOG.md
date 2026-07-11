@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.43
+
+🖥️ **Fixed: desktop sessions get a clean Linux environment** (#373) — X11/VNC, nested-Wayland, and native desktops inherited the Android app process's environment (`BOOTCLASSPATH`, `ANDROID_*`, zygote sockets — 13 stray variables measured on device) and carried no `LANG`. Desktop sessions now start from a clean guest environment matching the terminal path — which also means desktops follow your chosen terminal locale from now on (#374's fix, extended to desktops). Session variables (DISPLAY, dbus, XDG runtime) are layered on top as before. Thanks to sugerpersion for pressing on this — it was a real bug.
+
 ## v5.68.42
 
 🌐 **Fixed: your chosen terminal locale actually applies** (#374) — picking a locale (e.g. `zh_CN.UTF-8`) set `LANG` but left `LC_ALL` pinned to `C.UTF-8`, and `LC_ALL` outranks `LANG` for every category — so the choice silently didn't take. Local sessions now export `LC_ALL` alongside `LANG` (which also overrides the stale default in already-installed guests' `.profile`), and freshly installed guests default `LC_ALL` to follow `LANG`. glibc distros still need the locale generated (`dpkg-reconfigure locales`) before programs render it. The locale is also settable via the agent endpoint now (`terminal_locale` preference). Thanks to sugerpersion for the report.

@@ -1,0 +1,3 @@
+Desktop environment cleanup.
+
+• Desktop sessions (X11/VNC, Wayland, native) no longer inherit Android's process environment (BOOTCLASSPATH, ANDROID_* — 13 stray variables) — they now start from a clean Linux environment matching the terminal, and follow your chosen terminal locale (#373).
