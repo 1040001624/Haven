@@ -35,6 +35,7 @@ dependencies {
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
     implementation(project(":core:local"))
+    implementation(project(":core:rclone"))
     implementation(project(":core:rdp"))
     implementation(project(":core:smb"))
     implementation(project(":core:mail"))

@@ -297,6 +297,12 @@ class RcloneSessionManager @Inject constructor(
     }
 
     fun removeAllSessionsForProfile(profileId: String) {
+        // Cancel any in-flight OAuth for the sessions being removed so a
+        // disconnect mid-auth doesn't leave the worker blocking for the
+        // full timeout (#363).
+        _sessions.value.values
+            .filter { it.profileId == profileId }
+            .forEach { cancelPendingOAuth(it.sessionId) }
         _sessions.update { map -> map.filterValues { it.profileId != profileId } }
     }
 

@@ -60,6 +60,7 @@ class ConnectionsViewModelSessionTest {
     private lateinit var localSessionManager: LocalSessionManager
     private lateinit var rdpSessionManager: RdpSessionManager
     private lateinit var mailSessionManager: MailSessionManager
+    private lateinit var rcloneSessionManager: sh.haven.core.rclone.RcloneSessionManager
     private lateinit var prootManager: ProotManager
     private lateinit var desktopManager: DesktopManager
     private lateinit var sessionManagerRegistry: SessionManagerRegistry
@@ -111,6 +112,9 @@ class ConnectionsViewModelSessionTest {
         mailSessionManager = mockk(relaxed = true) {
             every { sessions } returns MutableStateFlow(emptyMap())
         }
+        rcloneSessionManager = mockk(relaxed = true) {
+            every { sessions } returns MutableStateFlow(emptyMap())
+        }
         sessionManagerRegistry = SessionManagerRegistry(
             ssh = sshSessionManager,
             reticulum = reticulumSessionManager,
@@ -120,6 +124,7 @@ class ConnectionsViewModelSessionTest {
             local = localSessionManager,
             rdp = rdpSessionManager,
             mail = mailSessionManager,
+            rclone = rcloneSessionManager,
             keepAlives = emptySet(),
         )
 
@@ -140,9 +145,7 @@ class ConnectionsViewModelSessionTest {
                 every { discoveredDestinations } returns kotlinx.coroutines.flow.MutableStateFlow(emptyList())
             },
             smbSessionManager = smbSessionManager,
-            rcloneSessionManager = mockk(relaxed = true) {
-                every { sessions } returns kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
-            },
+            rcloneSessionManager = rcloneSessionManager,
             rcloneClient = mockk(relaxed = true),
             fidoAuthenticator = mockk(relaxed = true),
             localSessionManager = localSessionManager,
@@ -214,6 +217,9 @@ class ConnectionsViewModelSessionTest {
         verify { etSessionManager.removeAllSessionsForProfile("profile1") }
         verify { smbSessionManager.removeAllSessionsForProfile("profile1") }
         verify { localSessionManager.removeAllSessionsForProfile("profile1") }
+        // #363: rclone was missing from the registry, so disconnect left
+        // the storage card CONNECTED forever.
+        verify { rcloneSessionManager.removeAllSessionsForProfile("profile1") }
     }
 
     @Test
@@ -234,6 +240,7 @@ class ConnectionsViewModelSessionTest {
         verify { etSessionManager.removeAllSessionsForProfile("profile1") }
         verify { smbSessionManager.removeAllSessionsForProfile("profile1") }
         verify { localSessionManager.removeAllSessionsForProfile("profile1") }
+        verify { rcloneSessionManager.removeAllSessionsForProfile("profile1") }
     }
 
     @Test

@@ -4,6 +4,7 @@ import sh.haven.core.et.EtSessionManager
 import sh.haven.core.local.LocalSessionManager
 import sh.haven.core.mail.MailSessionManager
 import sh.haven.core.mosh.MoshSessionManager
+import sh.haven.core.rclone.RcloneSessionManager
 import sh.haven.core.rdp.RdpSessionManager
 import sh.haven.core.reticulum.ReticulumSessionManager
 import sh.haven.core.smb.SmbSessionManager
@@ -27,6 +28,13 @@ class SessionManagerRegistry @Inject constructor(
     private val local: LocalSessionManager,
     private val rdp: RdpSessionManager,
     private val mail: MailSessionManager,
+    // Disconnect-only: rclone remotes are storage handles, not live
+    // transport sessions — they don't keep the FGS alive and the
+    // connections UI reads RcloneSessionManager's flow directly, so
+    // rclone is deliberately absent from hasActiveSessions/allSessions.
+    // Before this wiring, disconnecting an rclone profile was a silent
+    // no-op and the card stayed CONNECTED forever (#363).
+    private val rclone: RcloneSessionManager,
     private val keepAlives: Set<@JvmSuppressWildcards ForegroundKeepAlive>,
 ) {
     /** Disconnect all sessions for a profile across all transports. */
@@ -39,6 +47,7 @@ class SessionManagerRegistry @Inject constructor(
         local.removeAllSessionsForProfile(profileId)
         rdp.removeAllSessionsForProfile(profileId)
         mail.removeAllSessionsForProfile(profileId)
+        rclone.removeAllSessionsForProfile(profileId)
     }
 
     /**
