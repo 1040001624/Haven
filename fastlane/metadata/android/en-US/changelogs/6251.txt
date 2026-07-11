@@ -1,0 +1,5 @@
+Terminal engine synced with upstream termlib 0.1.0.
+
+• URL taps: trailing punctuation trimmed, first-row underlines, adjacent URLs can't glue into one link; wrapped-URL cases device-verified.
+• Compose (中) mode stays active across Enter/Escape until toggled off.
+• Renderer: vsync-aligned damage batching; scroll position preserved across updates.

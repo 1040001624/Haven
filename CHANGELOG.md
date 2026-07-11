@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.45
+
+🔄 **Terminal engine synced with upstream connectbot/termlib 0.1.0** — 89 upstream commits merged into Haven's fork: vsync-aligned damage batching with less redraw work, scroll position preserved across snapshot updates, a public URL-scanning API, and the Kotlin 2.3.21 toolchain. Haven's device-verified IME, gesture, and keyboard-reflow stacks carry over unchanged.
+
+🔗 **Better URL taps** — trailing sentence punctuation is trimmed before opening (a URL ending "…/issues/78." no longer takes the dot into the browser), URLs are underlined from their first row (previously only wrapped continuation rows drew underlines), and a screen stacking several URLs on adjacent lines can no longer glue them into one giant link. Wrapped-URL handling — Claude Code's `⎿` decorations, markdown tables, hanging-indent tails, column-boundary wraps — re-verified on device with real taps, 5/5 cases opening exactly the right URL.
+
+⌨️ **Compose (中) mode is now sticky** — Enter commits the line and Escape cancels the buffer, but the mode itself stays active until you toggle it off. Previously every Enter dropped you back to direct input mid-conversation.
+
 ## v5.68.44
 
 📍 **New: connections follow a device when its address changes** (#376) — a device on a phone hotspot (or any DHCP network) can get a different IP every time it connects, leaving the saved connection pointing at a dead address. When a connect now fails on a private address, Haven sweeps the local network on the profile's port and — only when exactly one machine presents the profile's already-trusted SSH host key — updates the saved address and retries. The host key is the device's identity; the IP was only ever a hint. Fails closed on any ambiguity, and never applies to profiles you haven't trusted interactively first. Works for taps in the app and for automations using the agent endpoint's `run_command`/`connect_profile` (the MacroDroid case from #367). Thanks to ehoeve786 for the use case.
