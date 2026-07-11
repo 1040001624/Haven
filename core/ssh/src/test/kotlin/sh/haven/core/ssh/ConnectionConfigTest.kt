@@ -294,8 +294,8 @@ class ConnectionConfigTest {
     @Test
     fun `forwardAgent carries agent identities`() {
         val keys = listOf(
-            "work" to byteArrayOf(1, 2, 3),
-            "personal" to byteArrayOf(4, 5, 6),
+            ConnectionConfig.AgentIdentity("work", byteArrayOf(1, 2, 3)),
+            ConnectionConfig.AgentIdentity("personal", byteArrayOf(4, 5, 6)),
         )
         val config = ConnectionConfig(
             host = "example.com",
@@ -305,7 +305,50 @@ class ConnectionConfigTest {
         )
         assertTrue(config.forwardAgent)
         assertEquals(2, config.agentIdentities.size)
-        assertEquals("work", config.agentIdentities[0].first)
-        assertTrue(config.agentIdentities[1].second.contentEquals(byteArrayOf(4, 5, 6)))
+        assertEquals("work", config.agentIdentities[0].label)
+        assertTrue(config.agentIdentities[1].keyBytes.contentEquals(byteArrayOf(4, 5, 6)))
+    }
+
+    /**
+     * #377: a passphrase-protected key added WITH its passphrase must come out
+     * of JSch's identity repository already decrypted — ChannelAgentForwarding
+     * silently skips identities still reporting isEncrypted(), which is
+     * exactly how forwarded agents ended up empty for identity users.
+     */
+    @Test
+    fun `encrypted agent identity with passphrase is decrypted at add time`() {
+        val jsch = com.jcraft.jsch.JSch()
+        jsch.addIdentity(
+            "haven-agent-0-test377",
+            ENCRYPTED_ED25519.toByteArray(),
+            null,
+            "haven-test-passphrase".toByteArray(),
+        )
+        val identity = jsch.identityRepository.identities.single()
+        assertTrue("identity must be decrypted at add time or the forwarded agent drops it", !identity.isEncrypted)
+    }
+
+    @Test
+    fun `encrypted agent identity without passphrase stays locked`() {
+        // Documents WHY ConnectionsViewModel must filter these out: they load,
+        // but stay encrypted, and ChannelAgentForwarding would silently skip them.
+        val jsch = com.jcraft.jsch.JSch()
+        jsch.addIdentity("haven-agent-0-test377", ENCRYPTED_ED25519.toByteArray(), null, null)
+        val identity = jsch.identityRepository.identities.single()
+        assertTrue(identity.isEncrypted)
+    }
+
+    private companion object {
+        /** ssh-keygen -t ed25519 -N haven-test-passphrase — test fixture, not a real credential. */
+        val ENCRYPTED_ED25519 = """
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABDZSCfQdO
+MOQtr8ANVZFB0SAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIJFbTzEDTGwb9Atz
+ykIWCTn+/gY6Kon3303AB1HHI7JcAAAAoCGQ+UnOx0A9Jw5LJmhtOHWF++rRFfxtgW3wJZ
+SSr8iEUHIXOdMPXoxeyqSUYbLXa+xRc8mp1zQA0xdCis/5amPS5aCS+/a/5GAzkBCxlTbm
+nJwv0Zv4A3H9jYawIvx19LL8XoPmB0h0df1P/dmDLKcCNnokF2rg8uQ+zNAaWxTtxHq38x
+CRDg6zju+yskI9WkrIrh1VNNSANZjsmEOdy1U=
+-----END OPENSSH PRIVATE KEY-----
+""".trimIndent() + "\n"
     }
 }

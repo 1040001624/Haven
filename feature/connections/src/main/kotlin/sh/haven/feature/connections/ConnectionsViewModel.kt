@@ -4143,8 +4143,8 @@ class ConnectionsViewModel @Inject constructor(
      * all stored SSH keys are passphrase-protected or none are stored at all).
      */
     private data class AgentIdentitiesResult(
-        val keys: List<Pair<String, ByteArray>>,
-        val skippedEncryptedCount: Int,
+        val keys: List<ConnectionConfig.AgentIdentity>,
+        val skippedLockedCount: Int,
         val hadNoStoredKeys: Boolean,
         val forwardAgentEnabled: Boolean,
     ) {
@@ -4157,13 +4157,14 @@ class ConnectionsViewModel @Inject constructor(
             get() {
                 if (!forwardAgentEnabled || keys.isNotEmpty()) return null
                 return when {
-                    skippedEncryptedCount > 0 -> buildString {
+                    skippedLockedCount > 0 -> buildString {
                         append("Agent forwarding enabled but all ")
-                        append(skippedEncryptedCount)
+                        append(skippedLockedCount)
                         append(" stored SSH key")
-                        if (skippedEncryptedCount != 1) append("s are")
+                        if (skippedLockedCount != 1) append("s are")
                         else append(" is")
-                        append(" passphrase-protected; the forwarded agent will be empty.")
+                        append(" passphrase-protected with no stored passphrase; the forwarded agent will be empty. ")
+                        append("Store the passphrase on the key (Keys tab) to forward it.")
                     }
                     hadNoStoredKeys -> "Agent forwarding enabled but no SSH keys are stored in Haven; the forwarded agent will be empty."
                     else -> null
@@ -4180,7 +4181,7 @@ class ConnectionsViewModel @Inject constructor(
         if (!profile.forwardAgent) {
             return AgentIdentitiesResult(
                 keys = emptyList(),
-                skippedEncryptedCount = 0,
+                skippedLockedCount = 0,
                 hadNoStoredKeys = false,
                 forwardAgentEnabled = false,
             )
@@ -4189,10 +4190,34 @@ class ConnectionsViewModel @Inject constructor(
         // Exclude SK/FIDO keys: their bytes are a credential handle (rawKeyToPem
         // would throw "Invalid Key"), and a hardware key can't be forwarded as a
         // software agent identity anyway.
-        val usable = allKeys.filter { !it.isEncrypted && !it.keyType.startsWith("sk-") && it.enabledForAuth }
+        val candidates = allKeys.filter { !it.keyType.startsWith("sk-") && it.enabledForAuth }
+        val keys = mutableListOf<ConnectionConfig.AgentIdentity>()
+        var skippedLocked = 0
+        for (key in candidates) {
+            if (!key.isEncrypted) {
+                keys += ConnectionConfig.AgentIdentity(key.label, rawKeyToPem(key.privateKeyBytes, key.keyType))
+                continue
+            }
+            // Passphrase-protected key: forwardable when the passphrase is
+            // stored on the key (#290 opt-in). Pass the ORIGINAL encrypted
+            // container + passphrase — same contract as the auth path — and
+            // JSch decrypts at add time so ChannelAgentForwarding exposes it.
+            // No stored passphrase → skip (JSch would silently drop it) and
+            // count for the warning. (#377)
+            val passphrase = sshKeyRepository.getStoredPassphrase(key.id)
+            if (passphrase != null) {
+                keys += ConnectionConfig.AgentIdentity(
+                    key.label,
+                    key.privateKeyBytes,
+                    passphrase.toByteArray(Charsets.UTF_8),
+                )
+            } else {
+                skippedLocked++
+            }
+        }
         return AgentIdentitiesResult(
-            keys = usable.map { key -> key.label to rawKeyToPem(key.privateKeyBytes, key.keyType) },
-            skippedEncryptedCount = allKeys.count { it.isEncrypted },
+            keys = keys,
+            skippedLockedCount = skippedLocked,
             hadNoStoredKeys = allKeys.isEmpty(),
             forwardAgentEnabled = true,
         )
@@ -4207,10 +4232,12 @@ class ConnectionsViewModel @Inject constructor(
      * shown via snackbar so the user isn't left guessing why `ssh-add -l` on
      * the remote returns nothing.
      *
-     * Encrypted keys are skipped because JSch's ChannelAgentForwarding has
-     * no hook for unlocking them at sign-request time.
+     * Passphrase-protected keys are forwarded when their passphrase is stored
+     * on the key (#290 opt-in) — JSch decrypts at add time. Without a stored
+     * passphrase they are skipped: ChannelAgentForwarding has no hook for
+     * prompting at sign-request time. (#377)
      */
-    private suspend fun agentIdentitiesFor(profile: ConnectionProfile): List<Pair<String, ByteArray>> {
+    private suspend fun agentIdentitiesFor(profile: ConnectionProfile): List<ConnectionConfig.AgentIdentity> {
         val result = computeAgentIdentities(profile)
         result.warningMessage?.let {
             if (agentWarningShownFor.add(profile.id)) {

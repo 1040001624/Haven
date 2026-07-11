@@ -544,22 +544,31 @@ class SshClient : Closeable {
             diag(
                 "forwardAgent=true but agentIdentities is empty — the forwarded " +
                     "agent channel will expose no keys (repo cleared). Typical cause: " +
-                    "all stored SSH keys are passphrase-protected and were filtered " +
-                    "out by the caller (ConnectionsViewModel.agentIdentitiesFor)."
+                    "all stored SSH keys are passphrase-protected with no stored " +
+                    "passphrase, so the caller (ConnectionsViewModel.agentIdentitiesFor) " +
+                    "filtered them out. Store each key's passphrase to forward it."
             )
             logJschIdentityRepo()
             return
         }
         var registered = 0
         var skipped = 0
-        config.agentIdentities.forEachIndexed { i, (label, keyBytes) ->
+        config.agentIdentities.forEachIndexed { i, identity ->
             try {
-                jsch.addIdentity("haven-agent-$i-$label", keyBytes, null, null)
+                // Passing the passphrase makes JSch decrypt the key AT ADD
+                // TIME — required for forwarding, because
+                // ChannelAgentForwarding silently skips identities still
+                // reporting isEncrypted(). (#377)
+                jsch.addIdentity("haven-agent-$i-${identity.label}", identity.keyBytes, null, identity.passphrase)
                 registered++
-                diag("Registered agent identity #$i '$label' (${keyBytes.size} bytes)")
+                diag(
+                    "Registered agent identity #$i '${identity.label}' " +
+                        "(${identity.keyBytes.size} bytes" +
+                        (if (identity.passphrase != null) ", decrypted at add" else "") + ")",
+                )
             } catch (e: Exception) {
                 skipped++
-                diag("Skipped agent identity #$i '$label' — ${e.javaClass.simpleName}: ${e.message}")
+                diag("Skipped agent identity #$i '${identity.label}' — ${e.javaClass.simpleName}: ${e.message}")
             }
         }
         diag("Agent identities: $registered registered, $skipped skipped, ${config.agentIdentities.size} requested")

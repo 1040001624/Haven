@@ -16,11 +16,14 @@ data class ConnectionConfig(
      */
     val addressFamily: AddressFamily = AddressFamily.AUTO,
     /**
-     * Keys to expose via the forwarded agent channel. Each pair is (label, private key bytes).
-     * Only consulted when [forwardAgent] is true. Encrypted keys must be excluded by the caller
-     * — JSch's ChannelAgentForwarding silently skips identities whose `isEncrypted()` returns true.
+     * Keys to expose via the forwarded agent channel. Only consulted when
+     * [forwardAgent] is true. JSch's ChannelAgentForwarding silently skips
+     * identities whose `isEncrypted()` returns true, so a passphrase-protected
+     * key MUST carry its passphrase — JSch then decrypts it at addIdentity
+     * time and the identity becomes forwardable (#377). Encrypted keys with
+     * no available passphrase must be excluded by the caller.
      */
-    val agentIdentities: List<Pair<String, ByteArray>> = emptyList(),
+    val agentIdentities: List<AgentIdentity> = emptyList(),
     /**
      * Per-profile reconnect policy (#150). Defaults preserve the prior
      * always-on / 5-attempt-cap / honour-network-flip behaviour, so
@@ -35,6 +38,37 @@ data class ConnectionConfig(
     }
 
     enum class AddressFamily { AUTO, IPV4_ONLY, IPV6_ONLY }
+
+    /**
+     * One key exposed over the forwarded agent channel.
+     *
+     * @param keyBytes For an unencrypted key: PEM the JSch parser accepts.
+     *   For a passphrase-protected key: the ORIGINAL encrypted container
+     *   (PEM/OpenSSH) exactly as stored — same contract as the auth path.
+     * @param passphrase UTF-8 passphrase for an encrypted key; null for an
+     *   unencrypted one. JSch decrypts at add time, so the plaintext key
+     *   never round-trips through Haven's own memory.
+     */
+    data class AgentIdentity(
+        val label: String,
+        val keyBytes: ByteArray,
+        val passphrase: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is AgentIdentity) return false
+            return label == other.label &&
+                keyBytes.contentEquals(other.keyBytes) &&
+                (passphrase ?: ByteArray(0)).contentEquals(other.passphrase ?: ByteArray(0))
+        }
+
+        override fun hashCode(): Int {
+            var result = label.hashCode()
+            result = 31 * result + keyBytes.contentHashCode()
+            result = 31 * result + (passphrase?.contentHashCode() ?: 0)
+            return result
+        }
+    }
 
     /**
      * @param autoReconnect Whether to fire the backoff loop at all when
