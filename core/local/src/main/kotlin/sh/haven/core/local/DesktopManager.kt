@@ -804,6 +804,15 @@ class DesktopManager @Inject constructor(
                 "sleep 3; " +
                 "export DISPLAY=:${display}; " +
                 "export HOME=/root; " +
+                // #370: establish a session dbus bus so desktop components that
+                // need one (Xfce4's settings/session daemons, and whatever the
+                // Custom-X11 command launches) find DBUS_SESSION_BUS_ADDRESS
+                // instead of failing to start. Best-effort: `command -v` guards
+                // desktops whose package set has no dbus-launch (e.g. Openbox,
+                // which doesn't need one), so this never breaks their launch.
+                // Mirrors the native-Wayland path's dbus-run-session; here the
+                // exports are inherited by the backgrounded WM/panel children.
+                "{ command -v dbus-launch >/dev/null 2>&1 && eval \"\$(dbus-launch --sh-syntax)\"; } || true; " +
                 "[ -f /etc/profile.d/pulse.sh ] && . /etc/profile.d/pulse.sh; " +
                 // NO virgl — software rendering for VNC desktops. Force the
                 // Mesa software rasteriser so GPU-less GL apps (KiCad/eeschema)
