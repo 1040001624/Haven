@@ -12,7 +12,8 @@ from outside.
 ## Where things live
 
 - `termlib/` — fork tracking `upstream/main`, with the active branch
-  `fix-popScrollbackLine-0.0.22` carrying Haven-only patches.
+  `feature/154-cf-access-diagnostics` carrying Haven-only patches
+  (upstream is pulled in by merge — see `termlib/REBASE.md`).
 - `termlib/REBASE.md` — rebase checklist (inside the submodule so it
   travels with the fork).
 - `core/terminal-haven/` — Haven-owned wrapper around termlib's public
@@ -39,7 +40,7 @@ turns out to be more broadly useful:
    detector re-introduction (upstream reverted #155). Last.
 
 As each PR lands upstream the corresponding patch gets dropped from
-`termlib/fix-popScrollbackLine-0.0.22` on the next monthly rebase.
+`termlib/feature/154-cf-access-diagnostics` on the next monthly upstream merge.
 
 ## If a PR is rejected
 
