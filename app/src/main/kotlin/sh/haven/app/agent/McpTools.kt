@@ -1460,7 +1460,7 @@ internal class McpTools(
         ) { args -> createConnection(args) },
 
         "update_connection" to ToolHandler(
-            description = "Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, spiceSshForward + spiceSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).",
+            description = "Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh, forwardAgent. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, spiceSshForward + spiceSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).",
             inputSchema = objectSchema {
                 string("profileId", "Profile id from list_connections.", required = true)
                 string("label", "New user-facing label.")
@@ -1471,6 +1471,7 @@ internal class McpTools(
                 string("keyId", "SSH only: id of a saved key (list_ssh_keys). Empty string clears.")
                 boolean("ignoreSavedKeys", "SSH-family only: force password-only auth, never offer saved keystore keys (#121).")
                 boolean("useMosh", "SSH only: use Mosh on top of the SSH bootstrap.")
+                boolean("forwardAgent", "SSH only: enable SSH agent forwarding. Keys with a stored passphrase (or none) are exposed to the remote's ssh-agent socket (#377).")
                 boolean("vncSshForward", "VNC only: tunnel through a saved SSH profile (set vncSshProfileId).")
                 string("vncSshProfileId", "VNC only: SSH profile id to tunnel through. Empty string clears.")
                 boolean("rdpSshForward", "RDP only: tunnel through a saved SSH profile (set rdpSshProfileId).")
@@ -1952,6 +1953,7 @@ internal class McpTools(
         put("hasStoredPassword", !p.sshPassword.isNullOrEmpty())
         put("hasKey", p.keyId != null)
         if (p.ignoreSavedKeys) put("ignoreSavedKeys", true)
+        if (p.forwardAgent) put("forwardAgent", true)
         if (p.authMethodSpecs.size > 1) {
             put("authMethods", org.json.JSONArray(p.authMethodSpecs.map { it.serialize() }))
         }
@@ -5522,6 +5524,7 @@ internal class McpTools(
             keyId = newKeyId,
             ignoreSavedKeys = bool("ignoreSavedKeys", existing.ignoreSavedKeys),
             useMosh = bool("useMosh", existing.useMosh),
+            forwardAgent = bool("forwardAgent", existing.forwardAgent),
             vncSshForward = bool("vncSshForward", existing.vncSshForward),
             vncSshProfileId = str("vncSshProfileId", existing.vncSshProfileId),
             rdpSshForward = bool("rdpSshForward", existing.rdpSshForward),

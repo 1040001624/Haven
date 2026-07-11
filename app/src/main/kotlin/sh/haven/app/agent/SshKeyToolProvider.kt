@@ -58,12 +58,14 @@ internal class SshKeyToolProvider(
             description = "Set per-key options on a saved SSH key (the toggles on the Keys screen). " +
                 "`keyId` (from list_ssh_keys) is required; pass either or both of: " +
                 "`enabledForAuth` (bool) — whether the key takes part in 'any saved key' auto-auth (off = only used when a profile pins it); " +
-                "`verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering. " +
+                "`verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering; " +
+                "`storedPassphrase` (string) — encrypted keys only — store the key's passphrase on-device (encrypted at rest) so connects don't prompt and the key can be exposed over SSH agent forwarding (#377); empty string clears a stored passphrase. " +
                 "Returns the key's resulting enabledForAuth and verifyRequired. Biometric-protected SK keys can't have verifyRequired changed over MCP (no prompt available).",
             inputSchema = objectSchema {
                 string("keyId", "SSH key id from list_ssh_keys.", required = true)
                 boolean("enabledForAuth", "Include this key in 'any saved key' auto-auth.")
                 boolean("verifyRequired", "FIDO2/SK only: require the key's PIN at every sign-in.")
+                string("storedPassphrase", "Encrypted keys only: passphrase to store on-device (empty string clears).")
             },
             consentLevel = ConsentLevel.ONCE_PER_SESSION,
             summarise = { args ->
@@ -142,6 +144,14 @@ internal class SshKeyToolProvider(
                 )
             }
             changed.put("verifyRequired=$required")
+        }
+        if (args.has("storedPassphrase")) {
+            if (!key.isEncrypted) {
+                throw IllegalArgumentException("storedPassphrase only applies to passphrase-protected keys")
+            }
+            val value = args.getString("storedPassphrase")
+            sshKeyRepository.setStoredPassphrase(keyId, value.takeIf { it.isNotEmpty() })
+            changed.put(if (value.isEmpty()) "storedPassphrase=cleared" else "storedPassphrase=set")
         }
 
         val updated = sshKeyRepository.getById(keyId)!!

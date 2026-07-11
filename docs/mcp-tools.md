@@ -169,9 +169,10 @@ Run one command on a saved SSH connection over an exec channel (no terminal sess
 <details markdown="1">
 <summary><code>update_connection</code> · asks every call</summary>
 
-Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, spiceSshForward + spiceSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).
+Edit fields on an existing connection profile (load → change → save). Pass profileId (required) plus only the fields you want to change — anything omitted is left as-is. Common SSH-family fields: label, host, port, username, password (stored, mapped to the profile's transport), keyId, ignoreSavedKeys (force password-only auth), useMosh, forwardAgent. Desktop tunnels: vncSshForward + vncSshProfileId, rdpSshForward + rdpSshProfileId, spiceSshForward + spiceSshProfileId, smbSshForward + smbSshProfileId. Passwords are stored encrypted and never echoed back. For routing/proxy use set_profile_routing; for port-knock/SPA use set_port_knock/set_spa. Returns the updated profile (secrets redacted).
 
 - `profileId` (string, required) — Profile id from list_connections.
+- `forwardAgent` (boolean) — SSH only: enable SSH agent forwarding. Keys with a stored passphrase (or none) are exposed to the remote's ssh-agent socket (#377).
 - `host` (string) — New hostname or IP.
 - `ignoreSavedKeys` (boolean) — SSH-family only: force password-only auth, never offer saved keystore keys (#121).
 - `keyId` (string) — SSH only: id of a saved key (list_ssh_keys). Empty string clears.
@@ -1808,10 +1809,11 @@ List saved OATH-TOTP authenticator secrets (#178). Returns id, label, issuer, ac
 <details markdown="1">
 <summary><code>set_ssh_key_option</code> · asks once per session</summary>
 
-Set per-key options on a saved SSH key (the toggles on the Keys screen). `keyId` (from list_ssh_keys) is required; pass either or both of: `enabledForAuth` (bool) — whether the key takes part in 'any saved key' auto-auth (off = only used when a profile pins it); `verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering. Returns the key's resulting enabledForAuth and verifyRequired. Biometric-protected SK keys can't have verifyRequired changed over MCP (no prompt available).
+Set per-key options on a saved SSH key (the toggles on the Keys screen). `keyId` (from list_ssh_keys) is required; pass either or both of: `enabledForAuth` (bool) — whether the key takes part in 'any saved key' auto-auth (off = only used when a profile pins it); `verifyRequired` (bool) — FIDO2/SK keys only — whether the key requires its PIN at every sign-in (true) or is touch-only (false); flips the SK flag in place without re-registering; `storedPassphrase` (string) — encrypted keys only — store the key's passphrase on-device (encrypted at rest) so connects don't prompt and the key can be exposed over SSH agent forwarding (#377); empty string clears a stored passphrase. Returns the key's resulting enabledForAuth and verifyRequired. Biometric-protected SK keys can't have verifyRequired changed over MCP (no prompt available).
 
 - `keyId` (string, required) — SSH key id from list_ssh_keys.
 - `enabledForAuth` (boolean) — Include this key in 'any saved key' auto-auth.
+- `storedPassphrase` (string) — Encrypted keys only: passphrase to store on-device (empty string clears).
 - `verifyRequired` (boolean) — FIDO2/SK only: require the key's PIN at every sign-in.
 
 </details>
