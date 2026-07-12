@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.47
+
+📦 **`fakeroot` and `makepkg` work out of the box in proot distros** (#375) — Android kernels ship without SysV IPC, so fakeroot's default transport died with "Function not implemented" (Arch `makepkg` being the usual casualty). It turns out the bundled proot has carried a SysV IPC emulation extension all along — it was just never switched on. All proot launch paths (shells, one-shot commands, desktops) now run with `--sysvipc`: message queues, semaphores and shared memory are emulated inside the guest. Device-verified with `ipcmk` and `fakeroot true` on an emulated-architecture guest, the most demanding configuration. The stock Arch fakeroot now works without the AUR `fakeroot-tcp` bootstrap; the v5.68.42 shim remains for guests that prefer the TCP variant. Thanks to sugerpersion for pushing on this.
+
 ## v5.68.46
 
 🔑 **SSH agent forwarding now works with passphrase-protected keys** (#377) — the stored passphrase decrypts the key as it's added to the in-app agent, so forwarded identities actually authenticate on the far side. Automations get matching agent-endpoint controls: `storedPassphrase` and a per-connection `forwardAgent` toggle on `update_connection`. Thanks to BlackDex for the report.
