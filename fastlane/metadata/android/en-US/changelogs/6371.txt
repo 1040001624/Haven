@@ -1,0 +1,1 @@
+• Passphrase-protected SSH keys are now offered by the "try any saved key" fallback (when no specific key is assigned), so a stored-passphrase key works without pinning it to every host — fixes jump hosts failing "Auth fail for methods publickey" until the key was assigned explicitly (#381).

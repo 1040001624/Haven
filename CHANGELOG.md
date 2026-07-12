@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.57
+
+🔑 **Passphrase-protected keys work without pinning them to every profile** (#381) — when a connection had no specific key assigned, Haven's "try any saved key" fallback only offered plaintext keys and silently skipped passphrase-protected ones. So if your only key has a passphrase (with the passphrase stored in Haven), it wasn't offered unless you explicitly assigned it to each host — which is why a jump host could fail "Auth fail for methods publickey" until the key was pinned to it. The auto-selection now offers a stored-passphrase key too. Thanks to BlackDex for the thorough testing that isolated this.
+
 ## v5.68.56
 
 🔑 **Jump-host connections with a passphrase-protected key work again** (#381) — if a jump host had both a saved password and a key whose passphrase is stored in Haven, connecting *through* it failed with "Auth fail for methods publickey" (while connecting to the same host directly worked). The jump leg was handing the saved login password to the key as its passphrase, so the key couldn't be decrypted and was never offered. The jump now uses the key's own stored passphrase, matching a direct connect. Thanks to BlackDex for the diagnostic logs.
