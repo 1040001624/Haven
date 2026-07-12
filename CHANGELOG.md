@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.48
+
+⌨️ **Optional Termux-style key grid for the toolbar** (#372) — a new "Uniform key grid" switch in Settings → Keyboard & input → Keyboard toolbar lays every key out in equal-width cells: the whole row fits on screen with no side-scrolling, columns line up across both rows, the entire cell is the tap target, and longer labels wrap inside their cell. Arrow keys join the grid as ordinary cells. Off by default — the classic adaptive-width layout is unchanged. Thanks to sugerpersion for the suggestion.
+
 ## v5.68.47
 
 📦 **`fakeroot` and `makepkg` work out of the box in proot distros** (#375) — Android kernels ship without SysV IPC, so fakeroot's default transport died with "Function not implemented" (Arch `makepkg` being the usual casualty). It turns out the bundled proot has carried a SysV IPC emulation extension all along — it was just never switched on. All proot launch paths (shells, one-shot commands, desktops) now run with `--sysvipc`: message queues, semaphores and shared memory are emulated inside the guest. Device-verified with `ipcmk` and `fakeroot true` on an emulated-architecture guest, the most demanding configuration. The stock Arch fakeroot now works without the AUR `fakeroot-tcp` bootstrap; the v5.68.42 shim remains for guests that prefer the TCP variant. Thanks to sugerpersion for pushing on this.
