@@ -1,0 +1,1 @@
+• Diagnostics for the SwiftKey/keyboard "previous word sticks to the next command" bug (#298): the terminal now logs what the on-screen keyboard reads back from the input field, so it can be diagnosed from a captured logcat instead of a video. No behaviour change.

@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.55
+
+🔬 **Terminal input diagnostics for the SwiftKey composition bug** (#298) — added detailed InputConnection logging (what the on-screen keyboard reads back from the terminal field, plus the line-boundary reset) so the long-standing "a word from the previous command sticks to the next one" problem with prediction-heavy keyboards can finally be diagnosed from a captured log rather than a video. No behaviour change. If you hit this, turn on Settings → Diagnostics → Logcat Capture (or Verbose connection logging), reproduce it, and the log now shows exactly what the keyboard did.
+
 ## v5.68.54
 
 🔎 **Jump-host connection failures are now diagnosable** (#381) — a connection made through a jump host (ProxyJump) used to record nothing in the connection log when the jump leg failed, and captured no verbose SSH detail, so an auth failure on the jump host left you with no way to see *why*. Jump-host connects now log their result to the connection log, and — with Verbose connection logging on (Settings → Diagnostics) — capture the full SSH protocol trace, so a failed jump shows which key and signature algorithm the server rejected. (Diagnostics for the jump-host auth reports in #381.)
