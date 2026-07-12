@@ -176,6 +176,7 @@ fun SettingsScreen(
     val toolbarLayoutJson by viewModel.toolbarLayoutJson.collectAsState()
     val snippetLibrary by viewModel.snippetLibrary.collectAsState()
     val navBlockMode by viewModel.navBlockMode.collectAsState()
+    val toolbarUniformGrid by viewModel.toolbarUniformGrid.collectAsState()
     val editModeControlsPlacement by viewModel.editModeControlsPlacement.collectAsState()
     val desktopKeyPlacement by viewModel.desktopKeyPlacement.collectAsState()
     val toolbarMinButtonWidth by viewModel.toolbarMinButtonWidth.collectAsState()
@@ -1702,6 +1703,7 @@ fun SettingsScreen(
             layoutJson = toolbarLayoutJson,
             snippetLibrary = snippetLibrary,
             navBlockMode = navBlockMode,
+            uniformGrid = toolbarUniformGrid,
             editModeControlsPlacement = editModeControlsPlacement,
             desktopKeyPlacement = desktopKeyPlacement,
             minButtonWidth = toolbarMinButtonWidth,
@@ -1717,6 +1719,7 @@ fun SettingsScreen(
                 showToolbarConfigDialog = false
             },
             onNavBlockModeChange = { viewModel.setNavBlockMode(it) },
+            onUniformGridChange = { viewModel.setToolbarUniformGrid(it) },
             onEditControlsPlacementChange = { viewModel.setEditModeControlsPlacement(it) },
             onDesktopKeyPlacementChange = { viewModel.setDesktopKeyPlacement(it) },
         )
@@ -2719,6 +2722,7 @@ private fun ToolbarConfigDialog(
     layoutJson: String,
     snippetLibrary: List<ToolbarItem.Custom>,
     navBlockMode: NavBlockMode,
+    uniformGrid: Boolean,
     editModeControlsPlacement: EditModeControlsPlacement,
     desktopKeyPlacement: DesktopKeyPlacement,
     minButtonWidth: Int,
@@ -2728,6 +2732,7 @@ private fun ToolbarConfigDialog(
     onSaveLibrary: (List<ToolbarItem.Custom>) -> Unit,
     onSaveJson: (String) -> Unit,
     onNavBlockModeChange: (NavBlockMode) -> Unit,
+    onUniformGridChange: (Boolean) -> Unit,
     onEditControlsPlacementChange: (EditModeControlsPlacement) -> Unit,
     onDesktopKeyPlacementChange: (DesktopKeyPlacement) -> Unit,
 ) {
@@ -2745,6 +2750,7 @@ private fun ToolbarConfigDialog(
             layout = layout,
             snippetLibrary = snippetLibrary,
             navBlockMode = navBlockMode,
+            uniformGrid = uniformGrid,
             editModeControlsPlacement = editModeControlsPlacement,
             desktopKeyPlacement = desktopKeyPlacement,
             minButtonWidth = minButtonWidth,
@@ -2756,6 +2762,7 @@ private fun ToolbarConfigDialog(
             },
             onAdvancedMode = { advancedMode = true },
             onNavBlockModeChange = onNavBlockModeChange,
+            onUniformGridChange = onUniformGridChange,
             onEditControlsPlacementChange = onEditControlsPlacementChange,
             onDesktopKeyPlacementChange = onDesktopKeyPlacementChange,
         )
@@ -2772,6 +2779,7 @@ private fun ToolbarSimpleEditor(
     layout: ToolbarLayout,
     snippetLibrary: List<ToolbarItem.Custom>,
     navBlockMode: NavBlockMode,
+    uniformGrid: Boolean,
     editModeControlsPlacement: EditModeControlsPlacement,
     desktopKeyPlacement: DesktopKeyPlacement,
     minButtonWidth: Int,
@@ -2780,6 +2788,7 @@ private fun ToolbarSimpleEditor(
     onSave: (ToolbarLayout, List<ToolbarItem.Custom>) -> Unit,
     onAdvancedMode: () -> Unit,
     onNavBlockModeChange: (NavBlockMode) -> Unit,
+    onUniformGridChange: (Boolean) -> Unit,
     onEditControlsPlacementChange: (EditModeControlsPlacement) -> Unit,
     onDesktopKeyPlacementChange: (DesktopKeyPlacement) -> Unit,
 ) {
@@ -2868,6 +2877,29 @@ private fun ToolbarSimpleEditor(
                             modifier = Modifier.padding(horizontal = 2.dp),
                         )
                     }
+                }
+
+                // Termux-style uniform key grid (#372) — overrides the arrow-key
+                // block mode above while enabled (nav keys become grid cells).
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.settings_toolbar_uniform_grid),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            stringResource(R.string.settings_toolbar_uniform_grid_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = uniformGrid,
+                        onCheckedChange = onUniformGridChange,
+                    )
                 }
 
                 Text(

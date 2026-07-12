@@ -82,6 +82,7 @@ fun WaylandDesktopView(
     modifier: Modifier = Modifier,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     navBlockMode: NavBlockMode = NavBlockMode.ALIGNED,
+    uniformGrid: Boolean = false,
     onFullscreenChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -487,6 +488,7 @@ fun WaylandDesktopView(
             WaylandToolbar(
                 layout = toolbarLayout,
                 navBlockMode = navBlockMode,
+                uniformGrid = uniformGrid,
                 modifier = Modifier.weight(1f),
             )
             Column {

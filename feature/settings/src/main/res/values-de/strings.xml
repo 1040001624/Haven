@@ -258,6 +258,8 @@
     <string name="settings_color_scheme_light_dialog_title">Terminal-Farbschema — hell</string>
     <string name="settings_color_scheme_dark_dialog_title">Terminal-Farbschema — dunkel</string>
     <string name="settings_toolbar_min_key_width">Minimale Tastenbreite: %1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">Einheitliches Tastenraster</string>
+    <string name="settings_toolbar_uniform_grid_desc">Jede Taste belegt eine gleich breite Zelle wie in Termux; lange Beschriftungen umbrechen. Kein seitliches Scrollen.</string>
     <string name="settings_terminal_font_title">Terminal-Schriftart</string>
     <string name="settings_terminal_font_default_label">Hack Nerd Font Mono (Standard)</string>
     <string name="settings_terminal_font_custom_fmt">Benutzerdefiniert: %1$s</string>

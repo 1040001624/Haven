@@ -210,6 +210,13 @@ val DEFAULT_MIN_KEY_WIDTH = 0.dp
  */
 private val LocalToolbarMinKeyWidth = compositionLocalOf { DEFAULT_MIN_KEY_WIDTH }
 
+/**
+ * True inside the uniform-grid layout (#372): keys fill their fixed cell
+ * instead of sizing to content, so every key is the same width and the whole
+ * cell is the tap target (Termux-style).
+ */
+private val LocalToolbarFillCell = compositionLocalOf { false }
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun KeyboardToolbar(
@@ -221,6 +228,7 @@ fun KeyboardToolbar(
     bracketPasteMode: Boolean = false,
     layout: ToolbarLayout = ToolbarLayout.DEFAULT,
     navBlockMode: sh.haven.core.data.preferences.NavBlockMode = sh.haven.core.data.preferences.NavBlockMode.ALIGNED,
+    uniformGrid: Boolean = false,
     editModeControlsPlacement: sh.haven.core.data.preferences.EditModeControlsPlacement = sh.haven.core.data.preferences.EditModeControlsPlacement.LEFT,
     desktopKeyPlacement: sh.haven.core.data.preferences.DesktopKeyPlacement = sh.haven.core.data.preferences.DesktopKeyPlacement.LEFT,
     minKeyWidth: Dp = DEFAULT_MIN_KEY_WIDTH,
@@ -370,6 +378,21 @@ fun KeyboardToolbar(
                     }
                     selectionContent?.invoke()
                 }
+            } else if (uniformGrid) {
+                // #372: Termux-style fixed grid — overrides the nav-block mode
+                // (nav keys become ordinary grid cells).
+                GridToolbarContent(
+                    layout = layout,
+                    focusRequester = focusRequester,
+                    ctrlActive = ctrlActive,
+                    altActive = altActive,
+                    shiftActive = shiftActive,
+                    imeVisible = imeVisible,
+                    view = view,
+                    onVncTap = onVncTap,
+                    vncLoading = vncLoading,
+                    desktopKeyPlacement = desktopKeyPlacement,
+                )
             } else if (layout.rows.size >= 2 && navBlockMode == sh.haven.core.data.preferences.NavBlockMode.ALIGNED) {
                 AlignedToolbarContent(
                     layout = layout,
@@ -778,6 +801,99 @@ private fun ToolbarRow(
     }
 }
 
+/**
+ * Termux-style uniform grid (#372): every key occupies an equal-width cell of
+ * the full row width — no horizontal scroll — and rows are padded to a common
+ * column count so the columns line up. Long labels wrap inside their cell
+ * (ToolbarKeyText has no line cap and the cell clamps its width). Item set and
+ * ordering mirror [ToolbarRow] exactly: same desktop-key insertion rules, same
+ * trailing add/edit controls.
+ */
+@Composable
+private fun GridToolbarContent(
+    layout: sh.haven.core.data.preferences.ToolbarLayout,
+    focusRequester: FocusRequester,
+    ctrlActive: Boolean,
+    altActive: Boolean,
+    shiftActive: Boolean,
+    imeVisible: Boolean,
+    view: android.view.View,
+    onVncTap: (() -> Unit)?,
+    vncLoading: Boolean,
+    desktopKeyPlacement: sh.haven.core.data.preferences.DesktopKeyPlacement,
+) {
+    val showDesktop = onVncTap != null &&
+        desktopKeyPlacement != sh.haven.core.data.preferences.DesktopKeyPlacement.HIDDEN
+    val desktopKey: @Composable () -> Unit = {
+        if (vncLoading) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.size(32.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        } else {
+            ToolbarIconButton(Icons.Filled.DesktopWindows, stringResource(R.string.toolbar_vnc_desktop), onVncTap!!)
+        }
+    }
+    val visibleRows = layout.rows.filter { it.isNotEmpty() }
+    val rows: List<List<@Composable () -> Unit>> = visibleRows
+        .mapIndexed { rowIdx, row ->
+            buildList {
+                for (item in row) {
+                    add { RenderItem(item, focusRequester, ctrlActive, altActive, shiftActive, imeVisible, view) }
+                    if (showDesktop &&
+                        desktopKeyPlacement == sh.haven.core.data.preferences.DesktopKeyPlacement.LEFT &&
+                        item is ToolbarItem.BuiltIn && item.key == ToolbarKey.KEYBOARD
+                    ) {
+                        add(desktopKey)
+                    }
+                }
+                if (showDesktop &&
+                    desktopKeyPlacement == sh.haven.core.data.preferences.DesktopKeyPlacement.RIGHT &&
+                    rowIdx == 0
+                ) {
+                    add(desktopKey)
+                }
+                // Unlike the scrolling rows (which append these to every row,
+                // off-screen at the scroll end), grid columns are a hard
+                // budget — one add/edit pair on the last row is enough.
+                if (rowIdx == visibleRows.lastIndex) {
+                    add { AddKeyButton() }
+                    add { ReorderEditButton() }
+                }
+            }
+        }
+    val maxCols = rows.maxOfOrNull { it.size } ?: return
+    CompositionLocalProvider(LocalToolbarFillCell provides true) {
+        Column {
+            for (cells in rows) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (cell in cells) {
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                        ) {
+                            cell()
+                        }
+                    }
+                    repeat(maxCols - cells.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AddKeyButton() {
     val cb = LocalToolbarCallbacks.current
@@ -832,7 +948,13 @@ private fun BuiltInKey(
                 modifier = Modifier
                     .padding(horizontal = 1.dp)
                     .height(32.dp)
-                    .widthIn(min = LocalToolbarMinKeyWidth.current)
+                    .then(
+                        if (LocalToolbarFillCell.current) {
+                            Modifier.fillMaxWidth()
+                        } else {
+                            Modifier.widthIn(min = LocalToolbarMinKeyWidth.current)
+                        }
+                    )
                     .combinedClickable(
                         onClick = {
                             val window = (view.context as? Activity)?.window ?: return@combinedClickable
@@ -1064,7 +1186,13 @@ private fun ToolbarKeyButton(
         modifier = modifier
             .padding(horizontal = 1.dp)
             .height(32.dp)
-            .widthIn(min = LocalToolbarMinKeyWidth.current)
+            .then(
+                if (LocalToolbarFillCell.current) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.widthIn(min = LocalToolbarMinKeyWidth.current)
+                }
+            )
             .pointerInteropFilter { motionEvent ->
                 when (motionEvent.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
@@ -1096,7 +1224,9 @@ private fun ToolbarKeyButton(
         },
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 8.dp),
+            modifier = Modifier.padding(
+                horizontal = if (LocalToolbarFillCell.current) 2.dp else 8.dp,
+            ),
             contentAlignment = Alignment.Center,
         ) {
             content()
@@ -1112,6 +1242,9 @@ private fun ToolbarKeyText(label: String, glyph: Boolean = false) {
         fontSize = if (glyph) 16.sp else 12.sp,
         lineHeight = if (glyph) 16.sp else 12.sp,
         fontWeight = if (glyph) androidx.compose.ui.text.font.FontWeight.Bold else null,
+        // Grid cells (#372) clamp the width, so long labels wrap — keep the
+        // wrapped lines centred. No effect on single-line labels.
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
 }
 

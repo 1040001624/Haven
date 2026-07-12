@@ -76,6 +76,7 @@ fun DesktopScreen(
     desktopViewModel: DesktopViewModel,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     navBlockMode: NavBlockMode = NavBlockMode.ALIGNED,
+    toolbarUniformGrid: Boolean = false,
     inputMode: String = "DIRECT",
     onSetInputMode: ((String) -> Unit)? = null,
     isActive: Boolean = true,
@@ -331,6 +332,7 @@ fun DesktopScreen(
                             modifier = Modifier.fillMaxSize(),
                             toolbarLayout = toolbarLayout,
                             navBlockMode = navBlockMode,
+                            uniformGrid = toolbarUniformGrid,
                             onFullscreenChanged = onFullscreenChanged,
                         )
                     }

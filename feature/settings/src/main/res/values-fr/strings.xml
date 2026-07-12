@@ -258,6 +258,8 @@
     <string name="settings_color_scheme_light_dialog_title">Thème de couleurs du terminal — clair</string>
     <string name="settings_color_scheme_dark_dialog_title">Thème de couleurs du terminal — sombre</string>
     <string name="settings_toolbar_min_key_width">Largeur minimale des touches : %1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">Grille de touches uniforme</string>
+    <string name="settings_toolbar_uniform_grid_desc">Chaque touche occupe une cellule de largeur égale, comme Termux ; les libellés longs passent à la ligne. Pas de défilement latéral.</string>
     <string name="settings_terminal_font_title">Police du terminal</string>
     <string name="settings_terminal_font_default_label">Hack Nerd Font Mono (par défaut)</string>
     <string name="settings_terminal_font_custom_fmt">Personnalisée : %1$s</string>

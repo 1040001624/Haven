@@ -51,6 +51,7 @@ private fun vtermKeyToEvdev(key: Int): Int = when (key) {
 fun WaylandToolbar(
     layout: ToolbarLayout = ToolbarLayout.DEFAULT,
     navBlockMode: NavBlockMode = NavBlockMode.ALIGNED,
+    uniformGrid: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var ctrlActive by remember { mutableStateOf(false) }
@@ -79,6 +80,7 @@ fun WaylandToolbar(
         altActive = altActive,
         layout = layout,
         navBlockMode = navBlockMode,
+        uniformGrid = uniformGrid,
         onToggleCtrl = {
             ctrlActive = !ctrlActive
             WaylandBridge.nativeSendKey(29, if (ctrlActive) 1 else 0)

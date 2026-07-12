@@ -560,6 +560,13 @@ class SettingsViewModel @Inject constructor(
             NavBlockMode.ALIGNED,
         )
 
+    val toolbarUniformGrid: StateFlow<Boolean> = preferencesRepository.toolbarUniformGrid
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            false,
+        )
+
     val editModeControlsPlacement: StateFlow<EditModeControlsPlacement> =
         preferencesRepository.editModeControlsPlacement
             .stateIn(
@@ -886,6 +893,12 @@ class SettingsViewModel @Inject constructor(
     fun setNavBlockMode(mode: NavBlockMode) {
         viewModelScope.launch {
             preferencesRepository.setNavBlockMode(mode)
+        }
+    }
+
+    fun setToolbarUniformGrid(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setToolbarUniformGrid(enabled)
         }
     }
 

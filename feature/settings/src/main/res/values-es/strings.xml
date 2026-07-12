@@ -258,6 +258,8 @@
     <string name="settings_color_scheme_light_dialog_title">Esquema de colores del terminal — claro</string>
     <string name="settings_color_scheme_dark_dialog_title">Esquema de colores del terminal — oscuro</string>
     <string name="settings_toolbar_min_key_width">Anchura mínima de tecla: %1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">Cuadrícula uniforme de teclas</string>
+    <string name="settings_toolbar_uniform_grid_desc">Cada tecla ocupa una celda de igual ancho, al estilo Termux; las etiquetas largas se ajustan. Sin desplazamiento lateral.</string>
     <string name="settings_terminal_font_title">Fuente del terminal</string>
     <string name="settings_terminal_font_default_label">Hack Nerd Font Mono (predeterminada)</string>
     <string name="settings_terminal_font_custom_fmt">Personalizada: %1$s</string>

@@ -257,6 +257,8 @@
     <string name="settings_color_scheme_light_dialog_title">终端配色方案 — 浅色</string>
     <string name="settings_color_scheme_dark_dialog_title">终端配色方案 — 深色</string>
     <string name="settings_toolbar_min_key_width">最小按键宽度：%1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">统一按键网格</string>
+    <string name="settings_toolbar_uniform_grid_desc">每个按键占用等宽格子（类似 Termux），过长的标签在格内换行，无需左右滑动。</string>
     <string name="settings_terminal_font_title">终端字体</string>
     <string name="settings_terminal_font_default_label">Hack Nerd Font Mono（默认）</string>
     <string name="settings_terminal_font_custom_fmt">自定义：%1$s</string>

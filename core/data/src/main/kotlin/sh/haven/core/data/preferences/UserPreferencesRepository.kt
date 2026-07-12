@@ -56,6 +56,7 @@ class UserPreferencesRepository @Inject constructor(
     private val appWindowDefaultResolutionKey = stringPreferencesKey("app_window_default_resolution")
     private val appWindowDefaultScaleKey = floatPreferencesKey("app_window_default_scale")
     private val navBlockModeKey = stringPreferencesKey("nav_block_mode")
+    private val toolbarUniformGridKey = booleanPreferencesKey("toolbar_uniform_grid")
     private val editModeControlsPlacementKey = stringPreferencesKey("edit_mode_controls_placement")
     private val desktopKeyPlacementKey = stringPreferencesKey("desktop_key_placement")
     private val sessionCommandOverrideKey = stringPreferencesKey("session_command_override")
@@ -1403,6 +1404,19 @@ class UserPreferencesRepository @Inject constructor(
         dataStore.edit { prefs ->
             prefs[navBlockModeKey] = mode.id
         }
+    }
+
+    /**
+     * Termux-style uniform key grid (#372): every toolbar key occupies an
+     * equal-width cell of the screen (no horizontal scroll); long labels wrap
+     * inside their cell. Off = the classic natural-width scrolling rows.
+     */
+    val toolbarUniformGrid: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[toolbarUniformGridKey] ?: false
+    }
+
+    suspend fun setToolbarUniformGrid(enabled: Boolean) {
+        dataStore.edit { it[toolbarUniformGridKey] = enabled }
     }
 
     /** Where the fixed (non-draggable) controls sit in toolbar edit mode. (#224) */

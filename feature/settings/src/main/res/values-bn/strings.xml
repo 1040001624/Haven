@@ -258,6 +258,8 @@
     <string name="settings_color_scheme_light_dialog_title">টার্মিনাল রঙের থিম — আলো</string>
     <string name="settings_color_scheme_dark_dialog_title">টার্মিনাল রঙের থিম — অন্ধকার</string>
     <string name="settings_toolbar_min_key_width">ন্যূনতম কী প্রস্থ: %1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">অভিন্ন কী গ্রিড</string>
+    <string name="settings_toolbar_uniform_grid_desc">প্রতিটি কী Termux-এর মতো সমান প্রস্থের ঘরে বসে; লম্বা লেবেল ভাঁজ হয়ে যায়। পাশে স্ক্রল নেই।</string>
     <string name="settings_terminal_font_title">টার্মিনাল ফন্ট</string>
     <string name="settings_terminal_font_default_label">Hack Nerd Font Mono (ডিফল্ট)</string>
     <string name="settings_terminal_font_custom_fmt">কাস্টম: %1$s</string>

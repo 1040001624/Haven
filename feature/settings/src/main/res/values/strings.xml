@@ -226,6 +226,8 @@
     <string name="settings_desktop_key_right">Right</string>
     <string name="settings_desktop_key_hidden">Hidden</string>
     <string name="settings_toolbar_min_key_width">Minimum key width: %1$d dp</string>
+    <string name="settings_toolbar_uniform_grid">Uniform key grid</string>
+    <string name="settings_toolbar_uniform_grid_desc">Every key takes an equal-width cell, Termux-style; long labels wrap. No side-scrolling.</string>
     <string name="settings_toolbar_function_keys">Function keys</string>
     <string name="settings_toolbar_symbols">Symbols</string>
     <string name="settings_toolbar_custom_keys">Custom keys</string>

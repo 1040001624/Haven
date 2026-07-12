@@ -25660,6 +25660,44 @@
      }
     },
     {
+     "name": "settings_toolbar_uniform_grid",
+     "en": "Uniform key grid",
+     "comment": "Toolbar config dialog",
+     "args": [],
+     "t": {
+      "ar": "شبكة مفاتيح موحّدة",
+      "bn": "অভিন্ন কী গ্রিড",
+      "de": "Einheitliches Tastenraster",
+      "es": "Cuadrícula uniforme de teclas",
+      "fr": "Grille de touches uniforme",
+      "hi": "एकसमान कुंजी ग्रिड",
+      "ja": "キーを均等グリッドに",
+      "ko": "균일한 키 그리드",
+      "pt": "Grade uniforme de teclas",
+      "ru": "Единая сетка клавиш",
+      "zh": "统一按键网格"
+     }
+    },
+    {
+     "name": "settings_toolbar_uniform_grid_desc",
+     "en": "Every key takes an equal-width cell, Termux-style; long labels wrap. No side-scrolling.",
+     "comment": "Toolbar config dialog",
+     "args": [],
+     "t": {
+      "ar": "كل مفتاح يشغل خلية متساوية العرض على طريقة Termux؛ التسميات الطويلة تلتف. بدون تمرير جانبي.",
+      "bn": "প্রতিটি কী Termux-এর মতো সমান প্রস্থের ঘরে বসে; লম্বা লেবেল ভাঁজ হয়ে যায়। পাশে স্ক্রল নেই।",
+      "de": "Jede Taste belegt eine gleich breite Zelle wie in Termux; lange Beschriftungen umbrechen. Kein seitliches Scrollen.",
+      "es": "Cada tecla ocupa una celda de igual ancho, al estilo Termux; las etiquetas largas se ajustan. Sin desplazamiento lateral.",
+      "fr": "Chaque touche occupe une cellule de largeur égale, comme Termux ; les libellés longs passent à la ligne. Pas de défilement latéral.",
+      "hi": "हर कुंजी Termux की तरह बराबर चौड़ाई की सेल लेती है; लंबे लेबल लिपट जाते हैं। साइड स्क्रॉल नहीं।",
+      "ja": "Termux のように各キーが同じ幅のセルを占めます。長いラベルは折り返し。横スクロールなし。",
+      "ko": "Termux처럼 모든 키가 같은 너비의 칸을 차지하며 긴 라벨은 줄바꿈됩니다. 가로 스크롤 없음.",
+      "pt": "Cada tecla ocupa uma célula de largura igual, no estilo Termux; rótulos longos quebram linha. Sem rolagem lateral.",
+      "ru": "Каждая клавиша занимает ячейку одинаковой ширины, как в Termux; длинные подписи переносятся. Без бокового скролла.",
+      "zh": "每个按键占用等宽格子（类似 Termux），过长的标签在格内换行，无需左右滑动。"
+     }
+    },
+    {
      "name": "settings_toolbar_function_keys",
      "en": "Function keys",
      "comment": "Toolbar config dialog",

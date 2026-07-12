@@ -418,6 +418,8 @@ fun HavenNavHost(
         .collectAsState(initial = emptyList())
     val navBlockMode by preferencesRepository.navBlockMode
         .collectAsState(initial = sh.haven.core.data.preferences.NavBlockMode.ALIGNED)
+    val toolbarUniformGrid by preferencesRepository.toolbarUniformGrid
+        .collectAsState(initial = false)
     val editModeControlsPlacement by preferencesRepository.editModeControlsPlacement
         .collectAsState(initial = sh.haven.core.data.preferences.EditModeControlsPlacement.LEFT)
     val desktopKeyPlacement by preferencesRepository.desktopKeyPlacement
@@ -635,6 +637,7 @@ fun HavenNavHost(
                         terminalFontPath = terminalFontPath,
                         toolbarLayout = toolbarLayout,
                         navBlockMode = navBlockMode,
+                        toolbarUniformGrid = toolbarUniformGrid,
                         editModeControlsPlacement = editModeControlsPlacement,
                         desktopKeyPlacement = desktopKeyPlacement,
                         toolbarMinKeyWidth = toolbarMinKeyWidth,
@@ -742,6 +745,7 @@ fun HavenNavHost(
                         desktopViewModel = desktopViewModel,
                         toolbarLayout = toolbarLayout,
                         navBlockMode = navBlockMode,
+                        toolbarUniformGrid = toolbarUniformGrid,
                         inputMode = desktopInputMode,
                         onSetInputMode = { mode ->
                             coroutineScope.launch { preferencesRepository.setDesktopInputMode(mode) }
