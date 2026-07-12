@@ -23,6 +23,15 @@ class HostKeyVerifier @Inject constructor(
     private val stepCaConfigRepository: StepCaConfigRepository,
 ) {
 
+    /**
+     * The trusted SSH host-CA public keys from every step-ca config, for
+     * passing to [SshClient.connect]'s `trustedHostCaKeys` (#133) — that
+     * activates JSch-native `@cert-authority` verification during KEX, so a
+     * CA-signed host never reaches TOFU at all.
+     */
+    suspend fun trustedHostCaKeys(): List<String> =
+        stepCaConfigRepository.getAll().mapNotNull { it.sshHostCaPublicKey?.trim()?.ifEmpty { null } }
+
     suspend fun verify(entry: KnownHostEntry): HostKeyResult {
         // CA-signed host cert path. If the server presents an
         // ssh-*-cert-v01@openssh.com host cert and the issuing CA matches

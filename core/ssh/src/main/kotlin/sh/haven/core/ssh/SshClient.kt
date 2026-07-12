@@ -48,6 +48,17 @@ class SshClient : Closeable {
     /** Set before connect() to capture verbose SSH protocol output. */
     var verboseLogger: SshVerboseLogger? = null
     private var session: Session? = null
+
+    /**
+     * True when the most recent successful connect verified the host via a
+     * trusted CA-signed host certificate instead of a per-host key (#133).
+     * For logging/UI; the trust decision itself is conveyed by
+     * [connect]/[connectBlocking] returning null.
+     */
+    @Volatile
+    var hostVerifiedByCa: Boolean = false
+        private set
+
     /** Whether the active session should set agent forwarding on newly opened shell/exec channels. */
     private var agentForwardingEnabled = false
 
@@ -260,8 +271,10 @@ class SshClient : Closeable {
         totpCodeProvider: (() -> String)? = null,
         confirmOtp: Boolean = false,
         preConnect: (suspend () -> Unit)? = null,
-    ): KnownHostEntry = withContext(Dispatchers.IO) {
+        trustedHostCaKeys: List<String> = emptyList(),
+    ): KnownHostEntry? = withContext(Dispatchers.IO) {
         disconnect()
+        hostVerifiedByCa = false
         verboseLogger?.let { jsch.setInstanceLogger(it) }
 
         val resolvedIp = if (proxy != null) config.host else resolveHost(config.host, family = config.addressFamily)
@@ -269,6 +282,11 @@ class SshClient : Closeable {
         if (proxy != null) sess.setProxy(proxy.jschProxy)
         // Accept any key at the JSch level; we verify post-connect ourselves (TOFU)
         sess.setConfig("StrictHostKeyChecking", "no")
+        // #133: trusted host-CA keys activate JSch's native OpenSSH host-
+        // certificate verification. A CA-signed host cert that validates makes
+        // TOFU unnecessary (connect returns null); anything else falls back to
+        // the stripped key and the usual TOFU flow.
+        val caRepo = installHostCaRepository(sess, trustedHostCaKeys)
         // Disable GSSAPI auth — it causes multi-second timeouts on most servers
         sess.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
         sess.serverAliveInterval = 15_000
@@ -316,7 +334,7 @@ class SshClient : Closeable {
         }
         session = sess
         registerAgentIdentities(config)
-        extractHostKey(sess, config.host, config.port)
+        extractHostKey(sess, config.host, config.port, caRepo)
     }
 
     /**
@@ -453,14 +471,17 @@ class SshClient : Closeable {
         totpCodeProvider: (() -> String)? = null,
         confirmOtp: Boolean = false,
         preConnect: (() -> Unit)? = null,
-    ): KnownHostEntry {
+        trustedHostCaKeys: List<String> = emptyList(),
+    ): KnownHostEntry? {
         disconnect()
+        hostVerifiedByCa = false
         verboseLogger?.let { jsch.setInstanceLogger(it) }
 
         val resolvedIp = if (proxy != null) config.host else resolveHost(config.host, family = config.addressFamily)
         val sess = jsch.getSession(config.username, resolvedIp, config.port)
         if (proxy != null) sess.setProxy(proxy.jschProxy)
         sess.setConfig("StrictHostKeyChecking", "no")
+        val caRepo = installHostCaRepository(sess, trustedHostCaKeys)
         sess.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
         sess.serverAliveInterval = 15_000
         sess.serverAliveCountMax = 3
@@ -495,7 +516,7 @@ class SshClient : Closeable {
         }
         session = sess
         registerAgentIdentities(config)
-        return extractHostKey(sess, config.host, config.port)
+        return extractHostKey(sess, config.host, config.port, caRepo)
     }
 
     /**
@@ -626,8 +647,54 @@ class SshClient : Closeable {
         return out
     }
 
-    private fun extractHostKey(sess: Session, host: String, port: Int): KnownHostEntry {
+    /**
+     * Install a [TrustedCaHostKeyRepository] on the session when the user has
+     * trusted host-CA keys configured (#133). Returns the repository so the
+     * post-connect [extractHostKey] can read its state, or null when no CAs
+     * are configured (today's behaviour, byte for byte).
+     */
+    private fun installHostCaRepository(
+        sess: Session,
+        trustedHostCaKeys: List<String>,
+    ): TrustedCaHostKeyRepository? {
+        if (trustedHostCaKeys.isEmpty()) return null
+        val repo = TrustedCaHostKeyRepository(trustedHostCaKeys)
+        if (repo.caCount == 0) return null
+        sess.setHostKeyRepository(repo)
+        diag("host-CA verification active: ${repo.caCount} trusted CA(s)")
+        return repo
+    }
+
+    /**
+     * The host key for TOFU verification, or null when the host was verified
+     * by a trusted CA-signed host certificate and TOFU is unnecessary.
+     *
+     * The null reading is deliberately narrow: the only JSch code path that
+     * completes a connect without setting the session's host key is
+     * Session.checkHost returning early after
+     * OpenSshCertificateHostKeyVerifier validated the presented certificate
+     * (signature, validity window, principals, revocation) against an
+     * `@cert-authority` entry served by [TrustedCaHostKeyRepository]. That
+     * reading is only trusted when our repository was actually installed and
+     * its TOFU check() went unconsulted; any other missing-host-key state is
+     * unexpected and fails closed.
+     */
+    private fun extractHostKey(
+        sess: Session,
+        host: String,
+        port: Int,
+        caRepo: TrustedCaHostKeyRepository? = null,
+    ): KnownHostEntry? {
         val hk = sess.hostKey
+        if (hk == null) {
+            if (caRepo != null && caRepo.caCount > 0 && !caRepo.checkConsulted) {
+                diag("host $host:$port verified by trusted host CA — skipping TOFU")
+                hostVerifiedByCa = true
+                return null
+            }
+            throw JSchException(
+                "No host key available after connect to $host:$port (not CA-verified) — failing closed")
+        }
         return KnownHostEntry(
             hostname = host,
             port = port,

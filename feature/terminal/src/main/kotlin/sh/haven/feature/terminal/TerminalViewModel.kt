@@ -2109,13 +2109,13 @@ class TerminalViewModel @Inject constructor(
                     val proxy = connectionRepository.getById(profileId)
                         ?.let { tunnelResolver.havenProxy(it) }
                     val hostKeyEntry = withContext(Dispatchers.IO) {
-                        client.connect(config, proxy = proxy)
+                        client.connect(config, proxy = proxy, trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys())
                     }
 
                     // Silent TOFU is fail-closed: a new tab never silently trusts
                     // an unknown or changed host key; the user establishes trust
                     // via an interactive connect (host-key prompt). (#5)
-                    when (val hkResult = hostKeyVerifier.verify(hostKeyEntry)) {
+                    when (val hkResult = if (hostKeyEntry == null) HostKeyResult.Trusted else hostKeyVerifier.verify(hostKeyEntry)) {
                         is HostKeyResult.Trusted -> { /* matches — continue */ }
                         is HostKeyResult.NewHost -> {
                             client.disconnect()
@@ -2280,8 +2280,8 @@ class TerminalViewModel @Inject constructor(
                     // Route through the profile's tunnel / proxy (see addSshTabForProfile).
                     val proxy = connectionRepository.getById(profileId)
                         ?.let { tunnelResolver.havenProxy(it) }
-                    val hostKeyEntry = withContext(Dispatchers.IO) { client.connect(config, proxy = proxy) }
-                    when (val hkResult = hostKeyVerifier.verify(hostKeyEntry)) {
+                    val hostKeyEntry = withContext(Dispatchers.IO) { client.connect(config, proxy = proxy, trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys()) }
+                    when (val hkResult = if (hostKeyEntry == null) HostKeyResult.Trusted else hostKeyVerifier.verify(hostKeyEntry)) {
                         is HostKeyResult.Trusted -> {}
                         is HostKeyResult.NewHost -> {
                             // Fail closed on an unknown host in the silent new-tab

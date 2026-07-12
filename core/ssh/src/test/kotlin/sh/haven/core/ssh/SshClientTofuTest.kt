@@ -120,7 +120,8 @@ class SshClientTofuTest {
                 authMethod = ConnectionConfig.AuthMethod.Password("accepted"),
             )
             val hostKey = runBlocking { client.connect(config, connectTimeoutMs = 5_000) }
-            assertEquals("127.0.0.1", hostKey.hostname)
+            assertNotNull("plain-key host must surface a TOFU entry", hostKey)
+            assertEquals("127.0.0.1", hostKey!!.hostname)
             assertEquals(serverPort, hostKey.port)
             assertTrue(hostKey.keyType.isNotBlank())
             assertTrue(hostKey.publicKeyBase64.isNotBlank())

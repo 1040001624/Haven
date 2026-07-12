@@ -419,11 +419,11 @@ class McpTunnelManager @Inject constructor(
         )
         sessionId = sid
         return try {
-            val hostKeyEntry = client.connect(config)
+            val hostKeyEntry = client.connect(config, trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys())
             // Fail-closed TOFU: this headless tunnel never silently trusts an
             // unknown or changed host key. The user establishes trust by
             // connecting the profile interactively first (host-key prompt). (#5)
-            when (val r = hostKeyVerifier.verify(hostKeyEntry)) {
+            when (val r = if (hostKeyEntry == null) HostKeyResult.Trusted else hostKeyVerifier.verify(hostKeyEntry)) {
                 is HostKeyResult.Trusted -> { /* ok */ }
                 is HostKeyResult.NewHost -> {
                     Log.w(TAG, "Unknown host key for ${profile.label} — refusing MCP tunnel (connect it interactively first)")

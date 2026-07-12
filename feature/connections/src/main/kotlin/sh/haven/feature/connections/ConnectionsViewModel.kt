@@ -668,13 +668,28 @@ class ConnectionsViewModel @Inject constructor(
      * Shared by every interactive connect path so that they behave the same
      * way on fresh contact, key change, and (post-fix) auth-failure-after-KEX.
      */
+    /**
+     * Silent-path variant of the TOFU decision: a null [entry] can only come
+     * from [SshClient.connect]'s fail-closed CA path (#133) — the host cert
+     * verified against a trusted host CA during KEX — and is Trusted.
+     */
+    private suspend fun verifyOrCaTrusted(entry: KnownHostEntry?): HostKeyResult =
+        if (entry == null) HostKeyResult.Trusted else hostKeyVerifier.verify(entry)
+
     private suspend fun runTofuVerification(
-        entry: KnownHostEntry,
+        entry: KnownHostEntry?,
         clientToDisconnectOnReject: SshClient? = null,
         rejectedOnNewHostMessage: String = "Host key rejected by user",
         rejectedOnChangeMessage: String = "Host key change rejected by user",
         autoAccept: Boolean = false,
     ) {
+        if (entry == null) {
+            // SshClient.connect returned null: the host presented a certificate
+            // that JSch verified against a trusted host CA (#133). Nothing to
+            // TOFU — trust was established cryptographically during KEX.
+            Log.i(TAG, "Host verified by trusted host CA — no TOFU prompt")
+            return
+        }
         when (val result = hostKeyVerifier.verify(entry)) {
             is HostKeyResult.Trusted -> return
             is HostKeyResult.NewHost -> {
@@ -2670,6 +2685,7 @@ class ConnectionsViewModel @Inject constructor(
                                 totpCodeProvider = buildTotpCodeProvider(profile),
                                 confirmOtp = profile.totpConfirmBeforeSend,
                                 preConnect = buildKnockHook(profile, verboseLogger),
+                                trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                             )
                             runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = client, autoAccept = profile.usbDriveSerial != null)
                         } catch (e: HostKeyAuthFailure) {
@@ -2937,6 +2953,7 @@ class ConnectionsViewModel @Inject constructor(
                             totpCodeProvider = buildTotpCodeProvider(profile),
                             confirmOtp = profile.totpConfirmBeforeSend,
                             preConnect = buildKnockHook(profile, verboseLogger),
+                            trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                         )
                         runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = sshClient)
                     } catch (e: HostKeyAuthFailure) {
@@ -3073,6 +3090,7 @@ class ConnectionsViewModel @Inject constructor(
                             totpCodeProvider = buildTotpCodeProvider(profile),
                             confirmOtp = profile.totpConfirmBeforeSend,
                             preConnect = buildKnockHook(profile, verboseLogger),
+                            trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                         )
                         runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = sshClient)
                     } catch (e: HostKeyAuthFailure) {
@@ -3562,6 +3580,7 @@ class ConnectionsViewModel @Inject constructor(
                         keyboardInteractivePrompter = keyboardInteractivePrompter,
                         totpCodeProvider = buildTotpCodeProvider(jumpProfile),
                         confirmOtp = jumpProfile.totpConfirmBeforeSend,
+                        trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                     )
                     Log.d(TAG, "Jump host SSH connected, verifying host key...")
                     runTofuVerification(
@@ -4608,6 +4627,7 @@ class ConnectionsViewModel @Inject constructor(
                         config,
                         proxy = proxy,
                         preConnect = buildKnockHook(profile, verboseLogger = null),
+                        trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                     )
                     runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = client)
                 } catch (e: HostKeyAuthFailure) {
@@ -4816,12 +4836,13 @@ class ConnectionsViewModel @Inject constructor(
                     config,
                     proxy = proxy,
                     preConnect = buildKnockHook(profile, verboseLogger),
+                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                 )
 
                 // Silent TOFU is fail-closed: a background / workspace connect
                 // never silently trusts an unknown OR changed host key. Trust is
                 // established interactively via the host-key prompt. (#5)
-                when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
+                when (val result = verifyOrCaTrusted(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
                     is HostKeyResult.NewHost -> {
                         client.disconnect()
@@ -4892,9 +4913,10 @@ class ConnectionsViewModel @Inject constructor(
                     config,
                     proxy = proxy,
                     preConnect = buildKnockHook(profile, verboseLogger),
+                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                 )
 
-                when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
+                when (val result = verifyOrCaTrusted(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
                     is HostKeyResult.NewHost -> {
                         // Fail closed: don't silently trust an unknown host in a
@@ -4957,9 +4979,10 @@ class ConnectionsViewModel @Inject constructor(
                     config,
                     proxy = proxy,
                     preConnect = buildKnockHook(profile, verboseLogger),
+                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
                 )
 
-                when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
+                when (val result = verifyOrCaTrusted(hostKeyEntry)) {
                     is HostKeyResult.Trusted -> {}
                     is HostKeyResult.NewHost -> {
                         // Fail closed: don't silently trust an unknown host in a

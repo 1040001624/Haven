@@ -889,21 +889,32 @@ class SshSessionManager @Inject constructor(
                     // otherwise addFidoIdentity NPEs on the null authenticator.
                     fidoAuthenticator = _sessions.value[sessionId]?.client?.fidoAuthenticator
                 }
-                val hostKeyEntry = newClient.connectBlocking(config, proxy = proxy)
+                val hostKeyEntry = newClient.connectBlocking(
+                    config,
+                    proxy = proxy,
+                    trustedHostCaKeys = runBlocking { hostKeyVerifier.trustedHostCaKeys() },
+                )
 
-                // Silent TOFU on reconnect: auto-accept new, abort on change
-                val hkResult = runBlocking { hostKeyVerifier.verify(hostKeyEntry) }
-                when (hkResult) {
-                    is HostKeyResult.Trusted -> { /* matches — continue */ }
-                    is HostKeyResult.NewHost -> {
-                        runBlocking { hostKeyVerifier.accept(hkResult.entry) }
+                // Silent TOFU on reconnect: auto-accept new, abort on change.
+                // A null entry means the host presented a certificate that
+                // JSch verified against a trusted host CA (#133) — nothing
+                // to TOFU.
+                if (hostKeyEntry != null) {
+                    val hkResult = runBlocking { hostKeyVerifier.verify(hostKeyEntry) }
+                    when (hkResult) {
+                        is HostKeyResult.Trusted -> { /* matches — continue */ }
+                        is HostKeyResult.NewHost -> {
+                            runBlocking { hostKeyVerifier.accept(hkResult.entry) }
+                        }
+                        is HostKeyResult.KeyChanged -> {
+                            Log.w(TAG, "Host key changed during reconnect for $sessionId — aborting")
+                            newClient.disconnect()
+                            updateStatus(sessionId, SessionState.Status.ERROR)
+                            return
+                        }
                     }
-                    is HostKeyResult.KeyChanged -> {
-                        Log.w(TAG, "Host key changed during reconnect for $sessionId — aborting")
-                        newClient.disconnect()
-                        updateStatus(sessionId, SessionState.Status.ERROR)
-                        return
-                    }
+                } else {
+                    Log.i(TAG, "Reconnect $sessionId: host verified by trusted CA")
                 }
 
                 // Update session state with new client

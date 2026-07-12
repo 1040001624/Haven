@@ -97,7 +97,7 @@ class HeadlessSshExec @Inject constructor(
         val client = clientFactory()
         try {
             val hostKeyEntry = try {
-                client.connect(config)
+                client.connect(config, trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys())
             } catch (e: Exception) {
                 // #376: a network failure on a private address may just mean
                 // DHCP moved the device — follow its host key once, so
@@ -111,12 +111,12 @@ class HeadlessSshExec @Inject constructor(
                 }
                 Log.i(TAG, "'${profile.label}' host rediscovered ${profile.host} → $newHost — retrying")
                 try {
-                    client.connect(config.copy(host = newHost))
+                    client.connect(config.copy(host = newHost), trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys())
                 } catch (e2: Exception) {
                     throw McpError(-32603, "Connect to '${profile.label}' failed after host rediscovery ($newHost): ${e2.message ?: e2.javaClass.simpleName}")
                 }
             }
-            when (hostKeyVerifier.verify(hostKeyEntry)) {
+            when (if (hostKeyEntry == null) HostKeyResult.Trusted else hostKeyVerifier.verify(hostKeyEntry)) {
                 is HostKeyResult.Trusted -> { /* ok */ }
                 is HostKeyResult.NewHost -> throw McpError(
                     -32603,

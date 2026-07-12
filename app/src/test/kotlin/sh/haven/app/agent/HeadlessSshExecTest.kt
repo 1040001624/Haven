@@ -119,7 +119,10 @@ class HeadlessSshExecTest {
         }
         val repo = mockk<ConnectionRepository> { coEvery { getById("p1") } returns sshProfile }
         val sessions = mockk<SshSessionManager> { every { getSshClientForProfile("p1") } returns stale }
-        val verifier = mockk<HostKeyVerifier> { coEvery { verify(any()) } returns HostKeyResult.Trusted }
+        val verifier = mockk<HostKeyVerifier> {
+            coEvery { verify(any()) } returns HostKeyResult.Trusted
+            coEvery { trustedHostCaKeys() } returns emptyList()
+        }
         val exec = newExec(
             connectionRepository = repo, sshSessionManager = sessions,
             hostKeyVerifier = verifier, client = fresh,
@@ -140,6 +143,7 @@ class HeadlessSshExecTest {
         val repo = mockk<ConnectionRepository> { coEvery { getById("p1") } returns sshProfile }
         val verifier = mockk<HostKeyVerifier> {
             coEvery { verify(any()) } returns HostKeyResult.NewHost(mockk())
+            coEvery { trustedHostCaKeys() } returns emptyList()
         }
         val exec = newExec(connectionRepository = repo, hostKeyVerifier = verifier, client = client)
 
@@ -156,6 +160,7 @@ class HeadlessSshExecTest {
         val repo = mockk<ConnectionRepository> { coEvery { getById("p1") } returns sshProfile }
         val verifier = mockk<HostKeyVerifier> {
             coEvery { verify(any()) } returns HostKeyResult.KeyChanged(mockk(), mockk())
+            coEvery { trustedHostCaKeys() } returns emptyList()
         }
         val exec = newExec(connectionRepository = repo, hostKeyVerifier = verifier, client = client)
 
