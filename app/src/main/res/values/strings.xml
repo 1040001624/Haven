@@ -191,6 +191,8 @@
     <!-- Desktop manager: distro / rootfs -->
     <string name="app_desktop_open_shell_cd">Open shell in %1$s</string>
     <string name="app_desktop_delete_distro_cd">Delete %1$s</string>
+    <string name="app_desktop_delete_distro_confirm_title">Delete %1$s?</string>
+    <string name="app_desktop_delete_distro_confirm_body">This erases the rootfs and reclaims its disk space. Packages you installed and files in this distro are lost. It re-provisions the next time you open it.</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — emulated, slower  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">Open which USB drive?</string>

@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">ex. imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">Abrir shell em %1$s</string>
     <string name="app_desktop_delete_distro_cd">Excluir %1$s</string>
+    <string name="app_desktop_delete_distro_confirm_title">Excluir %1$s?</string>
+    <string name="app_desktop_delete_distro_confirm_body">Isto apaga o rootfs e recupera o espaço em disco. Os pacotes que você instalou e os arquivos desta distro serão perdidos. Ela será reprovisionada na próxima vez que você a abrir.</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — emulado, mais lento  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">Abrir qual unidade USB?</string>

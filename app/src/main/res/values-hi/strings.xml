@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">उदा. imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">%1$s में शेल खोलें</string>
     <string name="app_desktop_delete_distro_cd">%1$s हटाएँ</string>
+    <string name="app_desktop_delete_distro_confirm_title">%1$s हटाएँ?</string>
+    <string name="app_desktop_delete_distro_confirm_body">यह rootfs को मिटा देता है और उसकी डिस्क जगह वापस ले लेता है। इस डिस्ट्रो में इंस्टॉल किए गए पैकेज और फ़ाइलें खो जाएँगी। अगली बार खोलने पर यह फिर से तैयार हो जाएगा।</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — एम्युलेटेड, धीमा  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">कौन-सी USB ड्राइव खोलें?</string>

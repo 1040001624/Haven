@@ -955,6 +955,10 @@ private fun DesktopManagerSection(
     // opened via Start on a blank command, so Save also starts the desktop.
     var customCmdDialogStartAfter by remember { mutableStateOf<Boolean?>(null) }
     var showWritableConfirm by remember { mutableStateOf(false) }
+    // #379: which distro's delete is awaiting confirmation (null = none).
+    // The delete IconButton sits one tap away from Open-shell, so guard the
+    // destructive rootfs wipe behind a confirm dialog.
+    var distroPendingDelete by remember { mutableStateOf<Distro?>(null) }
     // Which locked partition's unlock dialog is open (null = none) — the
     // owning session's busid + the mount-dir name (e.g. "sdb2").
     var unlockingPartition by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -1060,7 +1064,7 @@ private fun DesktopManagerSection(
                                 }
                                 IconButton(onClick = {
                                     distroMenuOpen = false
-                                    onDeleteDistro(distro)
+                                    distroPendingDelete = distro
                                 }) {
                                     Icon(
                                         Icons.Filled.Delete,
@@ -1480,6 +1484,23 @@ private fun DesktopManagerSection(
             },
             dismissButton = {
                 TextButton(onClick = { showWritableConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+    distroPendingDelete?.let { distro ->
+        AlertDialog(
+            onDismissRequest = { distroPendingDelete = null },
+            icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+            title = { Text(stringResource(AppR.string.app_desktop_delete_distro_confirm_title, distro.label)) },
+            text = { Text(stringResource(AppR.string.app_desktop_delete_distro_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteDistro(distro)
+                    distroPendingDelete = null
+                }) { Text(stringResource(R.string.common_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { distroPendingDelete = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

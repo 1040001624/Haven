@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">例如 imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">在 %1$s 中打开 shell</string>
     <string name="app_desktop_delete_distro_cd">删除 %1$s</string>
+    <string name="app_desktop_delete_distro_confirm_title">删除 %1$s？</string>
+    <string name="app_desktop_delete_distro_confirm_body">这会删除 rootfs 并回收其占用的磁盘空间。你在此发行版中安装的软件包和文件都将丢失。下次打开时会重新初始化。</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — 模拟运行，较慢  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">打开哪个 USB 驱动器？</string>

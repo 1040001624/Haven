@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">z. B. imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">Shell in %1$s öffnen</string>
     <string name="app_desktop_delete_distro_cd">%1$s löschen</string>
+    <string name="app_desktop_delete_distro_confirm_title">%1$s löschen?</string>
+    <string name="app_desktop_delete_distro_confirm_body">Dies löscht das rootfs und gibt seinen Speicherplatz frei. Von Ihnen installierte Pakete und Dateien in dieser Distribution gehen verloren. Sie wird beim nächsten Öffnen neu eingerichtet.</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — emuliert, langsamer  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">Welches USB-Laufwerk öffnen?</string>

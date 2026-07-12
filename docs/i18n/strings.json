@@ -3156,6 +3156,46 @@
      }
     },
     {
+     "name": "app_desktop_delete_distro_confirm_title",
+     "en": "Delete %1$s?",
+     "comment": "Desktop manager: distro / rootfs",
+     "args": [
+      "%1$s"
+     ],
+     "t": {
+      "ar": "حذف %1$s؟",
+      "bn": "%1$s মুছবেন?",
+      "de": "%1$s löschen?",
+      "es": "¿Eliminar %1$s?",
+      "fr": "Supprimer %1$s ?",
+      "hi": "%1$s हटाएँ?",
+      "ja": "%1$s を削除しますか？",
+      "ko": "%1$s을(를) 삭제하시겠습니까?",
+      "pt": "Excluir %1$s?",
+      "ru": "Удалить %1$s?",
+      "zh": "删除 %1$s？"
+     }
+    },
+    {
+     "name": "app_desktop_delete_distro_confirm_body",
+     "en": "This erases the rootfs and reclaims its disk space. Packages you installed and files in this distro are lost. It re-provisions the next time you open it.",
+     "comment": "Desktop manager: distro / rootfs",
+     "args": [],
+     "t": {
+      "ar": "يؤدي هذا إلى محو نظام الملفات الجذري (rootfs) واسترجاع مساحته على القرص. ستفقد الحزم التي ثبّتها والملفات الموجودة في هذه التوزيعة. ستتم إعادة تهيئتها في المرة التالية التي تفتحها فيها.",
+      "bn": "এটি rootfs মুছে ফেলে এবং তার ডিস্কের জায়গা ফিরিয়ে আনে। আপনার ইনস্টল করা প্যাকেজ ও এই ডিস্ট্রোর ফাইল হারিয়ে যাবে। পরের বার খুললে এটি আবার সেট আপ হবে।",
+      "de": "Dies löscht das rootfs und gibt seinen Speicherplatz frei. Von Ihnen installierte Pakete und Dateien in dieser Distribution gehen verloren. Sie wird beim nächsten Öffnen neu eingerichtet.",
+      "es": "Esto borra el rootfs y libera su espacio en disco. Los paquetes que instalaste y los archivos de esta distro se perderán. Se volverá a aprovisionar la próxima vez que la abras.",
+      "fr": "Ceci efface le rootfs et récupère son espace disque. Les paquets que vous avez installés et les fichiers de cette distribution seront perdus. Elle sera reconfigurée à la prochaine ouverture.",
+      "hi": "यह rootfs को मिटा देता है और उसकी डिस्क जगह वापस ले लेता है। इस डिस्ट्रो में इंस्टॉल किए गए पैकेज और फ़ाइलें खो जाएँगी। अगली बार खोलने पर यह फिर से तैयार हो जाएगा।",
+      "ja": "これは rootfs を消去し、ディスク領域を解放します。インストールしたパッケージやこのディストリビューション内のファイルは失われます。次に開いたときに再作成されます。",
+      "ko": "이 작업은 rootfs를 지우고 디스크 공간을 회수합니다. 설치한 패키지와 이 배포판의 파일이 사라집니다. 다음에 열 때 다시 준비됩니다.",
+      "pt": "Isto apaga o rootfs e recupera o espaço em disco. Os pacotes que você instalou e os arquivos desta distro serão perdidos. Ela será reprovisionada na próxima vez que você a abrir.",
+      "ru": "Это удалит rootfs и освободит занятое им место на диске. Установленные вами пакеты и файлы в этом дистрибутиве будут потеряны. При следующем открытии он будет создан заново.",
+      "zh": "这会删除 rootfs 并回收其占用的磁盘空间。你在此发行版中安装的软件包和文件都将丢失。下次打开时会重新初始化。"
+     }
+    },
+    {
      "name": "app_desktop_add_distro",
      "en": "+ %1$s  (~%2$d MB)",
      "comment": "Desktop manager: distro / rootfs",

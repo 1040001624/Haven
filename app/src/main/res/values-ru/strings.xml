@@ -86,6 +86,8 @@
     <string name="app_desktop_app_window_command_placeholder">напр. imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">Открыть оболочку в %1$s</string>
     <string name="app_desktop_delete_distro_cd">Удалить %1$s</string>
+    <string name="app_desktop_delete_distro_confirm_title">Удалить %1$s?</string>
+    <string name="app_desktop_delete_distro_confirm_body">Это удалит rootfs и освободит занятое им место на диске. Установленные вами пакеты и файлы в этом дистрибутиве будут потеряны. При следующем открытии он будет создан заново.</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d МБ)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — эмуляция, медленнее  (~%3$d МБ)</string>
     <string name="app_desktop_usb_drive_picker_title">Какой USB-накопитель открыть?</string>

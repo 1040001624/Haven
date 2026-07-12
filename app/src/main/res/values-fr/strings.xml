@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">ex. imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">Ouvrir un shell dans %1$s</string>
     <string name="app_desktop_delete_distro_cd">Supprimer %1$s</string>
+    <string name="app_desktop_delete_distro_confirm_title">Supprimer %1$s ?</string>
+    <string name="app_desktop_delete_distro_confirm_body">Ceci efface le rootfs et récupère son espace disque. Les paquets que vous avez installés et les fichiers de cette distribution seront perdus. Elle sera reconfigurée à la prochaine ouverture.</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d Mo)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — émulé, plus lent  (~%3$d Mo)</string>
     <string name="app_desktop_usb_drive_picker_title">Quel disque USB ouvrir ?</string>

@@ -84,6 +84,8 @@
     <string name="app_desktop_app_window_command_placeholder">例: imv /root/board.png</string>
     <string name="app_desktop_open_shell_cd">%1$s でシェルを開く</string>
     <string name="app_desktop_delete_distro_cd">%1$s を削除</string>
+    <string name="app_desktop_delete_distro_confirm_title">%1$s を削除しますか？</string>
+    <string name="app_desktop_delete_distro_confirm_body">これは rootfs を消去し、ディスク領域を解放します。インストールしたパッケージやこのディストリビューション内のファイルは失われます。次に開いたときに再作成されます。</string>
     <string name="app_desktop_add_distro">+ %1$s  (~%2$d MB)</string>
     <string name="app_desktop_add_foreign_distro">+ %1$s %2$s — エミュレーション実行、低速  (~%3$d MB)</string>
     <string name="app_desktop_usb_drive_picker_title">どのUSBドライブを開きますか？</string>
