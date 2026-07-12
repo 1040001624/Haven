@@ -1,0 +1,1 @@
+• A session manager (tmux/zellij) that's installed but fails to start no longer kills the local shell tab — the error stays on screen and you drop into a normal login shell instead of being ejected (#294).

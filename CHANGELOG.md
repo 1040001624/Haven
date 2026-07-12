@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.53
+
+🩹 **A session manager that fails to start no longer kills the tab** (#294) — if you pick tmux/zellij and it's installed but can't start (for example tmux failing to create its socket under proot, or an option an older build rejects), the local shell used to exit instantly with the tab dying and no clue why. Now the failure is left on screen (and in the connection log), and you drop into a normal login shell instead of being ejected. A clean detach or quit still ends the tab as before.
+
 ## v5.68.52
 
 ❌ **One-tap close on the active terminal tab** (#306) — the selected tab now shows a close (×) button, so ending a session no longer needs a long-press to reach the tab menu. A tab whose session manager (tmux/zellij) is still running keeps its session alive as before — this just makes closing the tab you're looking at a single tap. Thanks to sugerpersion for the nudge.
