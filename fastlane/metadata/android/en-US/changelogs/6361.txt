@@ -1,0 +1,1 @@
+• Fixed jump-host (ProxyJump) connections failing "Auth fail for methods publickey" when the jump host had both a saved password and a passphrase-protected key — the jump now uses the key's stored passphrase instead of the login password (#381).
