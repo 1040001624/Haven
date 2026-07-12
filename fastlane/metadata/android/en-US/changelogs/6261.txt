@@ -1,0 +1,4 @@
+• SSH agent forwarding works with passphrase-protected keys (#377).
+• Agent endpoint: terminal feed/snapshot no longer bind a stale emulator when a shell opens during startup (#378).
+• Compose (中) mode toggle-off restored (exit path lost in the 0.1.1 engine merge).
+• New agent verbs: list_known_hosts / forget_known_host; storedPassphrase + forwardAgent controls.

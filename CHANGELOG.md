@@ -5,6 +5,16 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.46
+
+🔑 **SSH agent forwarding now works with passphrase-protected keys** (#377) — the stored passphrase decrypts the key as it's added to the in-app agent, so forwarded identities actually authenticate on the far side. Automations get matching agent-endpoint controls: `storedPassphrase` and a per-connection `forwardAgent` toggle on `update_connection`. Thanks to BlackDex for the report.
+
+🤖 **Agent endpoint: terminal feed/snapshot no longer bind a stale emulator** (#378) — opening a local shell over the agent endpoint just as the Terminal tab was being built could wire `feed_terminal_output`/`read_terminal_snapshot` to an invisible 24×80 emulator while the on-screen tab ran its own; fed bytes never rendered and snapshots reported frozen geometry. The session registry now converges every ordering on the visible tab's terminal — device-verified: snapshot geometry matches the tab and fed markers render on screen.
+
+⌨️ **Compose (中) mode can be switched off again** — the 0.1.1 terminal-engine merge dropped the exit path, so once compose mode was on, neither the toolbar toggle nor the agent verb could leave it. Toggle-off is restored and commits any pending composition into the terminal instead of dropping it.
+
+🧹 **Agent endpoint: `list_known_hosts` / `forget_known_host` verbs** — inspect and prune trusted SSH host keys from automations, e.g. after redeploying a server changes its identity.
+
 ## v5.68.45
 
 🔄 **Terminal engine synced with upstream connectbot/termlib 0.1.0** — 89 upstream commits merged into Haven's fork: vsync-aligned damage batching with less redraw work, scroll position preserved across snapshot updates, a public URL-scanning API, and the Kotlin 2.3.21 toolchain. Haven's device-verified IME, gesture, and keyboard-reflow stacks carry over unchanged.
