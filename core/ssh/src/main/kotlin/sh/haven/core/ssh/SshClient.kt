@@ -149,12 +149,24 @@ class SshClient : Closeable {
                     // profile. Without this the bare pubkey is offered and the
                     // server rejects it. (#185)
                     auth.keys.forEachIndexed { i, entry ->
-                        jsch.addIdentity(
-                            "haven-key-$i-${entry.label}-${System.nanoTime()}",
-                            entry.keyBytes,
-                            entry.certificateBytes?.let { SshCertificateParser.toOpenSshPublicKeyLine(it) },
-                            null,
-                        )
+                        try {
+                            jsch.addIdentity(
+                                "haven-key-$i-${entry.label}-${System.nanoTime()}",
+                                entry.keyBytes,
+                                entry.certificateBytes?.let { SshCertificateParser.toOpenSshPublicKeyLine(it) },
+                                // #381: an encrypted key in the pool carries its
+                                // stored passphrase so JSch can decrypt it at add
+                                // time; a plaintext key has null and loads as-is.
+                                entry.passphrase,
+                            )
+                        } catch (e: Exception) {
+                            // #381: one bad key (e.g. an encrypted key whose stored
+                            // passphrase is stale) must not abort the whole "try
+                            // every key" pool — skip it and let the others be
+                            // offered. A pinned single key still surfaces its error
+                            // via the PrivateKey branch above.
+                            diag("Skipped pool key '${entry.label}' — ${e.javaClass.simpleName}: ${e.message}")
+                        }
                     }
                 }
                 // SK (FIDO2) keys are collected and added together below, so a

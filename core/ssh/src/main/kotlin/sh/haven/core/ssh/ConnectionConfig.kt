@@ -169,6 +169,14 @@ data class ConnectionConfig(
                 val label: String,
                 val keyBytes: ByteArray,
                 val certificateBytes: ByteArray? = null,
+                /**
+                 * UTF-8 SSH passphrase for a passphrase-protected [keyBytes]
+                 * (null = the key is unencrypted). Lets the "try any saved key"
+                 * pool include an encrypted key whose passphrase is stored
+                 * (#381), not just plaintext keys. Passed as JSch's addIdentity
+                 * passphrase, so the key is decrypted at auth time.
+                 */
+                val passphrase: ByteArray? = null,
             ) {
                 override fun equals(other: Any?): Boolean {
                     if (this === other) return true
@@ -176,12 +184,15 @@ data class ConnectionConfig(
                     return label == other.label &&
                         keyBytes.contentEquals(other.keyBytes) &&
                         (certificateBytes?.contentEquals(other.certificateBytes ?: byteArrayOf())
-                            ?: (other.certificateBytes == null))
+                            ?: (other.certificateBytes == null)) &&
+                        (passphrase?.contentEquals(other.passphrase ?: byteArrayOf())
+                            ?: (other.passphrase == null))
                 }
                 override fun hashCode(): Int =
                     label.hashCode() * 31 +
                         keyBytes.contentHashCode() * 17 +
-                        (certificateBytes?.contentHashCode() ?: 0)
+                        (certificateBytes?.contentHashCode() ?: 0) * 13 +
+                        (passphrase?.contentHashCode() ?: 0)
             }
         }
         /**

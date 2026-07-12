@@ -4033,7 +4033,7 @@ class ConnectionsViewModel @Inject constructor(
                     ConnectionConfig.AuthMethod.Password(password)
                 is ConnectionProfile.AuthMethodSpec.Key ->
                     if (spec.keyId != null) resolveExplicitKey(spec.keyId!!, password)
-                    else resolveAnyUnencryptedKeys()
+                    else resolveAnyUsableKeys()
                 ConnectionProfile.AuthMethodSpec.AnyHardwareKey -> resolveAnyHardwareKeys()
                 ConnectionProfile.AuthMethodSpec.KeyboardInteractive -> null
                 // TOTP is auto-filled into the live keyboard-interactive
@@ -4103,7 +4103,7 @@ class ConnectionsViewModel @Inject constructor(
         // No explicit key but keys are available — try every key the
         // server might accept.
         if (password.isEmpty()) {
-            resolveAnyUnencryptedKeys()?.let { return it }
+            resolveAnyUsableKeys()?.let { return it }
         }
 
         return ConnectionConfig.AuthMethod.Password(password)
@@ -4161,10 +4161,18 @@ class ConnectionsViewModel @Inject constructor(
     }
 
     /**
-     * Every stored unencrypted key as a [ConnectionConfig.AuthMethod.PrivateKeys]
-     * "try them all" bundle, or null if none. Encrypted keys are skipped (no
-     * passphrase here); biometric-protected keys are included (each prompts via
-     * its keystore gate).
+     * Every usable saved key as a [ConnectionConfig.AuthMethod.PrivateKeys]
+     * "try them all" bundle, or null if none — the fallback when a profile has
+     * no explicit key assigned. Includes plaintext keys AND passphrase-protected
+     * keys whose passphrase is stored (#290/#381): the encrypted bytes + stored
+     * passphrase ride along so JSch decrypts at auth time, exactly like a pinned
+     * key. An encrypted key with NO stored passphrase is skipped (nothing to
+     * decrypt it with unattended). Biometric-protected keys are included (each
+     * prompts via its keystore gate in [getAllDecrypted]).
+     *
+     * #381: previously this offered ONLY unencrypted keys, so a user whose only
+     * key is passphrase-protected (the shape #290/#377 encourage) got no key
+     * offered unless they pinned it to every profile by hand.
      *
      * FIDO2/SK keys (`sk-ssh-ed25519@openssh.com` etc.) are excluded: their
      * `privateKeyBytes` hold a credential handle, not loadable private-key
@@ -4173,21 +4181,33 @@ class ConnectionsViewModel @Inject constructor(
      * keys are used only when explicitly assigned to a profile, where
      * [resolveExplicitKey] resolves them to a [ConnectionConfig.AuthMethod.FidoKey].
      */
-    private suspend fun resolveAnyUnencryptedKeys(): ConnectionConfig.AuthMethod? {
-        val keys = sshKeyRepository.getAllDecrypted()
-            .filter { !it.isEncrypted && !it.keyType.startsWith("sk-") && it.enabledForAuth }
-        if (keys.isEmpty()) return null
-        return ConnectionConfig.AuthMethod.PrivateKeys(
-            keys = keys.map { key ->
-                ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(
-                    label = key.label,
-                    keyBytes = rawKeyToPem(key.privateKeyBytes, key.keyType),
-                    // Carry the attached cert so a CA-only server accepts this
-                    // key even without an explicit profile assignment. (#185)
-                    certificateBytes = key.certificateBytes,
-                )
-            },
-        )
+    private suspend fun resolveAnyUsableKeys(): ConnectionConfig.AuthMethod? {
+        val entries = sshKeyRepository.getAllDecrypted()
+            .filter { !it.keyType.startsWith("sk-") && it.enabledForAuth }
+            .mapNotNull { key ->
+                if (key.isEncrypted) {
+                    // Only usable unattended if its passphrase is stored (#290).
+                    val stored = sshKeyRepository.getStoredPassphrase(key.id)
+                    if (stored.isNullOrEmpty()) return@mapNotNull null
+                    ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(
+                        label = key.label,
+                        // Encrypted PEM as-is; JSch decrypts with the passphrase.
+                        keyBytes = key.privateKeyBytes,
+                        certificateBytes = key.certificateBytes,
+                        passphrase = stored.toByteArray(Charsets.UTF_8),
+                    )
+                } else {
+                    ConnectionConfig.AuthMethod.PrivateKeys.KeyEntry(
+                        label = key.label,
+                        keyBytes = rawKeyToPem(key.privateKeyBytes, key.keyType),
+                        // Carry the attached cert so a CA-only server accepts this
+                        // key even without an explicit profile assignment. (#185)
+                        certificateBytes = key.certificateBytes,
+                    )
+                }
+            }
+        if (entries.isEmpty()) return null
+        return ConnectionConfig.AuthMethod.PrivateKeys(keys = entries)
     }
 
     /**
@@ -4198,7 +4218,7 @@ class ConnectionsViewModel @Inject constructor(
      * Unlike [resolveExplicitKey] (which yields a single required key) and
      * unlike pinning/listing keys (require-all), this is convenience OR-auth.
      * sk-key bytes are a credential handle, not loadable material, so they're
-     * passed verbatim (no PEM wrap, unlike [resolveAnyUnencryptedKeys]).
+     * passed verbatim (no PEM wrap, unlike [resolveAnyUsableKeys]).
      */
     private suspend fun resolveAnyHardwareKeys(): ConnectionConfig.AuthMethod? {
         val keys = sshKeyRepository.getAllDecrypted()
