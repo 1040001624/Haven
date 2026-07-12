@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.50
+
+🤖 **Agent endpoint: manage trusted SSH host CAs** (#133) — new tools `list_trusted_host_cas`, `add_trusted_host_ca`, and `delete_trusted_host_ca` let an automation add or remove a trusted host CA (the certificate authority that lets a server connect without a fingerprint prompt) without touching the Keys screen — the same data plane the known-hosts tools already had. Adding or removing a trust anchor prompts for consent.
+
+🔎 **Agent endpoint: the UI tools now see and drive dialogs and menus** — `dump_haven_ui` and `tap_haven_ui` previously reached only the main screen, so an automation couldn't read or tap a dropdown menu or dialog that popped over it. They now cover those pop-up windows too. (The on-screen consent prompt stays a human-only gate — injected input can never reach it.)
+
 ## v5.68.49
 
 🔐 **Trust SSH hosts by their CA** (#133) — Haven now honours OpenSSH host certificates (`@cert-authority`). Add a trusted SSH host-CA public key and any server that presents a valid certificate signed by that CA connects with no per-host fingerprint prompt — signature, validity window, principals and revocation are all checked during the handshake. Hosts without a valid CA-signed certificate fall back to the usual trust-on-first-use prompt, unchanged. A trusted host CA is added under Keys → Certificate authorities, and now saves on its own without needing a full OIDC provisioner set up (#380). Known limitation: RSA host CAs aren't validated by the current SSH library (a signature-algorithm quirk) — Ed25519 and ECDSA host CAs work.

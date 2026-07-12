@@ -1,0 +1,2 @@
+• Agent endpoint: manage trusted SSH host CAs (list/add/delete_trusted_host_ca) (#133).
+• Agent endpoint: dump_haven_ui / tap_haven_ui now cover pop-up dialogs and menus, not just the main screen.
