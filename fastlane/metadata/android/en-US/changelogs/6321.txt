@@ -1,0 +1,1 @@
+• One-tap close on the active terminal tab: the selected tab now has a × button, so closing a session no longer needs a long-press to reach the tab menu (#306).

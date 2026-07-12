@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.52
+
+❌ **One-tap close on the active terminal tab** (#306) — the selected tab now shows a close (×) button, so ending a session no longer needs a long-press to reach the tab menu. A tab whose session manager (tmux/zellij) is still running keeps its session alive as before — this just makes closing the tab you're looking at a single tap. Thanks to sugerpersion for the nudge.
+
 ## v5.68.51
 
 🛡️ **Confirm before deleting a distro's rootfs** (#379) — in the Desktop distro menu the delete button sat one tap from Open-shell, so a mistap could silently wipe a whole rootfs. Deleting now asks first, naming the distro and warning that its installed packages and files are lost (it re-provisions the next time you open it). Thanks to the reporter for flagging the easy mistap.
