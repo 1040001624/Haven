@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.51
+
+🛡️ **Confirm before deleting a distro's rootfs** (#379) — in the Desktop distro menu the delete button sat one tap from Open-shell, so a mistap could silently wipe a whole rootfs. Deleting now asks first, naming the distro and warning that its installed packages and files are lost (it re-provisions the next time you open it). Thanks to the reporter for flagging the easy mistap.
+
 ## v5.68.50
 
 🤖 **Agent endpoint: manage trusted SSH host CAs** (#133) — new tools `list_trusted_host_cas`, `add_trusted_host_ca`, and `delete_trusted_host_ca` let an automation add or remove a trusted host CA (the certificate authority that lets a server connect without a fingerprint prompt) without touching the Keys screen — the same data plane the known-hosts tools already had. Adding or removing a trust anchor prompts for consent.
