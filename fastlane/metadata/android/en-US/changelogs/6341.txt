@@ -1,0 +1,1 @@
+• Jump-host (ProxyJump) connection failures are now diagnosable: the jump leg's result is logged to the connection log, and with Verbose connection logging on it captures the full SSH trace so you can see which key/signature the server rejected (#381).

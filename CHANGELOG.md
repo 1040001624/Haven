@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.54
+
+🔎 **Jump-host connection failures are now diagnosable** (#381) — a connection made through a jump host (ProxyJump) used to record nothing in the connection log when the jump leg failed, and captured no verbose SSH detail, so an auth failure on the jump host left you with no way to see *why*. Jump-host connects now log their result to the connection log, and — with Verbose connection logging on (Settings → Diagnostics) — capture the full SSH protocol trace, so a failed jump shows which key and signature algorithm the server rejected. (Diagnostics for the jump-host auth reports in #381.)
+
 ## v5.68.53
 
 🩹 **A session manager that fails to start no longer kills the tab** (#294) — if you pick tmux/zellij and it's installed but can't start (for example tmux failing to create its socket under proot, or an option an older build rejects), the local shell used to exit instantly with the tab dying and no clue why. Now the failure is left on screen (and in the connection log), and you drop into a normal login shell instead of being ejected. A clean detach or quit still ends the tab as before.
