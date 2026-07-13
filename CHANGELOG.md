@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.59
+
+🔗 **Connecting through a jump host no longer stalls on the first attempt** — with `ssh -J`, the first tap connected the jump host and then hung: the target's spinner span forever, nothing opened, and no connection log was written. Haven was opening the tunnelling channel before binding its streams, so the target's SSH banner — sent the instant the channel opens — landed in a gap where JSch silently discards incoming bytes, and the connect then waited forever for a greeting that was never resent. Tapping again usually won the race, which is why it "worked the second time" while leaving a dead session behind. The channel's streams are now bound before it is opened. (#381, thanks BlackDex)
+
 ## v5.68.58
 
 🖱️ **The mouse wheel works in the terminal** — with a hardware mouse, the scroll wheel did nothing; only click-drag scrolled. Wheel events carry no pressed pointer, so the terminal's gesture handler never woke for them and they were dropped. Each notch now goes wherever a swipe would: to an app that asked for the mouse (tmux mouse mode, vim, less), as arrow keys on a full-screen TUI, or through Haven's own scrollback.
