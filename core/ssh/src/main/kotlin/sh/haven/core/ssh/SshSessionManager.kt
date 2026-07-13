@@ -2,7 +2,6 @@ package sh.haven.core.ssh
 
 import android.util.Log
 import com.jcraft.jsch.ChannelSftp
-import com.jcraft.jsch.ChannelShell
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -166,7 +165,7 @@ class SshSessionManager @Inject constructor(
         val label: String,
         val status: Status,
         val client: SshClient,
-        val shellChannel: ChannelShell? = null,
+        val shellChannel: ShellChannel? = null,
         val terminalSession: TerminalSession? = null,
         val sftpChannel: ChannelSftp? = null,
         val connectionConfig: ConnectionConfig? = null,
@@ -384,7 +383,7 @@ class SshSessionManager @Inject constructor(
         attachShellChannel(sessionId, channel)
     }
 
-    fun attachShellChannel(sessionId: String, channel: ChannelShell) {
+    fun attachShellChannel(sessionId: String, channel: ShellChannel) {
         _sessions.update { map ->
             val existing = map[sessionId] ?: return@update map
             map + (sessionId to existing.copy(shellChannel = channel))
@@ -420,7 +419,7 @@ class SshSessionManager @Inject constructor(
             sessionId = sessionId,
             profileId = session.profileId,
             label = session.label,
-            channel = channel,
+            shell = channel,
             client = session.client,
             onDataReceived = attachment?.onData ?: onDataReceived,
             // Permanent ring mirror — NOT swapped by replaceDataCallback, so it

@@ -26,14 +26,13 @@ class SshSessionManagerShellOutcomeTest {
         connected: Boolean,
         closed: Boolean = !connected,
         exit: Int = 0,
-    ): ChannelShell {
+    ): ShellChannel {
         val ch = mockk<ChannelShell>(relaxed = true)
-        every { ch.inputStream } returns input
-        every { ch.outputStream } returns ByteArrayOutputStream()
         every { ch.isConnected } returns connected
         every { ch.isClosed } returns closed
         every { ch.exitStatus } returns exit
-        return ch
+        // Streams are bound before connect and carried on the ShellChannel (#382).
+        return ShellChannel(ch, input, ByteArrayOutputStream())
     }
 
     @Test

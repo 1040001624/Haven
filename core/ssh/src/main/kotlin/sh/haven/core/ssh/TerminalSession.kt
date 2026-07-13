@@ -22,7 +22,7 @@ class TerminalSession(
     val sessionId: String,
     val profileId: String,
     val label: String,
-    @Volatile private var channel: ChannelShell,
+    @Volatile private var shell: ShellChannel,
     @Volatile private var client: SshClient,
     @Volatile private var onDataReceived: (ByteArray, Int, Int) -> Unit,
     /**
@@ -56,8 +56,11 @@ class TerminalSession(
         }
     }
 
-    @Volatile private var sshInput: InputStream = channel.inputStream
-    @Volatile private var sshOutput: OutputStream = channel.outputStream
+    // Streams bound before the channel was connected; re-fetching them from
+    // the channel here would install a fresh pipe and drop the shell's first
+    // output (#382). See [ShellChannel].
+    @Volatile private var sshInput: InputStream = shell.input
+    @Volatile private var sshOutput: OutputStream = shell.output
 
     /** Single-thread executor for serialising writes and scheduling debounced resizes. */
     private val writeExecutor = Executors.newSingleThreadScheduledExecutor { r ->
@@ -139,7 +142,7 @@ class TerminalSession(
         var gotEof = false
         var gotException = false
         try {
-            while (!closed && readerGeneration == generation && channel.isConnected) {
+            while (!closed && readerGeneration == generation && shell.isConnected) {
                 val bytesRead = sshInput.read(buffer)
                 if (bytesRead == -1) {
                     gotEof = true
@@ -195,10 +198,10 @@ class TerminalSession(
         if (!closed && readerGeneration == generation) {
             // Wait briefly for channel to fully close and exit status to propagate
             for (i in 1..10) {
-                if (channel.isClosed) break
+                if (shell.isClosed) break
                 try { Thread.sleep(50) } catch (_: InterruptedException) { break }
             }
-            val exitStatus = channel.exitStatus
+            val exitStatus = shell.exitStatus
             // Clean exit: remote sent a real exit status (>= 0), e.g. shell
             // exited normally.  A network drop produces EOF with exitStatus -1
             // (no status received) — that must trigger reconnection.
@@ -217,15 +220,15 @@ class TerminalSession(
      * to avoid NetworkOnMainThreadException.
      */
     fun sendToSsh(data: ByteArray) {
-        if (closed || !channel.isConnected) {
-            Log.d(TAG, "sendToSsh: dropping ${data.size} bytes (closed=$closed connected=${channel.isConnected})")
+        if (closed || !shell.isConnected) {
+            Log.d(TAG, "sendToSsh: dropping ${data.size} bytes (closed=$closed connected=${shell.isConnected})")
             return
         }
 
         val copy = data.copyOf()
         try {
             writeExecutor.execute {
-                if (closed || !channel.isConnected) return@execute
+                if (closed || !shell.isConnected) return@execute
                 try {
                     sshOutput.write(copy)
                     sshOutput.flush()
@@ -251,7 +254,7 @@ class TerminalSession(
             pendingResize = writeExecutor.schedule({
                 try {
                     Log.d(TAG, "setPtySize: ${cols}x${rows}")
-                    client.resizeShell(channel, cols, rows)
+                    client.resizeShell(shell.channel, cols, rows)
                 } catch (e: Exception) {
                     Log.e(TAG, "resize failed", e)
                 }
@@ -266,16 +269,16 @@ class TerminalSession(
      * The old reader thread has already exited (which triggered the reconnect).
      * Starts a new reader on the new channel.
      */
-    fun reconnect(newChannel: ChannelShell, newClient: SshClient) {
+    fun reconnect(newShell: ShellChannel, newClient: SshClient) {
         // Invalidate any still-running previous reader *before* swapping the
         // channel, so when it unblocks it sees a newer generation and exits
         // instead of reading the new stream or re-triggering reconnect. (#208 #2)
         val generation = ++readerGeneration
         val oldReader = readerThread
-        channel = newChannel
+        shell = newShell
         client = newClient
-        sshInput = newChannel.inputStream
-        sshOutput = newChannel.outputStream
+        sshInput = newShell.input
+        sshOutput = newShell.output
         oldReader?.interrupt()
         // Arm the post-reattach repaint: fires once the queued session-manager
         // reattach command drains (see [redrawAfterPendingDrain]). No-op for a
@@ -296,7 +299,7 @@ class TerminalSession(
                 writeExecutor.submit {
                     try {
                         Log.d(TAG, "reconnect: replaying setPtySize ${replayCols}x${replayRows}")
-                        newClient.resizeShell(newChannel, replayCols, replayRows)
+                        newClient.resizeShell(newShell.channel, replayCols, replayRows)
                     } catch (e: Exception) {
                         Log.w(TAG, "reconnect: setPtySize replay failed", e)
                     }
@@ -329,17 +332,17 @@ class TerminalSession(
         val wobbleRows = if (rows > 1) rows - 1 else rows + 1
         try {
             writeExecutor.schedule({
-                if (closed || !channel.isConnected) return@schedule
+                if (closed || !shell.isConnected) return@schedule
                 try {
-                    client.resizeShell(channel, cols, wobbleRows)
+                    client.resizeShell(shell.channel, cols, wobbleRows)
                 } catch (e: Exception) {
                     Log.w(TAG, "post-reattach redraw nudge failed", e)
                 }
             }, POST_REATTACH_REDRAW_DELAY_MS, TimeUnit.MILLISECONDS)
             writeExecutor.schedule({
-                if (closed || !channel.isConnected) return@schedule
+                if (closed || !shell.isConnected) return@schedule
                 try {
-                    client.resizeShell(channel, cols, rows)
+                    client.resizeShell(shell.channel, cols, rows)
                 } catch (e: Exception) {
                     Log.w(TAG, "post-reattach redraw restore failed", e)
                 }
@@ -370,7 +373,7 @@ class TerminalSession(
         if (closed) return
         closed = true
         writeExecutor.shutdown()
-        try { channel.disconnect() } catch (_: Exception) {}
+        try { shell.disconnect() } catch (_: Exception) {}
         readerThread?.interrupt()
     }
 

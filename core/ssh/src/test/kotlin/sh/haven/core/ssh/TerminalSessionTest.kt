@@ -17,6 +17,14 @@ import java.util.concurrent.TimeUnit
 
 class TerminalSessionTest {
 
+    /**
+     * TerminalSession consumes the streams that were bound before the channel
+     * was connected, rather than re-fetching them (#382) — wrap the mock's
+     * stubbed streams the way SshClient.openShellChannel does.
+     */
+    private fun shellOf(channel: ChannelShell) =
+        ShellChannel(channel, channel.inputStream, channel.outputStream)
+
     @Test
     fun `sendToSsh writes bytes to channel output stream`() {
         val outputStream = ByteArrayOutputStream()
@@ -31,7 +39,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -61,7 +69,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -93,7 +101,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { data, offset, length ->
                 received.add(data.copyOfRange(offset, offset + length))
@@ -129,7 +137,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -157,7 +165,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -180,7 +188,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -212,7 +220,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "near@host",
-            channel = channel1,
+            shell = shellOf(channel1),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -231,7 +239,7 @@ class TerminalSessionTest {
             every { getOutputStream() } returns out2
             every { isConnected } returns true
         }
-        session.reconnect(channel2, client)
+        session.reconnect(shellOf(channel2), client)
 
         // The fresh login shell prints its prompt; reattach fires on the '$'.
         pipeOut.write("droid@host:~$ ".toByteArray())
@@ -276,7 +284,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { data, off, len ->
                 synchronized(received) { for (k in off until off + len) received.add(data[k]) }
@@ -320,7 +328,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> first.countDown() },
         )
@@ -361,7 +369,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "test@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
         )
@@ -388,7 +396,7 @@ class TerminalSessionTest {
             sessionId = "test-session",
             profileId = "test",
             label = "near@host",
-            channel = channel,
+            shell = shellOf(channel),
             client = client,
             onDataReceived = { _, _, _ -> },
             pendingCommands = listOf("tmux attach"),

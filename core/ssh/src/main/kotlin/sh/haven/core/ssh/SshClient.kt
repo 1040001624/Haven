@@ -352,21 +352,21 @@ class SshClient : Closeable {
     /**
      * Open an interactive shell channel on the current SSH session.
      * Must be called after [connect].
+     *
+     * Returns the channel together with its streams: they are bound before the
+     * channel is connected, because JSch drops anything the remote sends before
+     * `getInputStream()` has installed its pipe. Read them from the returned
+     * [ShellChannel] — never re-fetch `channel.inputStream` (#382).
      */
     fun openShellChannel(
         term: String = "xterm-256color",
         cols: Int = 80,
         rows: Int = 24,
-    ): ChannelShell {
+    ): ShellChannel {
         val sess = session ?: throw IllegalStateException("Not connected")
-        val channel = sess.openChannel("shell") as ChannelShell
-        channel.setPtyType(term, cols, rows, 0, 0)
-        if (agentForwardingEnabled) {
-            channel.setAgentForwarding(true)
-            diag("Shell channel opened with agent forwarding enabled")
-        }
-        channel.connect()
-        return channel
+        val shell = openShellOn(sess, term, cols, rows, agentForwardingEnabled)
+        if (agentForwardingEnabled) diag("Shell channel opened with agent forwarding enabled")
+        return shell
     }
 
     /**
