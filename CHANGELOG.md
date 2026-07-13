@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.62
+
+🛠️ **F-Droid builds work again** — every F-Droid build since v5.68.41 has failed before compiling a single file, so none of the releases after it ever reached F-Droid users. The Wayland desktop stack is cross-compiled here, and that needs a `wayland-scanner` that runs on the build machine and matches our vendored Wayland exactly; we were borrowing the build image's copy, and F-Droid's image moved to a newer one than we vendor. Haven now builds the scanner from its own source, so the image's version no longer matters and this can't break again on their next update. No change to the app itself.
+
 ## v5.68.61
 
 ⏱️ **A jump-host connection that goes quiet now fails instead of spinning forever** — a connection through a jump host runs over a tunnelling channel rather than a socket, so the connect timeout never applied to it: if the machine on the far side accepted the channel but said nothing, Haven waited indefinitely, showed no error, and wrote nothing to the connection log. It now gives the far side a deadline to say hello, and reports what happened — naming the hop that went quiet — instead of leaving a spinner turning. Only that first hello is on the clock; typing a password, entering a TOTP code or touching a security key is never rushed. (#383)
