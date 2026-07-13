@@ -2930,6 +2930,78 @@ class ConnectionsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Phase-1 SSH bootstrap shared by the four Mosh/ET connect paths:
+     * build the client, resolve jump-host-over-proxy, connect, and verify
+     * host trust. Interactive connects get the keyboard-interactive/TOTP
+     * hooks and the TOFU flow — including a TOFU pass over the captured
+     * key when auth fails mid-handshake, so the trust decision isn't lost
+     * behind the auth error. Silent group-launch connects have no prompt
+     * hooks and fail closed on unknown or changed host keys (#5).
+     */
+    private suspend fun bootstrapMoshEtSsh(
+        profile: ConnectionProfile,
+        password: String,
+        config: ConnectionConfig,
+        verboseLogger: SshVerboseLogger?,
+        interactive: Boolean,
+    ): SshClient = withContext(Dispatchers.IO) {
+        val sshClient = SshClient().apply {
+            this.verboseLogger = verboseLogger
+        }
+
+        // Jump host takes priority, then SOCKS/HTTP proxy
+        val jumpProfileId = profile.jumpProfileId
+        val proxy = if (jumpProfileId != null) {
+            val (jid, _) = connectJumpHost(jumpProfileId, password)
+            sshSessionManager.createProxyJump(jid)
+        } else {
+            tunnelResolver.havenProxy(profile)
+        }
+
+        if (interactive) {
+            try {
+                val hostKeyEntry = sshClient.connect(
+                    config,
+                    proxy = proxy,
+                    keyboardInteractivePrompter = keyboardInteractivePrompter,
+                    totpCodeProvider = buildTotpCodeProvider(profile),
+                    confirmOtp = profile.totpConfirmBeforeSend,
+                    preConnect = buildKnockHook(profile, verboseLogger),
+                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
+                )
+                runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = sshClient)
+            } catch (e: HostKeyAuthFailure) {
+                runTofuVerification(e.hostKey, clientToDisconnectOnReject = null)
+                throw e.cause ?: e
+            }
+        } else {
+            val hostKeyEntry = sshClient.connect(
+                config,
+                proxy = proxy,
+                preConnect = buildKnockHook(profile, verboseLogger),
+                trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
+            )
+            when (verifyOrCaTrusted(hostKeyEntry)) {
+                is HostKeyResult.Trusted -> {}
+                is HostKeyResult.NewHost -> {
+                    // Fail closed: don't silently trust an unknown host in a
+                    // background/workspace connect; require interactive TOFU. (#5)
+                    sshClient.disconnect()
+                    throw Exception(
+                        "Unknown host key for ${profile.host} — open this connection from " +
+                            "the Connections tab first to verify and trust its host key.",
+                    )
+                }
+                is HostKeyResult.KeyChanged -> {
+                    sshClient.disconnect()
+                    throw Exception("Host key changed for ${profile.host} — possible MITM")
+                }
+            }
+        }
+        sshClient
+    }
+
     private fun connectEternalTerminal(
         profile: ConnectionProfile,
         password: String,
@@ -2955,81 +3027,35 @@ class ConnectionsViewModel @Inject constructor(
                 val client = withContext(Dispatchers.IO) {
                     val authMethod = resolveAuthMethods(profile, password)
                     isFidoAuth = authMethod is ConnectionConfig.AuthMethod.FidoKey
-                    val config = ConnectionConfig(
-                        host = profile.host,
-                        port = profile.port,
+                    val config = moshEtBootstrapConfig(
+                        profile, authMethod, agentIdentitiesFor(profile),
                         username = effectiveUsername,
-                        authMethod = authMethod,
-                        sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
-                        forwardAgent = profile.forwardAgent,
-                        addressFamily = profile.addressFamilyForSsh,
-                        agentIdentities = agentIdentitiesFor(profile),
                         reconnectPolicy = profile.reconnectPolicy,
                     )
-
-                    val sshClient = SshClient().apply {
-                        this.verboseLogger = verboseLogger
-                    }
-
-                    // Jump host takes priority, then SOCKS/HTTP proxy
-                    val jumpProfileId = profile.jumpProfileId
-                    val proxy = if (jumpProfileId != null) {
-                        val (jid, _) = connectJumpHost(jumpProfileId, password)
-                        sshSessionManager.createProxyJump(jid)
-                    } else {
-                        tunnelResolver.havenProxy(profile)
-                    }
-
-                    try {
-                        val hostKeyEntry = sshClient.connect(
-                            config,
-                            proxy = proxy,
-                            keyboardInteractivePrompter = keyboardInteractivePrompter,
-                            totpCodeProvider = buildTotpCodeProvider(profile),
-                            confirmOtp = profile.totpConfirmBeforeSend,
-                            preConnect = buildKnockHook(profile, verboseLogger),
-                            trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
-                        )
-                        runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = sshClient)
-                    } catch (e: HostKeyAuthFailure) {
-                        runTofuVerification(e.hostKey, clientToDisconnectOnReject = null)
-                        throw e.cause ?: e
-                    }
-
-                    sshClient
+                    bootstrapMoshEtSsh(profile, password, config, verboseLogger, interactive = true)
                 }
 
                 // Phase 2: Resolve session manager, check for existing sessions
                 val smgr = resolveSessionManager(profile)
 
-                val listCmd = smgr.listCommand
-                if (listCmd != null) {
-                    val existingSessions = withContext(Dispatchers.IO) {
-                        try {
-                            val result = client.execCommand(listCmd)
-                            if (result.exitStatus == 0) {
-                                SessionManager.parseSessionList(smgr, result.stdout)
-                            } else emptyList()
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
-                    }
-                    if (existingSessions.isNotEmpty()) {
-                        etPendingClient = client
-                        etPendingProfile = profile
-                        etPendingVerboseLogger = verboseLogger
-                        _sessionSelection.value = SessionSelection(
-                            sessionId = sessionId,
-                            profileId = profile.id,
-                            managerLabel = smgr.label,
-                            sessionNames = existingSessions,
-                            manager = smgr,
-                            transportType = "ET",
-                            suggestedNewName = generateUniqueSessionName(profile.label, existingSessions),
-                        )
-                        _connectingProfileId.value = null
-                        return@launch // UI will call onSessionSelected() to continue
-                    }
+                val existingSessions = withContext(Dispatchers.IO) {
+                    listExistingMultiplexerSessions(smgr) { client.execCommand(it) }
+                }
+                if (existingSessions.isNotEmpty()) {
+                    etPendingClient = client
+                    etPendingProfile = profile
+                    etPendingVerboseLogger = verboseLogger
+                    _sessionSelection.value = SessionSelection(
+                        sessionId = sessionId,
+                        profileId = profile.id,
+                        managerLabel = smgr.label,
+                        sessionNames = existingSessions,
+                        manager = smgr,
+                        transportType = "ET",
+                        suggestedNewName = generateUniqueSessionName(profile.label, existingSessions),
+                    )
+                    _connectingProfileId.value = null
+                    return@launch // UI will call onSessionSelected() to continue
                 }
 
                 // No existing sessions — proceed directly
@@ -3088,86 +3114,40 @@ class ConnectionsViewModel @Inject constructor(
 
             var isFidoAuth = false
             try {
-                // Phase 1: SSH bootstrap — connect, resolve session manager, list sessions
+                // Phase 1: SSH bootstrap — connect, verify host key
                 val client = withContext(Dispatchers.IO) {
                     val authMethod = resolveAuthMethods(profile, password)
                     isFidoAuth = authMethod is ConnectionConfig.AuthMethod.FidoKey
-                    val config = ConnectionConfig(
-                        host = profile.host,
-                        port = profile.port,
+                    val config = moshEtBootstrapConfig(
+                        profile, authMethod, agentIdentitiesFor(profile),
                         username = effectiveUsername,
-                        authMethod = authMethod,
-                        sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
-                        forwardAgent = profile.forwardAgent,
-                        addressFamily = profile.addressFamilyForSsh,
-                        agentIdentities = agentIdentitiesFor(profile),
                         reconnectPolicy = profile.reconnectPolicy,
                     )
-
-                    val sshClient = SshClient().apply {
-                        this.verboseLogger = verboseLogger
-                    }
-
-                    // Jump host takes priority, then SOCKS/HTTP proxy
-                    val jumpProfileId = profile.jumpProfileId
-                    val proxy = if (jumpProfileId != null) {
-                        val (jid, _) = connectJumpHost(jumpProfileId, password)
-                        sshSessionManager.createProxyJump(jid)
-                    } else {
-                        tunnelResolver.havenProxy(profile)
-                    }
-
-                    try {
-                        val hostKeyEntry = sshClient.connect(
-                            config,
-                            proxy = proxy,
-                            keyboardInteractivePrompter = keyboardInteractivePrompter,
-                            totpCodeProvider = buildTotpCodeProvider(profile),
-                            confirmOtp = profile.totpConfirmBeforeSend,
-                            preConnect = buildKnockHook(profile, verboseLogger),
-                            trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
-                        )
-                        runTofuVerification(hostKeyEntry, clientToDisconnectOnReject = sshClient)
-                    } catch (e: HostKeyAuthFailure) {
-                        runTofuVerification(e.hostKey, clientToDisconnectOnReject = null)
-                        throw e.cause ?: e
-                    }
-
-                    sshClient
+                    bootstrapMoshEtSsh(profile, password, config, verboseLogger, interactive = true)
                 }
 
+                // Phase 2: Resolve session manager, check for existing sessions
                 val smgr = resolveSessionManager(profile)
 
-                // If session manager supports listing, check for existing sessions
-                val listCmd = smgr.listCommand
-                if (listCmd != null) {
-                    val existingSessions = withContext(Dispatchers.IO) {
-                        try {
-                            val result = client.execCommand(listCmd)
-                            if (result.exitStatus == 0) {
-                                SessionManager.parseSessionList(smgr, result.stdout)
-                            } else emptyList()
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
-                    }
-                    if (existingSessions.isNotEmpty()) {
-                        // Keep SSH client alive for mosh-server exec after user picks
-                        moshPendingClient = client
-                        moshPendingHost = profile.host
-                        moshPendingVerboseLogger = verboseLogger
-                        _sessionSelection.value = SessionSelection(
-                            sessionId = sessionId,
-                            profileId = profile.id,
-                            managerLabel = smgr.label,
-                            sessionNames = existingSessions,
-                            manager = smgr,
-                            transportType = "MOSH",
-                            suggestedNewName = generateUniqueSessionName(profile.label, existingSessions),
-                        )
-                        _connectingProfileId.value = null
-                        return@launch // UI will call onSessionSelected() to continue
-                    }
+                val existingSessions = withContext(Dispatchers.IO) {
+                    listExistingMultiplexerSessions(smgr) { client.execCommand(it) }
+                }
+                if (existingSessions.isNotEmpty()) {
+                    // Keep SSH client alive for mosh-server exec after user picks
+                    moshPendingClient = client
+                    moshPendingHost = profile.host
+                    moshPendingVerboseLogger = verboseLogger
+                    _sessionSelection.value = SessionSelection(
+                        sessionId = sessionId,
+                        profileId = profile.id,
+                        managerLabel = smgr.label,
+                        sessionNames = existingSessions,
+                        manager = smgr,
+                        transportType = "MOSH",
+                        suggestedNewName = generateUniqueSessionName(profile.label, existingSessions),
+                    )
+                    _connectingProfileId.value = null
+                    return@launch // UI will call onSessionSelected() to continue
                 }
 
                 // No existing sessions — proceed directly
@@ -4969,50 +4949,8 @@ class ConnectionsViewModel @Inject constructor(
         try {
             val client = withContext(Dispatchers.IO) {
                 val authMethod = resolveAuthMethods(profile, password)
-                val config = ConnectionConfig(
-                    host = profile.host,
-                    port = profile.port,
-                    username = profile.username,
-                    authMethod = authMethod,
-                    sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
-                    forwardAgent = profile.forwardAgent,
-                        addressFamily = profile.addressFamilyForSsh,
-                    agentIdentities = agentIdentitiesFor(profile),
-                )
-                val sshClient = SshClient().apply {
-                    this.verboseLogger = verboseLogger
-                }
-                val jumpProfileId = profile.jumpProfileId
-                val proxy = if (jumpProfileId != null) {
-                    val (jid, _) = connectJumpHost(jumpProfileId, password)
-                    sshSessionManager.createProxyJump(jid)
-                } else {
-                    tunnelResolver.havenProxy(profile)
-                }
-                val hostKeyEntry = sshClient.connect(
-                    config,
-                    proxy = proxy,
-                    preConnect = buildKnockHook(profile, verboseLogger),
-                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
-                )
-
-                when (val result = verifyOrCaTrusted(hostKeyEntry)) {
-                    is HostKeyResult.Trusted -> {}
-                    is HostKeyResult.NewHost -> {
-                        // Fail closed: don't silently trust an unknown host in a
-                        // background/workspace connect; require interactive TOFU. (#5)
-                        sshClient.disconnect()
-                        throw Exception(
-                            "Unknown host key for ${profile.host} — open this connection from " +
-                                "the Connections tab first to verify and trust its host key.",
-                        )
-                    }
-                    is HostKeyResult.KeyChanged -> {
-                        sshClient.disconnect()
-                        throw Exception("Host key changed for ${profile.host} — possible MITM")
-                    }
-                }
-                sshClient
+                val config = moshEtBootstrapConfig(profile, authMethod, agentIdentitiesFor(profile))
+                bootstrapMoshEtSsh(profile, password, config, verboseLogger, interactive = false)
             }
 
             val smgr = resolveSessionManager(profile)
@@ -5035,50 +4973,8 @@ class ConnectionsViewModel @Inject constructor(
         try {
             val client = withContext(Dispatchers.IO) {
                 val authMethod = resolveAuthMethods(profile, password)
-                val config = ConnectionConfig(
-                    host = profile.host,
-                    port = profile.port,
-                    username = profile.username,
-                    authMethod = authMethod,
-                    sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
-                    forwardAgent = profile.forwardAgent,
-                        addressFamily = profile.addressFamilyForSsh,
-                    agentIdentities = agentIdentitiesFor(profile),
-                )
-                val sshClient = SshClient().apply {
-                    this.verboseLogger = verboseLogger
-                }
-                val jumpProfileId = profile.jumpProfileId
-                val proxy = if (jumpProfileId != null) {
-                    val (jid, _) = connectJumpHost(jumpProfileId, password)
-                    sshSessionManager.createProxyJump(jid)
-                } else {
-                    tunnelResolver.havenProxy(profile)
-                }
-                val hostKeyEntry = sshClient.connect(
-                    config,
-                    proxy = proxy,
-                    preConnect = buildKnockHook(profile, verboseLogger),
-                    trustedHostCaKeys = hostKeyVerifier.trustedHostCaKeys(),
-                )
-
-                when (val result = verifyOrCaTrusted(hostKeyEntry)) {
-                    is HostKeyResult.Trusted -> {}
-                    is HostKeyResult.NewHost -> {
-                        // Fail closed: don't silently trust an unknown host in a
-                        // background/workspace connect; require interactive TOFU. (#5)
-                        sshClient.disconnect()
-                        throw Exception(
-                            "Unknown host key for ${profile.host} — open this connection from " +
-                                "the Connections tab first to verify and trust its host key.",
-                        )
-                    }
-                    is HostKeyResult.KeyChanged -> {
-                        sshClient.disconnect()
-                        throw Exception("Host key changed for ${profile.host} — possible MITM")
-                    }
-                }
-                sshClient
+                val config = moshEtBootstrapConfig(profile, authMethod, agentIdentitiesFor(profile))
+                bootstrapMoshEtSsh(profile, password, config, verboseLogger, interactive = false)
             }
 
             val smgr = resolveSessionManager(profile)
@@ -5142,22 +5038,3 @@ internal fun moshLocaleWorkaroundHint(hasCustomCommand: Boolean, stderr: String)
         "locale: LC_ALL=C.UTF-8 mosh-server new -s -c 256"
 }
 
-/**
- * The two enums share names by construction (#137) — defined separately
- * because `core/data` can't depend on `core/ssh`. Convert via name lookup.
- */
-private val ConnectionProfile.addressFamilyForSsh: ConnectionConfig.AddressFamily
-    get() = ConnectionConfig.AddressFamily.valueOf(addressFamilyEnum.name)
-
-/**
- * Per-profile reconnect knobs to a value object the SSH session
- * manager understands. Three columns from the data model collapse
- * into one [ConnectionConfig.ReconnectPolicy] — keeps the connect-
- * config builders one line longer instead of three (#150).
- */
-private val ConnectionProfile.reconnectPolicy: ConnectionConfig.ReconnectPolicy
-    get() = ConnectionConfig.ReconnectPolicy(
-        autoReconnect = autoReconnect,
-        maxAttempts = reconnectMaxAttempts,
-        onNetworkChange = reconnectOnNetworkChange,
-    )
