@@ -329,6 +329,15 @@ class SshClient : Closeable {
         try {
             sess.connect(connectTimeoutMs)
         } catch (e: JSchException) {
+            // A proxied connect that timed out waiting for the target's first
+            // byte fails here as a generic "session is down" — the channel was
+            // torn down under JSch to unblock it. Say what actually happened
+            // instead, so the connection log names the hop that went quiet (#383).
+            val jump = (proxy?.jschProxy as? ProxyJump)
+            if (jump?.timedOut == true) {
+                try { sess.disconnect() } catch (_: Throwable) { /* best effort */ }
+                throw JSchException(jump.timeoutMessage(connectTimeoutMs), e)
+            }
             // KEX may have completed before the auth step failed — e.g. encrypted
             // keys tried with null passphrase, MaxAuthTries tripped, or wrong
             // remembered password. In that case JSch already has the server's
@@ -518,7 +527,12 @@ class SshClient : Closeable {
         try {
             sess.connect(connectTimeoutMs)
         } catch (e: JSchException) {
-            // Mirror of the async connect() path — see the comment there.
+            // Mirror of the async connect() path — see the comments there.
+            val jump = (proxy?.jschProxy as? ProxyJump)
+            if (jump?.timedOut == true) {
+                try { sess.disconnect() } catch (_: Throwable) { /* best effort */ }
+                throw JSchException(jump.timeoutMessage(connectTimeoutMs), e)
+            }
             val capturedHostKey = tryExtractHostKey(sess, config.host, config.port)
             try { sess.disconnect() } catch (_: Throwable) { /* best effort */ }
             if (capturedHostKey != null) throw HostKeyAuthFailure(capturedHostKey, e)
