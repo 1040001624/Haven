@@ -73,6 +73,26 @@ class HostRediscoveryTest {
     }
 
     @Test
+    fun `scans the device's own subnet when the phone is the hotspot`() = runTest {
+        // #367: phone tethering to the comma. The phone's ACTIVE network is the
+        // upstream cellular link (a different /24), so subnetBase() points at the
+        // wrong subnet — but the device is still on its own /24, where its lease
+        // rotated. The device's /24 must be scanned regardless of subnetBase().
+        val dao = daoWithStored() // stored host is 192.168.43.5
+        val repo = mockk<ConnectionRepository>(relaxed = true)
+        val r = rediscovery(
+            dao, repo,
+            responders = setOf("192.168.43.60"), // comma's new lease, on its own /24
+            keys = mapOf("192.168.43.60" to entry("192.168.43.60", "AAAAtheRightKey")),
+        ).apply {
+            subnetBase = { "10.99.99" } // phone's active network — the cellular upstream
+        }
+
+        assertEquals("192.168.43.60", r.rediscover(profile))
+        coVerify(exactly = 1) { repo.updateHost("p1", "192.168.43.60") }
+    }
+
+    @Test
     fun `two machines with the same key is ambiguous - no follow`() = runTest {
         val dao = daoWithStored()
         val repo = mockk<ConnectionRepository>(relaxed = true)

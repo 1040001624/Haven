@@ -58,16 +58,33 @@ class HostRediscovery @Inject constructor(
         if (!isPrivateIpv4(profile.host)) return@withContext null
         val stored = knownHostDao.findByHostPort(profile.host, profile.port)
             ?: return@withContext null
-        val base = subnetBase() ?: return@withContext null
+
+        // Scan the union of two /24s:
+        //  - the device's OWN subnet (profile.host's /24): a DHCP lease rotates
+        //    within the subnet, so this is where a moved device still is. This is
+        //    the only base that's correct when the phone is the hotspot — its
+        //    active network is then the UPSTREAM (cellular), not the tether, so
+        //    subnetBase() alone scanned the wrong network and found nothing (#367).
+        //  - the phone's active-network /24: covers "phone and device both moved
+        //    to a new LAN", where the profile's stored /24 is now stale.
+        // Identical in the common case (device on the phone's LAN) — the set
+        // dedupes to one base.
+        val bases = buildSet {
+            ipv4Base(profile.host)?.let { add(it) }
+            subnetBase()?.let { add(it) }
+        }
+        if (bases.isEmpty()) return@withContext null
 
         val candidates = coroutineScope {
-            (1..254).map { i ->
-                async {
-                    val ip = "$base.$i"
-                    ip.takeIf { it != profile.host && probe(it, profile.port, PROBE_TIMEOUT_MS) }
+            bases.flatMap { base ->
+                (1..254).map { i ->
+                    async {
+                        val ip = "$base.$i"
+                        ip.takeIf { it != profile.host && probe(it, profile.port, PROBE_TIMEOUT_MS) }
+                    }
                 }
             }.awaitAll().filterNotNull()
-        }
+        }.distinct()
         if (candidates.isEmpty()) return@withContext null
         Log.d(TAG, "rediscover ${profile.label}: ${candidates.size} responder(s) on :${profile.port}")
 
@@ -94,6 +111,11 @@ class HostRediscovery @Inject constructor(
         Log.i(TAG, "rediscover ${profile.label}: ${profile.host} → $newHost (host key matched)")
         newHost
     }
+
+    /** The /24 base ("a.b.c") of a dotted-quad IPv4, or null if [host] isn't one. */
+    private fun ipv4Base(host: String): String? = host.split(".")
+        .takeIf { it.size == 4 && it.all { part -> part.toIntOrNull() in 0..255 } }
+        ?.let { "${it[0]}.${it[1]}.${it[2]}" }
 
     private fun isPrivateIpv4(host: String): Boolean {
         val p = host.split(".").mapNotNull { it.toIntOrNull() }
