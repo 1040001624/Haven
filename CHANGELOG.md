@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.68
+
+🖥️ **Closing a fullscreen desktop tab no longer locks you out of the app** — tap the X while a VNC/X11 tab was fullscreen and the tab closed, but Haven never came back out of fullscreen: no top bar, no bottom bar, and because the same state also switches off swiping between tabs, the way out was disabled by the very thing you needed to escape. Not even rotating helped; only force-stopping the app. Now the bars come back, and as a backstop a fullscreen state can't outlive the session it belonged to. (#386, thanks sugerpersion)
+
+📡 **Automations follow a device that changes address again** — Haven has been able to re-find a saved host by its SSH key since v5.68.44, but in practice it never once ran. The check deciding "did the host fail to answer, or did it answer and reject me?" — the thing that stops a wrong password sending Haven hunting around your network — didn't recognise the most common way a moved device fails, because Android words that particular error differently from the ones it was looking for. So `run_command` just reported the dead address instead of going and finding the box. Tapping the profile by hand had the same blind spot. (#367/#376, thanks ehoeve786)
+
+⌨️ **The keyboard can finally read the terminal's input line** — Haven never answered when a keyboard asked what was actually in the field; it just said "nothing". Most keyboards cope, but a predictive one that keeps its own copy of what you're typing has nothing to correct it against, so after you press Enter it can keep building on the line it already ran — typing `ls` twice sent `lsls`. It now reports the real contents, and keeps them updated. If you use SwiftKey in Standard keyboard mode, this is the one to try. (#298, thanks agross for the diagnostic log that finally pinned it)
+
 ## v5.68.67
 
 🛠️ **F-Droid build: the last component that was still using the wrong tool** — the previous two releases pointed most of the Wayland stack at our own `wayland-scanner`, but one component (wlroots) is built from a second place in the script that never got told, so on F-Droid it went on looking for a scanner the build image doesn't have. Every component is now told once, centrally, so a new one can't be forgotten. Equally important: the check for this no longer asks "did it build on my machine" — which could never fail, because this machine happens to have the very tool F-Droid lacks — but asks *which* tool each component actually used. No change to the app itself.
