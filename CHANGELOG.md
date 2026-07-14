@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.68.69
+
+📡 **Following a moved device now works when your phone is the hotspot** — yesterday's fix got the re-discovery to actually run, but it then looked on the wrong network. It searched the phone's internet-facing network (your mobile data), when the device it's hunting for is on the *hotspot* the phone itself provides. It now also searches the network the device was last seen on — which, since an address change keeps a device on the same local network, is exactly where it still is. The everyday "everything on one Wi-Fi" case is unchanged. (#367/#376, thanks ehoeve786)
+
 ## v5.68.68
 
 🖥️ **Closing a fullscreen desktop tab no longer locks you out of the app** — tap the X while a VNC/X11 tab was fullscreen and the tab closed, but Haven never came back out of fullscreen: no top bar, no bottom bar, and because the same state also switches off swiping between tabs, the way out was disabled by the very thing you needed to escape. Not even rotating helped; only force-stopping the app. Now the bars come back, and as a backstop a fullscreen state can't outlive the session it belonged to. (#386, thanks sugerpersion)
