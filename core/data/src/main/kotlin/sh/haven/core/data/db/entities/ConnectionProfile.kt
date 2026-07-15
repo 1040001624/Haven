@@ -466,6 +466,13 @@ data class ConnectionProfile(
     val isLocal: Boolean get() = connectionType == "LOCAL"
     val isRclone: Boolean get() = connectionType == "RCLONE"
     val isEmail: Boolean get() = connectionType == "EMAIL"
+
+    // Bluetooth-serial (SPP/RFCOMM) console (#406). The paired device's MAC is
+    // stored in [host] — no new column, so no Room schema bump. A byte-stream
+    // terminal, so isTerminal below already covers it.
+    val isBtSerial: Boolean get() = connectionType == "BTSERIAL"
+    /** The bonded Bluetooth device address for a [isBtSerial] profile. */
+    val btDeviceAddress: String get() = host
     val isDesktop: Boolean get() = isVnc || isRdp || isSpice
     val isTerminal: Boolean get() = !isDesktop && !isSmb && !isRclone && !isEmail
 }
