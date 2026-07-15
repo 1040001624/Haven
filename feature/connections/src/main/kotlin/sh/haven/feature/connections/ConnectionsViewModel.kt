@@ -247,6 +247,16 @@ class ConnectionsViewModel @Inject constructor(
                             ConnectionLog.Status.DISCONNECTED,
                             details = "Bluetooth serial link to ${s.deviceAddress} dropped",
                         )
+                        // Toast the drop while the user is likely on the Terminal
+                        // screen (out-of-range adapter, dongle unplugged). Only an
+                        // UNEXPECTED drop lands here — an intentional disconnect
+                        // removes the session from the map, so it never triggers.
+                        userMessageBus.emit(
+                            sh.haven.core.data.message.UserMessage(
+                                "${s.label}: Bluetooth serial link lost",
+                                sh.haven.core.data.message.UserMessage.Severity.WARNING,
+                            ),
+                        )
                     }
                 }
             }
@@ -2624,6 +2634,10 @@ class ConnectionsViewModel @Inject constructor(
                 )
                 btSerialSessionManager.removeSession(sessionId)
                 _error.value = reason
+                // App-global toast: the connect may have been driven from a screen
+                // other than Connections (MCP, workspace launch), where _error is
+                // never shown. UserMessageBus renders over any screen (#406).
+                userMessageBus.error("${profile.label}: $reason")
             } finally {
                 _connectingProfileId.value = null
             }
