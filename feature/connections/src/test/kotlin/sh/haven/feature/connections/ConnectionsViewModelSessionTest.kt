@@ -142,7 +142,11 @@ class ConnectionsViewModelSessionTest {
             reticulumSessionManager = reticulumSessionManager,
             moshSessionManager = moshSessionManager,
             etSessionManager = etSessionManager,
-            btSerialSessionManager = mockk(relaxed = true),
+            btSerialSessionManager = mockk(relaxed = true) {
+                // init's link-drop observer collects this StateFlow; a bare relaxed
+                // mock returns a relaxed `collect` (declared Nothing) → KotlinNothingValueException.
+                every { sessions } returns kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
+            },
             reticulumTransport = mockk(relaxed = true) {
                 every { discoveredDestinations } returns kotlinx.coroutines.flow.MutableStateFlow(emptyList())
             },
