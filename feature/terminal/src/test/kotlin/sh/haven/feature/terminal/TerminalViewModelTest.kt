@@ -2,6 +2,7 @@ package sh.haven.feature.terminal
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -21,6 +22,9 @@ class TerminalViewModelTest {
     private lateinit var moshSessionManager: MoshSessionManager
     private lateinit var etSessionManager: EtSessionManager
     private lateinit var localSessionManager: LocalSessionManager
+    private lateinit var btSerialSessionManager: sh.haven.core.btserial.BtSerialSessionManager
+    private lateinit var bleSerialSessionManager: sh.haven.core.bleserial.BleSerialSessionManager
+    private lateinit var usbSerialSessionManager: sh.haven.core.usbserial.UsbSerialSessionManager
     private lateinit var sshEmulatorOwner: SshTerminalEmulatorOwner
     private lateinit var viewModel: TerminalViewModel
 
@@ -39,6 +43,15 @@ class TerminalViewModelTest {
         localSessionManager = mockk<LocalSessionManager>(relaxed = true) {
             every { sessions } returns MutableStateFlow(emptyMap())
         }
+        btSerialSessionManager = mockk(relaxed = true) {
+            every { sessions } returns MutableStateFlow(emptyMap())
+        }
+        bleSerialSessionManager = mockk(relaxed = true) {
+            every { sessions } returns MutableStateFlow(emptyMap())
+        }
+        usbSerialSessionManager = mockk(relaxed = true) {
+            every { sessions } returns MutableStateFlow(emptyMap())
+        }
         // No connect-time bundle in unit tests (the real emulator needs JNI),
         // so the SSH adopt branch skips — matching the old isReadyForTerminal skip.
         sshEmulatorOwner = mockk(relaxed = true) {
@@ -51,15 +64,9 @@ class TerminalViewModelTest {
             reticulumSessionManager,
             moshSessionManager,
             etSessionManager,
-            mockk<sh.haven.core.btserial.BtSerialSessionManager>(relaxed = true) {
-                every { sessions } returns MutableStateFlow(emptyMap())
-            },
-            mockk<sh.haven.core.bleserial.BleSerialSessionManager>(relaxed = true) {
-                every { sessions } returns MutableStateFlow(emptyMap())
-            },
-            mockk<sh.haven.core.usbserial.UsbSerialSessionManager>(relaxed = true) {
-                every { sessions } returns MutableStateFlow(emptyMap())
-            },
+            btSerialSessionManager,
+            bleSerialSessionManager,
+            usbSerialSessionManager,
             mockk<sh.haven.core.usb.UsbBroker>(relaxed = true),
             localSessionManager,
             mockk(relaxed = true), // HostKeyVerifier
@@ -123,6 +130,20 @@ class TerminalViewModelTest {
         viewModel.closeTab(sessionId)
 
         assertEquals(null, sessionManager.getSession(sessionId))
+    }
+
+    @Test
+    fun `closeTab tears down a BLE-serial session`() {
+        // Regression: removeTabAndSync only knew SSH/mosh/et/local/reticulum, so a
+        // serial session fell through to reticulum (no-op), stayed alive, and
+        // syncSessions rebuilt its tab — the tab wouldn't close.
+        val sessionId = "ble-1"
+        every { bleSerialSessionManager.sessions } returns
+            MutableStateFlow(mapOf(sessionId to mockk(relaxed = true)))
+
+        viewModel.closeTab(sessionId)
+
+        verify { bleSerialSessionManager.removeSession(sessionId) }
     }
 
     @Test

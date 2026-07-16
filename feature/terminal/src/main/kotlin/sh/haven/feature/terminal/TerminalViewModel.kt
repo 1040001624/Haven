@@ -2133,6 +2133,12 @@ class TerminalViewModel @Inject constructor(
             etSessionManager.removeSession(sessionId)
         } else if (localSessionManager.sessions.value.containsKey(sessionId)) {
             localSessionManager.removeSession(sessionId)
+        } else if (btSerialSessionManager.sessions.value.containsKey(sessionId)) {
+            btSerialSessionManager.removeSession(sessionId)
+        } else if (bleSerialSessionManager.sessions.value.containsKey(sessionId)) {
+            bleSerialSessionManager.removeSession(sessionId)
+        } else if (usbSerialSessionManager.sessions.value.containsKey(sessionId)) {
+            usbSerialSessionManager.removeSession(sessionId)
         } else {
             reticulumSessionManager.removeSession(sessionId)
         }
@@ -2160,6 +2166,9 @@ class TerminalViewModel @Inject constructor(
         moshSessionManager.removeAllSessionsForProfile(profileId)
         etSessionManager.removeAllSessionsForProfile(profileId)
         localSessionManager.removeAllSessionsForProfile(profileId)
+        btSerialSessionManager.removeAllSessionsForProfile(profileId)
+        bleSerialSessionManager.removeAllSessionsForProfile(profileId)
+        usbSerialSessionManager.removeAllSessionsForProfile(profileId)
         trackedSessionIds.removeAll(
             _tabs.value.filter { it.profileId == profileId }.map { it.sessionId }.toSet()
         )
