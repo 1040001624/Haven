@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.71.0
+
+📡 **Bluetooth LE serial connections** — connect to a Bluetooth-LE UART peripheral — an nRF board, an HM-10 module, or a BLE RS232 adapter — and get a full terminal, the same as SSH, Mosh, or the Classic Bluetooth-serial console. Unlike Classic Bluetooth serial, a BLE peripheral doesn't need to be paired: add a connection, tap **Scan**, pick the advertising device, and connect. The GATT service is auto-detected (Nordic UART Service, then HM-10). Verified end-to-end against an nRF UART peripheral. (This is the BLE counterpart some Bluetooth adapters need — a WF610-style dual-mode box can now be reached over LE, not only Classic SPP.)
+
 ## v5.70.0
 
 🔌 **USB-serial devices that gate on DTR now work** — Haven now raises the DTR and RTS lines when it opens a USB-serial connection, exactly as a desktop terminal (PuTTY, screen, minicom) does. Some devices stay silent — sending and receiving nothing — until the terminal asserts DTR: many Arduino sketches that wait on `while (!Serial)`, and boards that only start streaming once a client "opens" the port. Verified end-to-end against a USB-CDC device. (#408)
