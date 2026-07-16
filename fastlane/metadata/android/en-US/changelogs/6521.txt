@@ -1,0 +1,3 @@
+• USB-serial devices that wait for DTR now work. Haven now raises the DTR and RTS lines when it opens a USB-serial connection, exactly as a desktop terminal (PuTTY, screen, minicom) does. Some devices stay silent — sending and receiving nothing — until the terminal asserts DTR: many Arduino sketches that wait on "while (!Serial)", and boards that only start streaming once a client opens the port.
+
+• Full serial line settings in the USB-serial editor. A USB-serial connection now lets you set data bits, parity, stop bits and flow control alongside the baud rate, so you can talk to a device that isn't the usual 8N1 (a 7E1 sensor, a hardware-flow-control link). Defaults stay 8N1 with no flow control.
