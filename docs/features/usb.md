@@ -16,6 +16,13 @@ and re-exposes it (see [Vision](https://github.com/GlassHaven/Haven/blob/main/VI
 The spark was a **YubiKey**: plug it into the phone and use it for SSH/FIDO on a
 machine that has no key of its own, with the **touch happening on the phone**.
 
+> **Just want a serial terminal?** For a USB-serial adapter — an Arduino, an ESP32,
+> a USB-TTL cable, a Duet3D G-code board — you don't need forwarding at all: add a
+> **USB-serial console** connection and you get a terminal straight to the device
+> (see [Serial consoles](terminal.md#serial-consoles-bluetooth-ble-usb)), which can
+> also be exposed off-phone via the [serial-to-TCP bridge](terminal.md#serial-to-tcp-bridge).
+> The forwarding below is for handing a USB device to the *Linux guest* or a *remote host*.
+
 ## Device-class support
 
 What reaches each consumer depends on the device class. **Guest** = the local

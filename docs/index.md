@@ -70,7 +70,7 @@ sideloads track the GitHub Releases key.
 
 ## At a glance
 
-- **[Terminal](features/terminal.md)** — Mosh / Eternal Terminal / SSH, tmux session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
+- **[Terminal](features/terminal.md)** — Mosh / Eternal Terminal / SSH, USB / Bluetooth / BLE serial consoles with a serial↔TCP bridge, tmux session restore, configurable keyboard toolbar, OSC 7/8/9/52/133/777 integration.
 - **[Desktops](features/desktops.md)** — VNC (RFB 3.8 / VeNCrypt), RDP (IronRDP + EGFX), SPICE (QEMU/KVM, GLZ/QUIC), a GPU-accelerated native Wayland compositor, and a multi-distro local-desktop manager.
 - **[Files & cloud](features/files-and-cloud.md)** — SFTP/SCP, SMB, 60+ cloud providers (rclone), cross-filesystem copy/move; plus FFmpeg transcode, HLS, and DLNA.
 - **[Connections](features/connections.md)** — port forwarding (-L/-R/-D/-J), SOCKS/HTTP/Tor proxies, per-app WireGuard & Tailscale tunnels, port knocking + fwknop SPA, SSH keys & FIDO2.

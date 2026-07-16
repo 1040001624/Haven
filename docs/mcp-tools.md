@@ -136,7 +136,7 @@ Delete a saved connection profile by id. Disconnects any live session for the pr
 <details markdown="1">
 <summary><code>disconnect_profile</code> · asks once per session</summary>
 
-Disconnect every live session for a profile across all transports (SSH, Mosh, Eternal Terminal, RDP, VNC, SMB, Reticulum, local). Use list_connections to find profileIds.
+Disconnect every live session for a profile across all transports (SSH, Mosh, Eternal Terminal, RDP, VNC, SMB, Reticulum, local, Bluetooth/BLE/USB serial). Use list_connections to find profileIds.
 
 - `profileId` (string, required) — ID of the connection profile to disconnect.
 
@@ -331,7 +331,7 @@ Return the current text-selection state for an active terminal session: { active
 <details markdown="1">
 <summary><code>list_sessions</code> · no per-call prompt</summary>
 
-List currently registered sessions across all transports (ssh, mosh, et, reticulum, rdp, smb, local, mail) with sessionId, profileId, label, status (connecting, connected, reconnecting, disconnected, error), transport, and isAgentRepl — a screen heuristic (Claude Code TUI chrome in the bottom lines) marking which terminal session is an agent REPL, so a conversation peer can be picked without guessing; null when the session has no attached terminal tab. SSH sessions additionally include sessionManager, chosenSessionName (the stable tmux/zellij identity that survives reconnects), channel state, jump-session linkage, and active port forwards.
+List currently registered sessions across all transports (ssh, mosh, et, reticulum, rdp, smb, local, mail, and Bluetooth/BLE/USB serial) with sessionId, profileId, label, status (connecting, connected, reconnecting, disconnected, error), transport, and isAgentRepl — a screen heuristic (Claude Code TUI chrome in the bottom lines) marking which terminal session is an agent REPL, so a conversation peer can be picked without guessing; null when the session has no attached terminal tab. SSH sessions additionally include sessionManager, chosenSessionName (the stable tmux/zellij identity that survives reconnects), channel state, jump-session linkage, and active port forwards.
 
 </details>
 
