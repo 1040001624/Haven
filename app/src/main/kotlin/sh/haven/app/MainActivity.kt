@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     // when there's no activity to render the prompt. The §85 rule
     // forbids letting destructive agent calls slip through silently.
     @Inject lateinit var agentConsentManager: AgentConsentManager
+
+    @Inject lateinit var prootIdleReaper: ProotIdleReaper
     // Cross-tab navigation verbs: HavenNavHost collects from this so an
     // MCP `navigate_sftp_browser` switches the pager to the right tab.
     @Inject lateinit var agentUiCommandBus: sh.haven.core.data.agent.AgentUiCommandBus
@@ -127,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         fidoAuthenticator.setActiveActivity(this)
         agentConsentManager.setForegroundActive(true)
         biometricGate.setForegroundActive(true)
+        prootIdleReaper.onForeground()
         havenUiBridge.attach(this)
         // A pairing attempt blocked while backgrounded is re-prompted now that
         // a foreground activity can render the sheet — this is what the
@@ -144,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         fidoAuthenticator.clearActiveActivity(this)
         agentConsentManager.setForegroundActive(false)
         biometricGate.setForegroundActive(false)
+        prootIdleReaper.onBackground()
         havenUiBridge.detach(this)
         super.onPause()
     }

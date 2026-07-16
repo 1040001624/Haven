@@ -24450,6 +24450,59 @@
      }
     },
     {
+     "name": "settings_proot_idle_title",
+     "en": "Auto-stop idle Linux guest",
+     "comment": "Wayland section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_off",
+     "en": "Off — the Linux guest keeps running until you stop it",
+     "comment": "Wayland section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_on",
+     "en": "Stops the guest %1$d min after you leave Haven (a running guest service keeps it up)",
+     "comment": "Wayland section",
+     "args": [
+      "%1$d"
+     ],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_dialog_title",
+     "en": "Auto-stop idle Linux guest",
+     "comment": "Wayland section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_dialog_body",
+     "en": "After Haven has been in the background this long, stop the Linux guest\\'s terminals and desktops to free memory. A running guest service keeps it up. A long job in a backgrounded terminal would be stopped too — leave this off unless you want idle reclamation.",
+     "comment": "Wayland section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_off_label",
+     "en": "Off",
+     "comment": "Wayland section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_proot_idle_minutes",
+     "en": "%1$d minutes",
+     "comment": "Wayland section",
+     "args": [
+      "%1$d"
+     ],
+     "t": {}
+    },
+    {
      "name": "settings_shizuku_title",
      "en": "Shizuku integration",
      "comment": "Wayland section",

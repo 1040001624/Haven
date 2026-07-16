@@ -95,6 +95,13 @@
 
     <!-- Wayland section -->
     <string name="settings_wayland_shell_title">Wayland desktop shell</string>
+    <string name="settings_proot_idle_title">Auto-stop idle Linux guest</string>
+    <string name="settings_proot_idle_off">Off — the Linux guest keeps running until you stop it</string>
+    <string name="settings_proot_idle_on">Stops the guest %1$d min after you leave Haven (a running guest service keeps it up)</string>
+    <string name="settings_proot_idle_dialog_title">Auto-stop idle Linux guest</string>
+    <string name="settings_proot_idle_dialog_body">After Haven has been in the background this long, stop the Linux guest\'s terminals and desktops to free memory. A running guest service keeps it up. A long job in a backgrounded terminal would be stopped too — leave this off unless you want idle reclamation.</string>
+    <string name="settings_proot_idle_off_label">Off</string>
+    <string name="settings_proot_idle_minutes">%1$d minutes</string>
     <string name="settings_shizuku_title">Shizuku integration</string>
     <string name="settings_shizuku_enabled">Enabled — auto battery exemption, Wayland socket sharing</string>
     <string name="settings_shizuku_available">Shizuku running — tap to grant permission</string>

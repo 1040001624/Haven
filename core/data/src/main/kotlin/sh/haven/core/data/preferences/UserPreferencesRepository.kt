@@ -28,6 +28,7 @@ class UserPreferencesRepository @Inject constructor(
     // Mail message-list pinch-zoom factor, multiplied onto the terminal font size.
     private val mailFontScaleKey = floatPreferencesKey("mail_font_scale")
     private val terminalScrollbackRowsKey = intPreferencesKey("terminal_scrollback_rows")
+    private val prootIdleTimeoutMinutesKey = intPreferencesKey("proot_idle_timeout_minutes")
     private val terminalTapToPositionCursorKey = booleanPreferencesKey("terminal_tap_to_position_cursor")
     // Absolute path to a user-chosen Nerd Font (or any TTF/OTF). #123.
     private val terminalFontPathKey = stringPreferencesKey("terminal_font_path")
@@ -1045,6 +1046,24 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setTerminalScrollbackRows(rows: Int) {
         dataStore.edit { prefs ->
             prefs[terminalScrollbackRowsKey] = rows.coerceIn(MIN_SCROLLBACK_ROWS, MAX_SCROLLBACK_ROWS)
+        }
+    }
+
+    /**
+     * Optional idle auto-stop for the local PRoot Linux guest (#409). When the
+     * app has been backgrounded this many minutes, Haven stops the interactive
+     * guest (local terminal sessions + desktops) to reclaim resources — unless a
+     * guest service is running (an explicit "keep it up" choice). 0 = off
+     * (default). Opt-in: a long job in a backgrounded terminal would be stopped
+     * too, so it stays off unless the user wants idle reclamation.
+     */
+    val prootIdleTimeoutMinutes: Flow<Int> = dataStore.data.map { prefs ->
+        (prefs[prootIdleTimeoutMinutesKey] ?: 0).coerceAtLeast(0)
+    }
+
+    suspend fun setProotIdleTimeoutMinutes(minutes: Int) {
+        dataStore.edit { prefs ->
+            prefs[prootIdleTimeoutMinutesKey] = minutes.coerceAtLeast(0)
         }
     }
 

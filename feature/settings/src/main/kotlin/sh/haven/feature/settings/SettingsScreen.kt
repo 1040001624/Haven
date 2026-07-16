@@ -224,6 +224,8 @@ fun SettingsScreen(
     val settingsScope = rememberCoroutineScope()
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showWaylandShellDialog by remember { mutableStateOf(false) }
+    var showProotIdleDialog by remember { mutableStateOf(false) }
+    val prootIdleMinutes by viewModel.prootIdleTimeoutMinutes.collectAsState()
     var showMediaExtensionsDialog by remember { mutableStateOf(false) }
     var showPromptCharsDialog by remember { mutableStateOf(false) }
     var showLocaleDialog by remember { mutableStateOf(false) }
@@ -852,6 +854,16 @@ fun SettingsScreen(
             title = stringResource(R.string.settings_wayland_shell_title),
             subtitle = waylandShellCommand,
             onClick = { showWaylandShellDialog = true },
+        )
+        SettingsItem(
+            icon = Icons.Filled.Timer,
+            title = stringResource(R.string.settings_proot_idle_title),
+            subtitle = if (prootIdleMinutes <= 0) {
+                stringResource(R.string.settings_proot_idle_off)
+            } else {
+                stringResource(R.string.settings_proot_idle_on, prootIdleMinutes)
+            },
+            onClick = { showProotIdleDialog = true },
         )
         run {
             val context = LocalContext.current
@@ -1701,6 +1713,17 @@ fun SettingsScreen(
             onConfirm = { newRows ->
                 viewModel.setTerminalScrollbackRows(newRows)
                 showScrollbackRowsDialog = false
+            },
+        )
+    }
+
+    if (showProotIdleDialog) {
+        ProotIdleTimeoutDialog(
+            currentMinutes = prootIdleMinutes,
+            onDismiss = { showProotIdleDialog = false },
+            onConfirm = { minutes ->
+                viewModel.setProotIdleTimeoutMinutes(minutes)
+                showProotIdleDialog = false
             },
         )
     }
@@ -2586,6 +2609,63 @@ private fun ScrollbackRowsDialog(
                 )
                 presets.forEach { preset ->
                     val label = stringResource(R.string.settings_scrollback_rows_value, preset)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selected = preset }
+                            .padding(vertical = 6.dp),
+                    ) {
+                        RadioButton(
+                            selected = selected == preset,
+                            onClick = { selected = preset },
+                        )
+                        Text(label, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) {
+                Text(stringResource(R.string.common_ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Idle-timeout picker for the PRoot auto-stop (#409). Presets in minutes; 0 = off.
+ */
+@Composable
+private fun ProotIdleTimeoutDialog(
+    currentMinutes: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    val presets = listOf(0, 5, 15, 30, 60)
+    var selected by remember { mutableIntStateOf(currentMinutes) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_proot_idle_dialog_title)) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.settings_proot_idle_dialog_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                presets.forEach { preset ->
+                    val label = if (preset <= 0) {
+                        stringResource(R.string.settings_proot_idle_off_label)
+                    } else {
+                        stringResource(R.string.settings_proot_idle_minutes, preset)
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier

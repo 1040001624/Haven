@@ -834,6 +834,15 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    val prootIdleTimeoutMinutes: StateFlow<Int> = preferencesRepository.prootIdleTimeoutMinutes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun setProotIdleTimeoutMinutes(minutes: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setProotIdleTimeoutMinutes(minutes)
+        }
+    }
+
     fun setTheme(mode: UserPreferencesRepository.ThemeMode) {
         viewModelScope.launch {
             preferencesRepository.setTheme(mode)
