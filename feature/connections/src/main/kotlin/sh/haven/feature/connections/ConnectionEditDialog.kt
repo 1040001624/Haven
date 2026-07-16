@@ -372,6 +372,10 @@ fun ConnectionEditDialog(
     var rnsHost by rememberSaveable { mutableStateOf(existing?.reticulumHost ?: "") }
     var rcloneRemoteName by rememberSaveable { mutableStateOf(existing?.rcloneRemoteName ?: "") }
     var rcloneProvider by rememberSaveable { mutableStateOf(existing?.rcloneProvider ?: "") }
+    // #410: a short token that makes a fresh rclone remote name unique, so two
+    // connections of the same provider (e.g. two SFTP) don't both save as the
+    // provider name, share one rclone.conf entry, and overwrite each other.
+    val rcloneRemoteToken = rememberSaveable { java.util.UUID.randomUUID().toString().take(6) }
     // A non-OAuth rclone profile is only really saved once its remote has been
     // written to rclone.conf via the Configure button — saving a profile shell
     // that points at a never-created remote silently loses the config (#295).
@@ -1317,9 +1321,13 @@ fun ConnectionEditDialog(
                                     onClick = {
                                         rcloneProvider = value
                                         providerExpanded = false
-                                        // Auto-generate remote name if user hasn't set one manually
-                                        if (rcloneRemoteName.isEmpty() || rcloneRemoteName == rcloneProvider) {
-                                            rcloneRemoteName = value
+                                        // A fresh connection gets a UNIQUE remote name
+                                        // ("<provider>-<token>") so two of the same provider
+                                        // don't collide on one rclone.conf entry (#410). An
+                                        // existing connection keeps the name it was configured
+                                        // under (renaming would orphan its rclone remote).
+                                        if (existing?.isRclone != true) {
+                                            rcloneRemoteName = "$value-$rcloneRemoteToken"
                                         }
                                     },
                                 )
@@ -1382,7 +1390,7 @@ fun ConnectionEditDialog(
                             .all { (rcloneParams[it.name] ?: it.default).isNotBlank() }
                         OutlinedButton(
                             onClick = {
-                                val name = rcloneRemoteName.ifBlank { rcloneProvider }
+                                val name = rcloneRemoteName.ifBlank { "$rcloneProvider-$rcloneRemoteToken" }
                                 val params = rcloneOptions
                                     .associate { it.name to (rcloneParams[it.name] ?: it.default) }
                                     .filterValues { it.isNotBlank() }
@@ -3336,7 +3344,7 @@ fun ConnectionEditDialog(
                             port = 0,
                             username = "",
                             connectionType = "RCLONE",
-                            rcloneRemoteName = rcloneRemoteName.ifBlank { rcloneProvider },
+                            rcloneRemoteName = rcloneRemoteName.ifBlank { "$rcloneProvider-$rcloneRemoteToken" },
                             rcloneProvider = rcloneProvider,
                             colorTag = colorTag,
                             groupId = groupId,
