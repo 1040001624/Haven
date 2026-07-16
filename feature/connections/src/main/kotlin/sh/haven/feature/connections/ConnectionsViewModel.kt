@@ -164,6 +164,7 @@ class ConnectionsViewModel @Inject constructor(
     private val moshSessionManager: MoshSessionManager,
     private val etSessionManager: EtSessionManager,
     private val btSerialSessionManager: sh.haven.core.btserial.BtSerialSessionManager,
+    private val bleSerialSessionManager: sh.haven.core.bleserial.BleSerialSessionManager,
     private val usbSerialSessionManager: sh.haven.core.usbserial.UsbSerialSessionManager,
     private val usbBroker: sh.haven.core.usb.UsbBroker,
     private val reticulumTransport: ReticulumTransport,
@@ -256,6 +257,31 @@ class ConnectionsViewModel @Inject constructor(
                         userMessageBus.emit(
                             sh.haven.core.data.message.UserMessage(
                                 "${s.label}: Bluetooth serial link lost",
+                                sh.haven.core.data.message.UserMessage.Severity.WARNING,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        // Same out-of-range/drop logging for BLE-serial links.
+        viewModelScope.launch {
+            val wasConnected = mutableSetOf<String>()
+            bleSerialSessionManager.sessions.collect { map ->
+                map.values.forEach { s ->
+                    val connected = s.status == sh.haven.core.bleserial.BleSerialSessionManager.SessionState.Status.CONNECTED
+                    if (connected) {
+                        wasConnected += s.sessionId
+                    } else if (s.sessionId in wasConnected) {
+                        wasConnected -= s.sessionId
+                        connectionLogRepository.logEvent(
+                            s.profileId,
+                            ConnectionLog.Status.DISCONNECTED,
+                            details = "BLE serial link to ${s.deviceAddress} dropped",
+                        )
+                        userMessageBus.emit(
+                            sh.haven.core.data.message.UserMessage(
+                                "${s.label}: BLE serial link lost",
                                 sh.haven.core.data.message.UserMessage.Severity.WARNING,
                             ),
                         )
@@ -1425,6 +1451,9 @@ class ConnectionsViewModel @Inject constructor(
         // Connect only on explicit tap: a BT link is slow/blocking and needs the
         // adapter powered + the device in range (#406).
         profile.isBtSerial -> false
+        // Connect only on explicit tap: BLE discovery + GATT connect is slow and
+        // the device may be out of range.
+        profile.isBleSerial -> false
         // Connect only on explicit tap: the device must be plugged in and the
         // USB permission prompt answered (#408).
         profile.isUsbSerial -> false
@@ -1782,6 +1811,10 @@ class ConnectionsViewModel @Inject constructor(
         }
         if (profile.isBtSerial) {
             connectBtSerial(profile)
+            return
+        }
+        if (profile.isBleSerial) {
+            connectBleSerial(profile)
             return
         }
         if (profile.isUsbSerial) {
@@ -2675,6 +2708,74 @@ class ConnectionsViewModel @Inject constructor(
                 "the device is unreachable ($msg)"
             msg.contains("Bluetooth adapter", ignoreCase = true) ->
                 "no Bluetooth adapter on this phone"
+            else -> msg
+        }
+    }
+
+    /**
+     * Connect a BLE-serial profile: open the GATT link to the peripheral MAC
+     * (auto-detecting the Nordic UART Service or HM-10), then navigate to the
+     * terminal — TerminalViewModel's session collector builds the tab. Mirrors
+     * [connectBtSerial]; BLE UART is a separate GATT transport from Classic SPP.
+     */
+    private fun connectBleSerial(profile: ConnectionProfile) {
+        viewModelScope.launch {
+            val existing = bleSerialSessionManager.getSessionsForProfile(profile.id)
+            if (existing.any { it.status == sh.haven.core.bleserial.BleSerialSessionManager.SessionState.Status.CONNECTED }) {
+                _navigateToTerminal.value = profile.id
+                return@launch
+            }
+            _connectingProfileId.value = profile.id
+            _error.value = null
+            val addr = profile.bleDeviceAddress
+            val startedAt = System.currentTimeMillis()
+            val sessionId = bleSerialSessionManager.registerSession(
+                profileId = profile.id,
+                label = profile.label,
+                deviceAddress = addr,
+            )
+            try {
+                bleSerialSessionManager.connectSession(sessionId) // GATT connect (blocking, on IO)
+                repository.markConnected(profile.id)
+                connectionLogRepository.logEvent(
+                    profile.id,
+                    ConnectionLog.Status.CONNECTED,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    details = "BLE serial (GATT) link up to $addr",
+                )
+                startForegroundServiceIfNeeded()
+                _navigateToTerminal.value = profile.id
+            } catch (e: Exception) {
+                val reason = bleSerialFailureHint(e)
+                Log.e(TAG, "connectBleSerial failed: $reason", e)
+                connectionLogRepository.logEvent(
+                    profile.id,
+                    ConnectionLog.Status.FAILED,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    details = "BLE serial connect to $addr failed: $reason",
+                )
+                bleSerialSessionManager.removeSession(sessionId)
+                _error.value = reason
+                userMessageBus.error("${profile.label}: $reason")
+            } finally {
+                _connectingProfileId.value = null
+            }
+        }
+    }
+
+    /** Human-actionable BLE-serial connect failure, for the connection log. */
+    private fun bleSerialFailureHint(e: Exception): String {
+        val msg = e.message ?: e.javaClass.simpleName
+        return when {
+            e is SecurityException || msg.contains("BLUETOOTH", ignoreCase = true) ->
+                "Bluetooth permission not granted — open this connection's editor and grant it."
+            msg.contains("timed out", ignoreCase = true) ||
+                msg.contains("disconnected before ready", ignoreCase = true) ->
+                "the peripheral didn't answer — is it powered on and in range? ($msg)"
+            msg.contains("No BLE-UART service", ignoreCase = true) ->
+                "this device isn't offering a known BLE-UART service (Nordic UART / HM-10) ($msg)"
+            msg.contains("Bluetooth is off", ignoreCase = true) -> "turn Bluetooth on and retry"
+            msg.contains("adapter", ignoreCase = true) -> "no Bluetooth adapter on this phone"
             else -> msg
         }
     }

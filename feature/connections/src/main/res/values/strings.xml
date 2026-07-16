@@ -398,6 +398,13 @@
     <string name="connections_btserial_device">Paired device</string>
     <string name="connections_btserial_no_devices">No paired Bluetooth devices. Pair the adapter in Android Settings → Bluetooth first, then reopen this.</string>
     <string name="connections_btserial_permission">Grant Bluetooth permission to list paired devices</string>
+    <string name="connections_section_bleserial">Bluetooth LE serial</string>
+    <string name="connections_bleserial_desc">Connect to a Bluetooth-LE UART peripheral — a Nordic UART Service device, an HM-10 module, or a BLE RS232 adapter. It doesn\'t need to be paired.</string>
+    <string name="connections_bleserial_device">BLE device</string>
+    <string name="connections_bleserial_no_devices">No BLE devices found. Make sure the peripheral is powered on and advertising, then scan again.</string>
+    <string name="connections_bleserial_permission">Grant Bluetooth (scan) permission to find BLE devices</string>
+    <string name="connections_bleserial_scan">Scan for BLE devices</string>
+    <string name="connections_bleserial_scanning">Scanning…</string>
     <string name="connections_section_usbserial">USB serial</string>
     <string name="connections_usbserial_desc">Connect to a plugged-in USB-serial adapter — an Arduino, a Duet3D G-code board, an ESP32 or a USB-to-TTL cable.</string>
     <string name="connections_usbserial_device">USB device</string>

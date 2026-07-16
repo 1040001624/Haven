@@ -1,5 +1,6 @@
 package sh.haven.core.ssh
 
+import sh.haven.core.bleserial.BleSerialSessionManager
 import sh.haven.core.btserial.BtSerialSessionManager
 import sh.haven.core.et.EtSessionManager
 import sh.haven.core.local.LocalSessionManager
@@ -26,6 +27,7 @@ class SessionManagerRegistry @Inject constructor(
     private val mosh: MoshSessionManager,
     private val et: EtSessionManager,
     private val btSerial: BtSerialSessionManager,
+    private val bleSerial: BleSerialSessionManager,
     private val smb: SmbSessionManager,
     private val local: LocalSessionManager,
     private val rdp: RdpSessionManager,
@@ -46,6 +48,7 @@ class SessionManagerRegistry @Inject constructor(
         mosh.removeAllSessionsForProfile(profileId)
         et.removeAllSessionsForProfile(profileId)
         btSerial.removeAllSessionsForProfile(profileId)
+        bleSerial.removeAllSessionsForProfile(profileId)
         smb.removeAllSessionsForProfile(profileId)
         local.removeAllSessionsForProfile(profileId)
         rdp.removeAllSessionsForProfile(profileId)
@@ -68,7 +71,7 @@ class SessionManagerRegistry @Inject constructor(
         val errors = mutableListOf<String>()
         val attempts = listOf<(String, String) -> Unit>(
             ssh::sendInput, local::sendInput, mosh::sendInput, et::sendInput, reticulum::sendInput,
-            btSerial::sendInput,
+            btSerial::sendInput, bleSerial::sendInput,
         )
         for (attempt in attempts) {
             try {
@@ -82,7 +85,7 @@ class SessionManagerRegistry @Inject constructor(
         // owned the id; anything else is a real diagnosis from the owner.
         throw IllegalStateException(
             errors.firstOrNull { !it.startsWith("No ") }
-                ?: "No terminal session $sessionId on any transport (SSH, local, mosh, ET, Reticulum, Bluetooth-serial)",
+                ?: "No terminal session $sessionId on any transport (SSH, local, mosh, ET, Reticulum, Bluetooth-serial, BLE-serial)",
         )
     }
 
@@ -99,6 +102,7 @@ class SessionManagerRegistry @Inject constructor(
             mosh.activeSessions.isNotEmpty() ||
             et.activeSessions.isNotEmpty() ||
             btSerial.activeSessions.isNotEmpty() ||
+            bleSerial.activeSessions.isNotEmpty() ||
             local.activeSessions.isNotEmpty() ||
             rdp.activeSessions.isNotEmpty() ||
             smb.activeSessions.isNotEmpty() ||
@@ -116,6 +120,7 @@ class SessionManagerRegistry @Inject constructor(
             mosh.sessions.value.values.map { it.toSession() } +
             et.sessions.value.values.map { it.toSession() } +
             btSerial.sessions.value.values.map { it.toSession() } +
+            bleSerial.sessions.value.values.map { it.toSession() } +
             smb.sessions.value.values.map { it.toSession() } +
             local.sessions.value.values.map { it.toSession() } +
             rdp.sessions.value.values.map { it.toSession() } +
@@ -154,6 +159,9 @@ private fun EtSessionManager.SessionState.toSession() =
 
 private fun BtSerialSessionManager.SessionState.toSession() =
     UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.BTSERIAL)
+
+private fun BleSerialSessionManager.SessionState.toSession() =
+    UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.BLESERIAL)
 
 private fun ReticulumSessionManager.SessionState.toSession() =
     UnifiedSession(sessionId, profileId, label, mapStatus(status.name), Transport.RETICULUM)

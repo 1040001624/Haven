@@ -41,6 +41,7 @@ dependencies {
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
     implementation(project(":core:btserial"))
+    implementation(project(":core:bleserial"))
     implementation(project(":core:usbserial"))
     implementation(project(":core:usb"))
     implementation(project(":core:local"))

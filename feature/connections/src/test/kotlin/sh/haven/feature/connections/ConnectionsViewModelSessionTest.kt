@@ -121,6 +121,7 @@ class ConnectionsViewModelSessionTest {
             mosh = moshSessionManager,
             et = etSessionManager,
             btSerial = mockk(relaxed = true),
+            bleSerial = mockk(relaxed = true),
             smb = smbSessionManager,
             local = localSessionManager,
             rdp = rdpSessionManager,
@@ -145,6 +146,9 @@ class ConnectionsViewModelSessionTest {
             btSerialSessionManager = mockk(relaxed = true) {
                 // init's link-drop observer collects this StateFlow; a bare relaxed
                 // mock returns a relaxed `collect` (declared Nothing) → KotlinNothingValueException.
+                every { sessions } returns kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
+            },
+            bleSerialSessionManager = mockk(relaxed = true) {
                 every { sessions } returns kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
             },
             usbSerialSessionManager = mockk(relaxed = true) {

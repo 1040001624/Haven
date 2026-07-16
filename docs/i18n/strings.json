@@ -12410,6 +12410,55 @@
      }
     },
     {
+     "name": "connections_section_bleserial",
+     "en": "Bluetooth LE serial",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_desc",
+     "en": "Connect to a Bluetooth-LE UART peripheral — a Nordic UART Service device, an HM-10 module, or a BLE RS232 adapter. It doesn\\'t need to be paired.",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_device",
+     "en": "BLE device",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_no_devices",
+     "en": "No BLE devices found. Make sure the peripheral is powered on and advertising, then scan again.",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_permission",
+     "en": "Grant Bluetooth (scan) permission to find BLE devices",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_scan",
+     "en": "Scan for BLE devices",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "connections_bleserial_scanning",
+     "en": "Scanning…",
+     "comment": "Bluetooth serial (#406)",
+     "args": [],
+     "t": {}
+    },
+    {
      "name": "connections_section_usbserial",
      "en": "USB serial",
      "comment": "Bluetooth serial (#406)",

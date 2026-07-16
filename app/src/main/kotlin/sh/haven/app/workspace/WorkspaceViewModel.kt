@@ -200,7 +200,7 @@ data class CapturedDraft(
  */
 private fun Transport.toWorkspaceKind(): WorkspaceItem.Kind? = when (this) {
     Transport.SSH, Transport.MOSH, Transport.ET, Transport.RETICULUM, Transport.LOCAL,
-    Transport.BTSERIAL ->
+    Transport.BTSERIAL, Transport.BLESERIAL ->
         WorkspaceItem.Kind.TERMINAL
     Transport.SMB -> WorkspaceItem.Kind.FILE_BROWSER
     Transport.RDP -> WorkspaceItem.Kind.DESKTOP

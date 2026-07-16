@@ -474,6 +474,11 @@ data class ConnectionProfile(
     /** The bonded Bluetooth device address for a [isBtSerial] profile. */
     val btDeviceAddress: String get() = host
 
+    /** BLE-serial (GATT Nordic UART / HM-10) console — a byte-stream terminal. */
+    val isBleSerial: Boolean get() = connectionType == "BLESERIAL"
+    /** The BLE device MAC for a [isBleSerial] profile (auto-detects NUS/HM-10). */
+    val bleDeviceAddress: String get() = host
+
     // USB-serial console (#408). Same no-new-column trick as BTSERIAL: the
     // `vendorId:productId` device key lives in [host] and the baud rate in
     // [port], so no Room schema bump. Line format defaults to 8N1, which covers

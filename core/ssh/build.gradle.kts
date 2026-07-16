@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
     implementation(project(":core:btserial"))
+    implementation(project(":core:bleserial"))
     implementation(project(":core:local"))
     implementation(project(":core:rclone"))
     implementation(project(":core:rdp"))

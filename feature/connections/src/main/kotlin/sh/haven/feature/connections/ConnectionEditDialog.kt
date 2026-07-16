@@ -198,6 +198,7 @@ fun ConnectionEditDialog(
     val initialTransport = when {
         seed?.isLocal == true -> "LOCAL"
         seed?.isBtSerial == true -> "BTSERIAL"
+        seed?.isBleSerial == true -> "BLESERIAL"
         seed?.isUsbSerial == true -> "USBSERIAL"
         seed?.isVnc == true -> "VNC"
         seed?.isRdp == true -> "RDP"
@@ -215,6 +216,7 @@ fun ConnectionEditDialog(
     val connectionType = when (selectedTransport) {
         "LOCAL" -> "LOCAL"
         "BTSERIAL" -> "BTSERIAL"
+        "BLESERIAL" -> "BLESERIAL"
         "USBSERIAL" -> "USBSERIAL"
         "RETICULUM" -> "RETICULUM"
         "VNC" -> "VNC"
@@ -232,6 +234,8 @@ fun ConnectionEditDialog(
     var host by rememberSaveable { mutableStateOf(seed?.host ?: "") }
     // Bluetooth-serial selected device MAC (#406); reuses `host` on save.
     var btDevice by rememberSaveable { mutableStateOf(seed?.takeIf { it.isBtSerial }?.host ?: "") }
+    // BLE-serial selected device MAC (#DoveBoy BLE FR); reuse `host` on save.
+    var bleDevice by rememberSaveable { mutableStateOf(seed?.takeIf { it.isBleSerial }?.host ?: "") }
     // USB-serial selected device vid:pid and baud (#408); reuse `host`/`port` on save.
     var usbDevice by rememberSaveable { mutableStateOf(seed?.takeIf { it.isUsbSerial }?.host ?: "") }
     var usbBaud by rememberSaveable { mutableStateOf((seed?.takeIf { it.isUsbSerial }?.usbBaudRate ?: 115200).toString()) }
@@ -1021,6 +1025,7 @@ fun ConnectionEditDialog(
                     "ET" to "Eternal Terminal",
                     "LOCAL" to "Local Shell (PRoot)",
                     "BTSERIAL" to "Bluetooth Serial",
+                    "BLESERIAL" to "Bluetooth LE Serial",
                     "USBSERIAL" to "USB Serial",
                     "VNC" to "VNC (Desktop)",
                     "RDP" to "RDP (Desktop)",
@@ -1275,6 +1280,14 @@ fun ConnectionEditDialog(
                         selectedAddress = btDevice,
                         onSelect = { address, name ->
                             btDevice = address
+                            if (label.isBlank()) label = name
+                        },
+                    )
+                } else if (connectionType == "BLESERIAL") {
+                    BleSerialDeviceField(
+                        selectedAddress = bleDevice,
+                        onSelect = { address, name ->
+                            bleDevice = address
                             if (label.isBlank()) label = name
                         },
                     )
@@ -3168,6 +3181,7 @@ fun ConnectionEditDialog(
             val canSave = knockOk && when (connectionType) {
                 "LOCAL" -> true // No host/auth needed
                 "BTSERIAL" -> btDevice.isNotBlank() // a paired device must be picked
+                "BLESERIAL" -> bleDevice.isNotBlank() // a scanned device must be picked
                 "USBSERIAL" -> usbDevice.isNotBlank() && (usbBaud.toIntOrNull() ?: 0) > 0
                 "SSH" -> host.isNotBlank()
                 "VNC" -> host.isNotBlank() && tunnelComplete(vncSshForward, vncSshProfileId)
@@ -3214,6 +3228,23 @@ fun ConnectionEditDialog(
                             port = 0,
                             username = "",
                             connectionType = "BTSERIAL",
+                            colorTag = colorTag,
+                            groupId = groupId,
+                            identityId = identityId,
+                        )
+                    } else if (connectionType == "BLESERIAL") {
+                        // The BLE device MAC lives in `host` (no new column); the
+                        // GATT UUIDs are auto-detected (NUS / HM-10) at connect.
+                        (existing ?: ConnectionProfile(
+                            label = label,
+                            host = bleDevice,
+                            username = "",
+                        )).copy(
+                            label = label.ifBlank { "BLE: $bleDevice" },
+                            host = bleDevice,
+                            port = 0,
+                            username = "",
+                            connectionType = "BLESERIAL",
                             colorTag = colorTag,
                             groupId = groupId,
                             identityId = identityId,
@@ -4193,6 +4224,137 @@ private fun BtSerialDeviceField(
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             devices.forEach { (address, name) ->
+                DropdownMenuItem(
+                    text = { Text("$name  ($address)") },
+                    onClick = {
+                        onSelect(address, name)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * BLE-serial device picker. A BLE-UART peripheral (an nRF board, an HM-10, a BLE
+ * RS232 adapter) usually isn't bonded, so it must be discovered by an active
+ * scan rather than read from bondedDevices. Requests BLUETOOTH_SCAN (+ pre-31
+ * location) on demand, scans while the button is pressed (auto-stopping after a
+ * timeout), and reports (address, name) on selection.
+ */
+@android.annotation.SuppressLint("MissingPermission") // scan/connect guarded by `granted`
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BleSerialDeviceField(
+    selectedAddress: String,
+    onSelect: (address: String, name: String) -> Unit,
+) {
+    val context = LocalContext.current
+    val scanPerms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        arrayOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+    fun hasPerms(): Boolean = scanPerms.all {
+        androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+    var granted by remember { mutableStateOf(hasPerms()) }
+    var scanning by remember { mutableStateOf(false) }
+    val found = remember { mutableStateMapOf<String, String>() } // MAC -> name
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result -> granted = result.values.all { it } }
+
+    val scanner = remember {
+        (context.getSystemService(android.content.Context.BLUETOOTH_SERVICE)
+            as? android.bluetooth.BluetoothManager)?.adapter?.bluetoothLeScanner
+    }
+    val callback = remember {
+        object : android.bluetooth.le.ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: android.bluetooth.le.ScanResult) {
+                val dev = result.device
+                val name = result.scanRecord?.deviceName
+                    ?: runCatching { dev.name }.getOrNull()
+                    ?: dev.address
+                found[dev.address] = name
+            }
+        }
+    }
+
+    // Scan only while `scanning`; always stop on leaving composition.
+    androidx.compose.runtime.DisposableEffect(scanning, granted) {
+        if (scanning && granted && scanner != null) {
+            val settings = android.bluetooth.le.ScanSettings.Builder()
+                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build()
+            runCatching { scanner.startScan(null, settings, callback) }
+        }
+        onDispose { runCatching { scanner?.stopScan(callback) } }
+    }
+    LaunchedEffect(scanning) {
+        if (scanning) {
+            kotlinx.coroutines.delay(12_000)
+            scanning = false
+        }
+    }
+
+    ConnectionSection(stringResource(R.string.connections_section_bleserial))
+    Text(
+        stringResource(R.string.connections_bleserial_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+
+    if (!granted) {
+        OutlinedButton(onClick = { permLauncher.launch(scanPerms) }) {
+            Text(stringResource(R.string.connections_bleserial_permission))
+        }
+        return
+    }
+
+    OutlinedButton(onClick = { found.clear(); scanning = true }, enabled = !scanning) {
+        Text(
+            stringResource(
+                if (scanning) R.string.connections_bleserial_scanning
+                else R.string.connections_bleserial_scan,
+            ),
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+
+    val entries = found.entries.map { it.key to it.value }.sortedBy { it.second }
+    if (entries.isEmpty()) {
+        if (!scanning) {
+            Text(
+                stringResource(R.string.connections_bleserial_no_devices),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = entries.firstOrNull { it.first == selectedAddress }
+        ?.let { "${it.second} (${it.first})" }
+        ?: selectedAddress
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selectedLabel,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(stringResource(R.string.connections_bleserial_device)) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            entries.forEach { (address, name) ->
                 DropdownMenuItem(
                     text = { Text("$name  ($address)") },
                     onClick = {

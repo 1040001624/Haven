@@ -8,6 +8,7 @@ import io.mockk.verify
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import sh.haven.core.bleserial.BleSerialSessionManager
 import sh.haven.core.btserial.BtSerialSessionManager
 import sh.haven.core.et.EtSessionManager
 import sh.haven.core.local.LocalSessionManager
@@ -28,6 +29,7 @@ class SessionManagerRegistryInputTest {
     private val et = mockk<EtSessionManager>(relaxed = true)
     private val reticulum = mockk<ReticulumSessionManager>(relaxed = true)
     private val btSerial = mockk<BtSerialSessionManager>(relaxed = true)
+    private val bleSerial = mockk<BleSerialSessionManager>(relaxed = true)
 
     private fun registry() = SessionManagerRegistry(
         ssh = ssh,
@@ -35,6 +37,7 @@ class SessionManagerRegistryInputTest {
         mosh = mosh,
         et = et,
         btSerial = btSerial,
+        bleSerial = bleSerial,
         smb = mockk(relaxed = true),
         local = local,
         rdp = mockk(relaxed = true),
@@ -55,18 +58,20 @@ class SessionManagerRegistryInputTest {
                 is EtSessionManager -> every { m.sendInput(any(), any()) } throws IllegalStateException(msg)
                 is ReticulumSessionManager -> every { m.sendInput(any(), any()) } throws IllegalStateException(msg)
                 is BtSerialSessionManager -> every { m.sendInput(any(), any()) } throws IllegalStateException(msg)
+                is BleSerialSessionManager -> every { m.sendInput(any(), any()) } throws IllegalStateException(msg)
             }
         }
     }
 
     private fun name(m: Any) = when (m) {
         ssh -> "SSH"; local -> "local"; mosh -> "mosh"; et -> "ET"; reticulum -> "Reticulum"; btSerial -> "Bluetooth-serial"
+        bleSerial -> "BLE-serial"
         else -> "?"
     }
 
     @Test
     fun `input reaches a mosh-owned session`() {
-        disown(ssh, local, et, reticulum, btSerial, transport = ::name)
+        disown(ssh, local, et, reticulum, btSerial, bleSerial, transport = ::name)
         every { mosh.sendInput("s1", "ls\r") } just runs
 
         registry().sendTerminalInput("s1", "ls\r")
@@ -76,7 +81,7 @@ class SessionManagerRegistryInputTest {
 
     @Test
     fun `input reaches an ET-owned session`() {
-        disown(ssh, local, mosh, reticulum, btSerial, transport = ::name)
+        disown(ssh, local, mosh, reticulum, btSerial, bleSerial, transport = ::name)
         every { et.sendInput("s1", "x") } just runs
 
         registry().sendTerminalInput("s1", "x")
@@ -86,14 +91,14 @@ class SessionManagerRegistryInputTest {
 
     @Test
     fun `no owner names all transports`() {
-        disown(ssh, local, mosh, et, reticulum, btSerial, transport = ::name)
+        disown(ssh, local, mosh, et, reticulum, btSerial, bleSerial, transport = ::name)
 
         try {
             registry().sendTerminalInput("s1", "x")
             fail("expected IllegalStateException")
         } catch (e: IllegalStateException) {
             val msg = e.message ?: ""
-            for (t in listOf("SSH", "local", "mosh", "ET", "Reticulum", "Bluetooth-serial")) {
+            for (t in listOf("SSH", "local", "mosh", "ET", "Reticulum", "Bluetooth-serial", "BLE-serial")) {
                 assertTrue("error should name $t: \"$msg\"", msg.contains(t))
             }
         }
@@ -101,7 +106,7 @@ class SessionManagerRegistryInputTest {
 
     @Test
     fun `owner's diagnosis wins over not-mine errors`() {
-        disown(local, mosh, et, reticulum, btSerial, transport = ::name)
+        disown(local, mosh, et, reticulum, btSerial, bleSerial, transport = ::name)
         every { ssh.sendInput(any(), any()) } throws
             IllegalStateException("Session s1 has no active terminal — open a terminal tab first")
 
