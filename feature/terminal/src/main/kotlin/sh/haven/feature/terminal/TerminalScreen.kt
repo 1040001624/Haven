@@ -1146,19 +1146,22 @@ fun TerminalScreen(
                                 initialFontSize = fontSize.sp,
                                 typeface = hackTypeface,
                                 keyboardEnabled = true,
-                                // Reflow (resize) on a keyboard toggle when a
-                                // full-screen TUI is running, so its top status
-                                // row isn't shifted off the top (#206 / tmux
-                                // copy-mode indicator). The alt screen reflows
-                                // intrinsically in termlib; mouse tracking is the
-                                // primary-buffer signal — Haven forces `mouse on`
-                                // for tmux/byobu and zellij uses the alt screen,
-                                // so this covers the multiplexers. A plain shell
-                                // (no mouse) keeps the no-resize render-shift —
-                                // unless the user opts every session into reflow
-                                // (#242) for a primary-buffer TUI the heuristic
-                                // can't detect.
-                                reflowOnKeyboard = isMouseMode || reflowTerminalOnKeyboard,
+                                // Reflow (resize) the PTY on a keyboard toggle
+                                // when a full-screen TUI is running, so its top
+                                // status/header row isn't shifted off the top
+                                // (#206 / tmux copy-mode indicator / mutt header
+                                // #407). The alt screen is the reliable
+                                // full-screen signal — mutt, vim, less, htop and
+                                // nested compositors all switch to it, so reflow
+                                // it automatically (termlib reflows alt-screen
+                                // content correctly on resize). Mouse tracking
+                                // additionally catches the primary-buffer
+                                // multiplexers (Haven forces `mouse on` for
+                                // tmux/byobu). A plain-shell primary-buffer TUI
+                                // the heuristics miss (e.g. `top`) keeps the
+                                // no-resize render-shift unless the user opts in
+                                // (#242).
+                                reflowOnKeyboard = isMouseMode || isAltScreen || reflowTerminalOnKeyboard,
                                 backgroundColor = terminalBg,
                                 foregroundColor = terminalFg,
                                 backgroundOpacity = effectiveBgOpacity,
