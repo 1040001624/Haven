@@ -1187,7 +1187,6 @@ class SftpViewModel @Inject constructor(
     /** Per-profile state cache so tab switching preserves path and entries. */
     private data class ProfileBrowseState(
         val path: String,
-        val entries: List<SftpEntry>,
         val allEntries: List<SftpEntry>,
     )
     private val profileStateCache = mutableMapOf<String, ProfileBrowseState>()
@@ -1300,7 +1299,6 @@ class SftpViewModel @Inject constructor(
         _activeProfileId.value?.let { prevId ->
             profileStateCache[prevId] = ProfileBrowseState(
                 path = _currentPath.value,
-                entries = _entries.value,
                 allEntries = _allEntries.value,
             )
         }
@@ -1326,7 +1324,11 @@ class SftpViewModel @Inject constructor(
         if (cached != null) {
             _currentPath.value = cached.path
             _allEntries.value = cached.allEntries
-            _entries.value = cached.entries
+            // Re-derive the visible list from the CURRENT global filter (show-hidden /
+            // name filter) rather than the list cached when this tab was last active —
+            // otherwise the toolbar's show-hidden icon (global) and this tab's contents
+            // disagree after you toggle it on another tab.
+            applyFilter()
             // Still need to re-establish the backend connection
             when {
                 isLocal -> { /* no connection needed */ }
