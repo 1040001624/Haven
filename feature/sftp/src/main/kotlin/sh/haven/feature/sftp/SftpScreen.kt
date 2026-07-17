@@ -130,6 +130,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -2546,8 +2551,32 @@ private fun FileListItem(
                 @Suppress("LocalContextGetResourceValueCall")
                 val sizeText = if (entry.isDirectory) context.getString(R.string.sftp_directory) else Formatter.formatFileSize(context, entry.size)
                 val dateText = dateFormat.format(Date(entry.modifiedTime * 1000))
-                val extra = entry.permissions.takeIf { it.isNotEmpty() }?.let { "  $it" } ?: ""
-                Text("$sizeText  $dateText$extra")
+                val perms = entry.permissions.takeIf { it.isNotEmpty() }
+                val onPerms = onPermissions
+                if (perms != null && onPerms != null && !selectionActive) {
+                    // Tapping the permission string opens the chmod dialog directly (#414).
+                    // The long-press menu still works; this just makes it discoverable —
+                    // users look at the perms text when they want to change them.
+                    val linkColor = MaterialTheme.colorScheme.primary
+                    Text(
+                        buildAnnotatedString {
+                            append("$sizeText  $dateText  ")
+                            withLink(
+                                LinkAnnotation.Clickable(
+                                    tag = "chmod",
+                                    styles = TextLinkStyles(
+                                        style = SpanStyle(color = linkColor, fontFamily = FontFamily.Monospace),
+                                    ),
+                                ) { onPerms() },
+                            ) {
+                                append(perms)
+                            }
+                        },
+                    )
+                } else {
+                    val extra = perms?.let { "  $it" } ?: ""
+                    Text("$sizeText  $dateText$extra")
+                }
             },
             leadingContent = {
                 if (selectionActive) {
