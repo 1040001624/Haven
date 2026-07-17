@@ -1,0 +1,1 @@
+• Optionales automatisches Stoppen des lokalen Linux-Gasts: Nachdem Haven eine eingestellte Zeit (5–60 Min.) im Hintergrund war, werden Terminals und Desktops des Gasts gestoppt, um Speicher freizugeben. Standardmäßig aus; unter Einstellungen → Erweitert aktivieren. Ein laufender Gast-Dienst hält den Gast aktiv, und die Rückkehr zu Haven bricht das Stoppen ab. (#409)

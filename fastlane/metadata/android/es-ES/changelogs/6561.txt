@@ -1,0 +1,1 @@
+• Parada automática opcional del invitado Linux local: cuando Haven ha estado en segundo plano un tiempo definido (5–60 min), detiene las terminales y escritorios del invitado para liberar memoria. Desactivado por defecto; actívalo en Ajustes → Avanzado. Un servicio del invitado en ejecución lo mantiene activo, y volver a Haven cancela la parada. (#409)

@@ -1,0 +1,1 @@
+• Arrêt automatique facultatif de l'invité Linux local : après que Haven est resté en arrière-plan une durée définie (5–60 min), arrête les terminaux et bureaux de l'invité pour libérer de la mémoire. Désactivé par défaut ; activez-le dans Paramètres → Avancé. Un service invité en cours maintient l'invité actif, et revenir à Haven annule l'arrêt. (#409)

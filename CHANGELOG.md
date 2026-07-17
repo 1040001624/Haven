@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.74.0
+
+⏱️ **Auto-stop the idle Linux guest** — an optional timeout that stops the on-device Linux guest (its terminals and desktops) after Haven has sat in the background for a while, to reclaim memory. Off by default; turn it on in **Settings → Advanced → "Auto-stop idle Linux guest"** and pick 5, 15, 30 or 60 minutes. A running guest service keeps the guest up, and returning to Haven before the timeout cancels the stop. Note: a long job left running in a backgrounded terminal would be stopped too, which is why it's off by default. (#409, thanks sugerpersion)
+
 ## v5.73.0
 
 🔌 **USB-serial connections are now first-class across Haven** — a USB-serial terminal (Arduino, Duet3D, ESP32, a USB-TTL adapter…) is now integrated the same way Bluetooth and BLE serial already were. It shows up in the agent's session list, the agent can type into it and read it back, and it can be exposed as a local TCP port via the serial↔TCP bridge (v5.72.0) so a tunnel or SSH port-forward carries the device off-phone. USB-serial tabs are also captured in workspaces now, and disconnecting a USB-serial connection works from every screen. Device-verified end-to-end against a USB-CDC adapter.

@@ -1,0 +1,1 @@
+• Optional auto-stop for the on-device Linux guest: after Haven has been in the background for a set time (5–60 min), stop the guest's terminals and desktops to free memory. Off by default; turn it on in Settings → Advanced. A running guest service keeps the guest up, and returning to Haven cancels the stop. (#409)
