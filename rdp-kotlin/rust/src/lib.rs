@@ -962,8 +962,8 @@ fn run_rdp_session(
         use x509_cert::der::Decode as _;
         let cert = x509_cert::Certificate::from_der(&raw_cert_der)
             .map_err(|e| format!("parse server cert: {}", e))?;
-        cert.tbs_certificate
-            .subject_public_key_info
+        cert.tbs_certificate()
+            .subject_public_key_info()
             .subject_public_key
             .as_bytes()
             .ok_or_else(|| "subject public key BIT STRING is not byte-aligned".to_string())?
