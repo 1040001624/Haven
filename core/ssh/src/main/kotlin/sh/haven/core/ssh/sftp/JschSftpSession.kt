@@ -26,15 +26,6 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class JschSftpSession(private val channel: ChannelSftp) : SftpSession {
 
-    init {
-        // Limit per-request bulk size to reduce the likelihood of JSch's
-        // ChannelSftp.fill() throwing IOException("inputstream is closed")
-        // on VM SSH servers that fragment SFTP response packets.
-        // The default bulk size triggers the issue more readily on Android +
-        // local VM combinations (mwiede/jsch#858).
-        channel.setBulkSize(BULK_SIZE)
-    }
-
     override val isConnected: Boolean
         get() = channel.isConnected
 
@@ -215,14 +206,5 @@ internal class JschSftpSession(private val channel: ChannelSftp) : SftpSession {
     private companion object {
         /** Pipe capacity for the streamed SFTP download (back-pressures the producer). */
         const val PIPE_BUFFER_BYTES = 1 shl 20 // 1 MiB
-
-        /**
-         * Max bytes per SFTP read/write request. Smaller values reduce the
-         * chance of JSch's internal [ChannelSftp.fill] misinterpreting a
-         * fragmented response as a closed stream, particularly against VM
-         * SSH servers on Android. 16 KiB is conservative — performance
-         * impact is negligible for directory listings and small transfers.
-         */
-        const val BULK_SIZE = 16 * 1024 // 16 KiB
     }
 }
