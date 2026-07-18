@@ -275,4 +275,17 @@
     <string name="app_desktop_open_terminal_cd">%1$s में टर्मिनल खोलें</string>
     <string name="app_present_fullscreen">फ़ुल स्क्रीन</string>
     <string name="app_present_exit_fullscreen">फ़ुल स्क्रीन से बाहर निकलें</string>
+    <string name="tasker_plugin_name">Haven सर्वर पर कमांड चलाएँ</string>
+    <string name="tasker_edit_title">किसी सहेजे गए Haven SSH कनेक्शन पर शेल कमांड चलाएँ।</string>
+    <string name="tasker_loading">कनेक्शन लोड हो रहे हैं…</string>
+    <string name="tasker_no_ssh_profiles">कोई SSH कनेक्शन सहेजा नहीं गया। पहले Haven में एक जोड़ें।</string>
+    <string name="tasker_field_server">Haven सर्वर</string>
+    <string name="tasker_field_command">कमांड</string>
+    <string name="tasker_field_command_help">लॉगिन शेल में चलता है। चलने से पहले Tasker/MacroDroid वैरिएबल प्रतिस्थापित किए जाते हैं।</string>
+    <string name="tasker_toggle_overlay">चलने के दौरान Haven को सामने लाएँ</string>
+    <string name="tasker_toggle_block">कमांड पूरा होने तक प्रतीक्षा करें</string>
+    <string name="tasker_channel_name">कमांड परिणाम</string>
+    <string name="tasker_result_exit">%1$s — एग्ज़िट कोड %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — समय समाप्त</string>
+    <string name="tasker_result_failed">%1$s — विफल</string>
 </resources>

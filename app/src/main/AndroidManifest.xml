@@ -79,6 +79,31 @@
             </intent-filter>
         </activity>
 
+        <!-- Tasker / Locale / MacroDroid plugin: "Run command on a Haven
+             server" (#367). The edit activity is the config screen the host
+             opens when adding the action; the receiver fires when the macro
+             runs. Both must be exported so the host can reach them; the
+             receiver validates the config bundle before acting. -->
+        <activity
+            android:name="sh.haven.app.tasker.TaskerEditActivity"
+            android:exported="true"
+            android:label="@string/tasker_plugin_name"
+            android:icon="@mipmap/ic_launcher"
+            android:theme="@style/Theme.Haven"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name="sh.haven.app.tasker.TaskerFireReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.FIRE_SETTING" />
+            </intent-filter>
+        </receiver>
+
         <!-- Cloudflare Access SSH login WebView (#154). Hosts the IdP
              auth flow and captures the CF_Authorization JWT cookie. -->
         <activity

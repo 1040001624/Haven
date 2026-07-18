@@ -281,4 +281,17 @@
     <string name="app_desktop_open_terminal_cd">Открыть терминал в %1$s</string>
     <string name="app_present_fullscreen">Во весь экран</string>
     <string name="app_present_exit_fullscreen">Выйти из полноэкранного режима</string>
+    <string name="tasker_plugin_name">Выполнить команду на сервере Haven</string>
+    <string name="tasker_edit_title">Выполнить команду оболочки на сохранённом SSH-подключении Haven.</string>
+    <string name="tasker_loading">Загрузка подключений…</string>
+    <string name="tasker_no_ssh_profiles">Нет сохранённых SSH-подключений. Сначала добавьте подключение в Haven.</string>
+    <string name="tasker_field_server">Сервер Haven</string>
+    <string name="tasker_field_command">Команда</string>
+    <string name="tasker_field_command_help">Выполняется в командной оболочке входа. Переменные Tasker/MacroDroid подставляются перед выполнением.</string>
+    <string name="tasker_toggle_overlay">Выводить Haven на передний план во время выполнения</string>
+    <string name="tasker_toggle_block">Ждать завершения команды</string>
+    <string name="tasker_channel_name">Результаты команд</string>
+    <string name="tasker_result_exit">%1$s — код выхода %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — превышено время ожидания</string>
+    <string name="tasker_result_failed">%1$s — ошибка</string>
 </resources>

@@ -275,4 +275,17 @@
     <string name="app_desktop_open_terminal_cd">%1$s でターミナルを開く</string>
     <string name="app_present_fullscreen">全画面表示</string>
     <string name="app_present_exit_fullscreen">全画面表示を終了</string>
+    <string name="tasker_plugin_name">Haven サーバーでコマンドを実行</string>
+    <string name="tasker_edit_title">保存済みの Haven SSH 接続でシェルコマンドを実行します。</string>
+    <string name="tasker_loading">接続を読み込み中…</string>
+    <string name="tasker_no_ssh_profiles">保存された SSH 接続がありません。まず Haven で追加してください。</string>
+    <string name="tasker_field_server">Haven サーバー</string>
+    <string name="tasker_field_command">コマンド</string>
+    <string name="tasker_field_command_help">ログインシェルで実行されます。Tasker/MacroDroid の変数は実行前に置換されます。</string>
+    <string name="tasker_toggle_overlay">実行中に Haven を前面に表示する</string>
+    <string name="tasker_toggle_block">コマンドが完了するまで待つ</string>
+    <string name="tasker_channel_name">コマンド結果</string>
+    <string name="tasker_result_exit">%1$s — 終了コード %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — タイムアウト</string>
+    <string name="tasker_result_failed">%1$s — 失敗</string>
 </resources>

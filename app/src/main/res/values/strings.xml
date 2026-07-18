@@ -298,4 +298,20 @@
     <string name="agent_summary_enabled">enabled</string>
     <string name="app_present_fullscreen">Fullscreen</string>
     <string name="app_present_exit_fullscreen">Exit fullscreen</string>
+
+    <!-- Tasker/MacroDroid plugin (#367) -->
+    <string name="tasker_plugin_name">Run command on a Haven server</string>
+    <string name="tasker_edit_title">Run a shell command on a saved Haven SSH connection.</string>
+    <string name="tasker_loading">Loading connections…</string>
+    <string name="tasker_no_ssh_profiles">No SSH connections saved. Add one in Haven first.</string>
+    <string name="tasker_field_server">Haven server</string>
+    <string name="tasker_field_command">Command</string>
+    <string name="tasker_field_command_help">Runs in the login shell. Tasker/MacroDroid variables are substituted before it runs.</string>
+    <string name="tasker_toggle_overlay">Bring Haven to the front while it runs</string>
+    <string name="tasker_toggle_block">Wait until the command finishes</string>
+    <string name="tasker_blurb" translatable="false">%1$s: %2$s</string>
+    <string name="tasker_channel_name">Command results</string>
+    <string name="tasker_result_exit">%1$s — exit %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — timed out</string>
+    <string name="tasker_result_failed">%1$s — failed</string>
 </resources>

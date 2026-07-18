@@ -5011,6 +5011,270 @@
       "ru": "Выйти из полноэкранного режима",
       "zh": "退出全屏"
      }
+    },
+    {
+     "name": "tasker_plugin_name",
+     "en": "Run command on a Haven server",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "تشغيل أمر على خادم Haven",
+      "bn": "Haven সার্ভারে কমান্ড চালান",
+      "de": "Befehl auf einem Haven-Server ausführen",
+      "es": "Ejecutar un comando en un servidor Haven",
+      "fr": "Exécuter une commande sur un serveur Haven",
+      "hi": "Haven सर्वर पर कमांड चलाएँ",
+      "ja": "Haven サーバーでコマンドを実行",
+      "ko": "Haven 서버에서 명령 실행",
+      "pt": "Executar um comando em um servidor Haven",
+      "ru": "Выполнить команду на сервере Haven",
+      "zh": "在 Haven 服务器上运行命令"
+     }
+    },
+    {
+     "name": "tasker_edit_title",
+     "en": "Run a shell command on a saved Haven SSH connection.",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "تشغيل أمر shell على اتصال SSH محفوظ في Haven.",
+      "bn": "একটি সংরক্ষিত Haven SSH সংযোগে শেল কমান্ড চালান।",
+      "de": "Einen Shell-Befehl über eine gespeicherte Haven-SSH-Verbindung ausführen.",
+      "es": "Ejecuta un comando de shell en una conexión SSH de Haven guardada.",
+      "fr": "Exécuter une commande shell sur une connexion SSH Haven enregistrée.",
+      "hi": "किसी सहेजे गए Haven SSH कनेक्शन पर शेल कमांड चलाएँ।",
+      "ja": "保存済みの Haven SSH 接続でシェルコマンドを実行します。",
+      "ko": "저장된 Haven SSH 연결에서 셸 명령을 실행합니다.",
+      "pt": "Execute um comando de shell em uma conexão SSH do Haven salva.",
+      "ru": "Выполнить команду оболочки на сохранённом SSH-подключении Haven.",
+      "zh": "在已保存的 Haven SSH 连接上运行 shell 命令。"
+     }
+    },
+    {
+     "name": "tasker_loading",
+     "en": "Loading connections…",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "جارٍ تحميل الاتصالات…",
+      "bn": "সংযোগ লোড হচ্ছে…",
+      "de": "Verbindungen werden geladen…",
+      "es": "Cargando conexiones…",
+      "fr": "Chargement des connexions…",
+      "hi": "कनेक्शन लोड हो रहे हैं…",
+      "ja": "接続を読み込み中…",
+      "ko": "연결 불러오는 중…",
+      "pt": "Carregando conexões…",
+      "ru": "Загрузка подключений…",
+      "zh": "正在加载连接…"
+     }
+    },
+    {
+     "name": "tasker_no_ssh_profiles",
+     "en": "No SSH connections saved. Add one in Haven first.",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "لا توجد اتصالات SSH محفوظة. أضِف واحدًا في Haven أولاً.",
+      "bn": "কোনো SSH সংযোগ সংরক্ষিত নেই। প্রথমে Haven-এ একটি যোগ করুন।",
+      "de": "Keine SSH-Verbindungen gespeichert. Fügen Sie zuerst in Haven eine hinzu.",
+      "es": "No hay conexiones SSH guardadas. Añade una en Haven primero.",
+      "fr": "Aucune connexion SSH enregistrée. Ajoutez-en une dans Haven d\\'abord.",
+      "hi": "कोई SSH कनेक्शन सहेजा नहीं गया। पहले Haven में एक जोड़ें।",
+      "ja": "保存された SSH 接続がありません。まず Haven で追加してください。",
+      "ko": "저장된 SSH 연결이 없습니다. 먼저 Haven에서 추가하세요.",
+      "pt": "Nenhuma conexão SSH salva. Adicione uma no Haven primeiro.",
+      "ru": "Нет сохранённых SSH-подключений. Сначала добавьте подключение в Haven.",
+      "zh": "没有已保存的 SSH 连接。请先在 Haven 中添加一个。"
+     }
+    },
+    {
+     "name": "tasker_field_server",
+     "en": "Haven server",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "خادم Haven",
+      "bn": "Haven সার্ভার",
+      "de": "Haven-Server",
+      "es": "Servidor Haven",
+      "fr": "Serveur Haven",
+      "hi": "Haven सर्वर",
+      "ja": "Haven サーバー",
+      "ko": "Haven 서버",
+      "pt": "Servidor Haven",
+      "ru": "Сервер Haven",
+      "zh": "Haven 服务器"
+     }
+    },
+    {
+     "name": "tasker_field_command",
+     "en": "Command",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "الأمر",
+      "bn": "কমান্ড",
+      "de": "Befehl",
+      "es": "Comando",
+      "fr": "Commande",
+      "hi": "कमांड",
+      "ja": "コマンド",
+      "ko": "명령",
+      "pt": "Comando",
+      "ru": "Команда",
+      "zh": "命令"
+     }
+    },
+    {
+     "name": "tasker_field_command_help",
+     "en": "Runs in the login shell. Tasker/MacroDroid variables are substituted before it runs.",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "يعمل في صدفة تسجيل الدخول. تُستبدل متغيرات Tasker/MacroDroid قبل تشغيله.",
+      "bn": "লগইন শেলে চলে। চালানোর আগে Tasker/MacroDroid ভেরিয়েবল প্রতিস্থাপিত হয়।",
+      "de": "Wird in der Login-Shell ausgeführt. Tasker/MacroDroid-Variablen werden vor der Ausführung ersetzt.",
+      "es": "Se ejecuta en el shell de inicio de sesión. Las variables de Tasker/MacroDroid se sustituyen antes de ejecutarlo.",
+      "fr": "S\\'exécute dans le shell de connexion. Les variables Tasker/MacroDroid sont substituées avant l\\'exécution.",
+      "hi": "लॉगिन शेल में चलता है। चलने से पहले Tasker/MacroDroid वैरिएबल प्रतिस्थापित किए जाते हैं।",
+      "ja": "ログインシェルで実行されます。Tasker/MacroDroid の変数は実行前に置換されます。",
+      "ko": "로그인 셸에서 실행됩니다. Tasker/MacroDroid 변수는 실행 전에 치환됩니다.",
+      "pt": "É executado no shell de login. As variáveis do Tasker/MacroDroid são substituídas antes da execução.",
+      "ru": "Выполняется в командной оболочке входа. Переменные Tasker/MacroDroid подставляются перед выполнением.",
+      "zh": "在登录 shell 中运行。Tasker/MacroDroid 变量会在运行前被替换。"
+     }
+    },
+    {
+     "name": "tasker_toggle_overlay",
+     "en": "Bring Haven to the front while it runs",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "إحضار Haven إلى المقدمة أثناء التشغيل",
+      "bn": "চলার সময় Haven-কে সামনে আনুন",
+      "de": "Haven während der Ausführung in den Vordergrund bringen",
+      "es": "Traer Haven al frente mientras se ejecuta",
+      "fr": "Mettre Haven au premier plan pendant l\\'exécution",
+      "hi": "चलने के दौरान Haven को सामने लाएँ",
+      "ja": "実行中に Haven を前面に表示する",
+      "ko": "실행하는 동안 Haven을 앞으로 가져오기",
+      "pt": "Trazer o Haven para a frente enquanto é executado",
+      "ru": "Выводить Haven на передний план во время выполнения",
+      "zh": "运行时将 Haven 置于前台"
+     }
+    },
+    {
+     "name": "tasker_toggle_block",
+     "en": "Wait until the command finishes",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "الانتظار حتى ينتهي الأمر",
+      "bn": "কমান্ড শেষ হওয়া পর্যন্ত অপেক্ষা করুন",
+      "de": "Warten, bis der Befehl abgeschlossen ist",
+      "es": "Esperar a que el comando termine",
+      "fr": "Attendre la fin de la commande",
+      "hi": "कमांड पूरा होने तक प्रतीक्षा करें",
+      "ja": "コマンドが完了するまで待つ",
+      "ko": "명령이 끝날 때까지 대기",
+      "pt": "Aguardar até o comando terminar",
+      "ru": "Ждать завершения команды",
+      "zh": "等待命令完成"
+     }
+    },
+    {
+     "name": "tasker_blurb",
+     "en": "%1$s: %2$s",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [
+      "%1$s",
+      "%2$s"
+     ],
+     "t": {}
+    },
+    {
+     "name": "tasker_channel_name",
+     "en": "Command results",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "نتائج الأوامر",
+      "bn": "কমান্ড ফলাফল",
+      "de": "Befehlsergebnisse",
+      "es": "Resultados de comandos",
+      "fr": "Résultats des commandes",
+      "hi": "कमांड परिणाम",
+      "ja": "コマンド結果",
+      "ko": "명령 결과",
+      "pt": "Resultados de comandos",
+      "ru": "Результаты команд",
+      "zh": "命令结果"
+     }
+    },
+    {
+     "name": "tasker_result_exit",
+     "en": "%1$s — exit %2$d",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [
+      "%1$s",
+      "%2$d"
+     ],
+     "t": {
+      "ar": "%1$s — رمز الخروج %2$d",
+      "bn": "%1$s — এক্সিট কোড %2$d",
+      "de": "%1$s — Exit-Code %2$d",
+      "es": "%1$s — salida %2$d",
+      "fr": "%1$s — sortie %2$d",
+      "hi": "%1$s — एग्ज़िट कोड %2$d",
+      "ja": "%1$s — 終了コード %2$d",
+      "ko": "%1$s — 종료 코드 %2$d",
+      "pt": "%1$s — saída %2$d",
+      "ru": "%1$s — код выхода %2$d",
+      "zh": "%1$s — 退出码 %2$d"
+     }
+    },
+    {
+     "name": "tasker_result_timed_out",
+     "en": "%1$s — timed out",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [
+      "%1$s"
+     ],
+     "t": {
+      "ar": "%1$s — انتهت المهلة",
+      "bn": "%1$s — সময় শেষ",
+      "de": "%1$s — Zeitüberschreitung",
+      "es": "%1$s — se agotó el tiempo",
+      "fr": "%1$s — délai dépassé",
+      "hi": "%1$s — समय समाप्त",
+      "ja": "%1$s — タイムアウト",
+      "ko": "%1$s — 시간 초과",
+      "pt": "%1$s — tempo esgotado",
+      "ru": "%1$s — превышено время ожидания",
+      "zh": "%1$s — 已超时"
+     }
+    },
+    {
+     "name": "tasker_result_failed",
+     "en": "%1$s — failed",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [
+      "%1$s"
+     ],
+     "t": {
+      "ar": "%1$s — فشل",
+      "bn": "%1$s — ব্যর্থ",
+      "de": "%1$s — fehlgeschlagen",
+      "es": "%1$s — falló",
+      "fr": "%1$s — échec",
+      "hi": "%1$s — विफल",
+      "ja": "%1$s — 失敗",
+      "ko": "%1$s — 실패",
+      "pt": "%1$s — falhou",
+      "ru": "%1$s — ошибка",
+      "zh": "%1$s — 失败"
+     }
     }
    ]
   },

@@ -275,4 +275,17 @@
     <string name="app_desktop_open_terminal_cd">%1$s-এ টার্মিনাল খুলুন</string>
     <string name="app_present_fullscreen">পূর্ণ স্ক্রিন</string>
     <string name="app_present_exit_fullscreen">পূর্ণ স্ক্রিন থেকে বের হন</string>
+    <string name="tasker_plugin_name">Haven সার্ভারে কমান্ড চালান</string>
+    <string name="tasker_edit_title">একটি সংরক্ষিত Haven SSH সংযোগে শেল কমান্ড চালান।</string>
+    <string name="tasker_loading">সংযোগ লোড হচ্ছে…</string>
+    <string name="tasker_no_ssh_profiles">কোনো SSH সংযোগ সংরক্ষিত নেই। প্রথমে Haven-এ একটি যোগ করুন।</string>
+    <string name="tasker_field_server">Haven সার্ভার</string>
+    <string name="tasker_field_command">কমান্ড</string>
+    <string name="tasker_field_command_help">লগইন শেলে চলে। চালানোর আগে Tasker/MacroDroid ভেরিয়েবল প্রতিস্থাপিত হয়।</string>
+    <string name="tasker_toggle_overlay">চলার সময় Haven-কে সামনে আনুন</string>
+    <string name="tasker_toggle_block">কমান্ড শেষ হওয়া পর্যন্ত অপেক্ষা করুন</string>
+    <string name="tasker_channel_name">কমান্ড ফলাফল</string>
+    <string name="tasker_result_exit">%1$s — এক্সিট কোড %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — সময় শেষ</string>
+    <string name="tasker_result_failed">%1$s — ব্যর্থ</string>
 </resources>

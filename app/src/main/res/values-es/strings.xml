@@ -281,4 +281,17 @@
     <string name="app_desktop_open_terminal_cd">Abrir terminal en %1$s</string>
     <string name="app_present_fullscreen">Pantalla completa</string>
     <string name="app_present_exit_fullscreen">Salir de pantalla completa</string>
+    <string name="tasker_plugin_name">Ejecutar un comando en un servidor Haven</string>
+    <string name="tasker_edit_title">Ejecuta un comando de shell en una conexión SSH de Haven guardada.</string>
+    <string name="tasker_loading">Cargando conexiones…</string>
+    <string name="tasker_no_ssh_profiles">No hay conexiones SSH guardadas. Añade una en Haven primero.</string>
+    <string name="tasker_field_server">Servidor Haven</string>
+    <string name="tasker_field_command">Comando</string>
+    <string name="tasker_field_command_help">Se ejecuta en el shell de inicio de sesión. Las variables de Tasker/MacroDroid se sustituyen antes de ejecutarlo.</string>
+    <string name="tasker_toggle_overlay">Traer Haven al frente mientras se ejecuta</string>
+    <string name="tasker_toggle_block">Esperar a que el comando termine</string>
+    <string name="tasker_channel_name">Resultados de comandos</string>
+    <string name="tasker_result_exit">%1$s — salida %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — se agotó el tiempo</string>
+    <string name="tasker_result_failed">%1$s — falló</string>
 </resources>

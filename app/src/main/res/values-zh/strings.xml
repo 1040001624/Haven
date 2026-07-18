@@ -275,4 +275,17 @@
     <string name="app_desktop_open_terminal_cd">在 %1$s 中打开终端</string>
     <string name="app_present_fullscreen">全屏</string>
     <string name="app_present_exit_fullscreen">退出全屏</string>
+    <string name="tasker_plugin_name">在 Haven 服务器上运行命令</string>
+    <string name="tasker_edit_title">在已保存的 Haven SSH 连接上运行 shell 命令。</string>
+    <string name="tasker_loading">正在加载连接…</string>
+    <string name="tasker_no_ssh_profiles">没有已保存的 SSH 连接。请先在 Haven 中添加一个。</string>
+    <string name="tasker_field_server">Haven 服务器</string>
+    <string name="tasker_field_command">命令</string>
+    <string name="tasker_field_command_help">在登录 shell 中运行。Tasker/MacroDroid 变量会在运行前被替换。</string>
+    <string name="tasker_toggle_overlay">运行时将 Haven 置于前台</string>
+    <string name="tasker_toggle_block">等待命令完成</string>
+    <string name="tasker_channel_name">命令结果</string>
+    <string name="tasker_result_exit">%1$s — 退出码 %2$d</string>
+    <string name="tasker_result_timed_out">%1$s — 已超时</string>
+    <string name="tasker_result_failed">%1$s — 失败</string>
 </resources>
