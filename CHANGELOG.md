@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.79.0
+
+🔌 **Tasker / MacroDroid plugin: run a command on a Haven server** — a native automation action. Pick one of your saved SSH connections, type a shell command (your Tasker/MacroDroid variables are substituted into it before it runs), and optionally wait for it to finish or watch it run live in a terminal. Add it as a plugin action in Tasker or MacroDroid — or drive it with a plain Send-Intent. (#367, thanks ehoeve786)
+
+🗂️ **Mosh: no more empty Files tab** — a Mosh connection now only shows a Files tab while its underlying SSH connection is alive. Mosh's own transport can't carry file browsing, so a dropped SSH connection used to leave a Files tab that never listed anything. (thanks dkoppenh)
+
 ## v5.78.0
 
 🔐 **rclone remotes now show real file permissions** — an SFTP (or any) connection set up through rclone used to display a generic `-rw-r--r--` for every file and `drwxr-xr-x` for every directory, regardless of the actual mode, because Haven's rclone listing dropped the per-file metadata that carries permissions. Haven now reads the real Unix mode from rclone's metadata for backends that expose it (SFTP, local); cloud backends without Unix permissions (Drive, S3, …) keep a sensible default. (#413, thanks dkoppenh)

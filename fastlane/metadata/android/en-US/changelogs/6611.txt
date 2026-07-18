@@ -1,0 +1,7 @@
+v5.79.0
+
+Tasker / MacroDroid plugin
+Run a command on a saved Haven SSH server as an automation action: pick the server, enter a command (your host variables are substituted first), and optionally wait for it to finish or watch it run live in a terminal (#367).
+
+Mosh
+The Files tab now only appears while the SSH connection is alive, instead of showing an empty listing.
