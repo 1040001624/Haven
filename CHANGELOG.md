@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.0
+
+📁 **Files: add any folder as a browsable, editable location** — pick a folder once with Android's folder picker (your Termux home, a USB drive, the Downloads tree, a cloud provider like Nextcloud…) and it becomes its own tab in the Files screen. Browse it, and open a text file to edit it in place — make your changes, tap save, and Haven writes them straight back through the folder's provider. The access is remembered across restarts, and you can drop a location any time from the unlink button on its tab. Plain-text and extension-less files (common in a Termux home) now open in the editor with a single tap. Split out from #273. (#415, thanks timerloggedout-spec)
+
 ## v5.80.0
 
 🔌 **Tasker / MacroDroid plugin: use a command's output in your macro** — the "run a command on a Haven server" action can now hand its result back to Tasker/MacroDroid as local variables: `%hstdout` (the output), `%hstderr` (any errors), and `%hexit` (the exit code, `-1` if the connection failed). Turn on "wait until the command finishes" and the variables are ready for the next step — branch on the exit code, show the output in a notification, or feed it into whatever comes next. (#367, thanks ehoeve786)
