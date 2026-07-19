@@ -290,4 +290,5 @@
     <string name="tasker_result_failed">%1$s — échec</string>
     <string name="tasker_watch_title">Surveiller %1$s</string>
     <string name="tasker_watch_text">Appuyez pour exécuter %1$s dans un terminal en direct</string>
+    <string name="tasker_insert_variable">Insérer une variable</string>
 </resources>

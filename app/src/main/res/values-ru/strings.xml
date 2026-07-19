@@ -296,4 +296,5 @@
     <string name="tasker_result_failed">%1$s — ошибка</string>
     <string name="tasker_watch_title">Наблюдать за %1$s</string>
     <string name="tasker_watch_text">Нажмите, чтобы выполнить %1$s в живом терминале</string>
+    <string name="tasker_insert_variable">Вставить переменную</string>
 </resources>

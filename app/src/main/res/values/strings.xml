@@ -307,6 +307,7 @@
     <string name="tasker_field_server">Haven server</string>
     <string name="tasker_field_command">Command</string>
     <string name="tasker_field_command_help">Runs in the login shell. Tasker/MacroDroid variables are substituted before it runs.</string>
+    <string name="tasker_insert_variable">Insert variable</string>
     <string name="tasker_toggle_overlay">Show the command in a live terminal</string>
     <string name="tasker_toggle_block">Wait until the command finishes</string>
     <string name="tasker_blurb" translatable="false">%1$s: %2$s</string>

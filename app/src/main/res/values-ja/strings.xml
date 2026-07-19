@@ -290,4 +290,5 @@
     <string name="tasker_result_failed">%1$s — 失敗</string>
     <string name="tasker_watch_title">%1$s を監視</string>
     <string name="tasker_watch_text">タップして %1$s をライブターミナルで実行</string>
+    <string name="tasker_insert_variable">変数を挿入</string>
 </resources>

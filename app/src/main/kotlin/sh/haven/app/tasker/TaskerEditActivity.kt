@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,10 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -34,6 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import sh.haven.app.R
@@ -73,6 +80,7 @@ class TaskerEditActivity : ComponentActivity() {
                     seedCommand = seedCommand,
                     seedOverlay = seedOverlay,
                     seedBlock = seedBlock,
+                    hostVariables = TaskerPlugin.hostVariables(intent),
                     onCancel = { setResult(Activity.RESULT_CANCELED); finish() },
                     onSave = { profile, command, overlay, block ->
                         val bundle = TaskerPlugin.buildBundle(
@@ -112,13 +120,14 @@ private fun EditScreen(
     seedCommand: String,
     seedOverlay: Boolean,
     seedBlock: Boolean,
+    hostVariables: List<String>,
     onCancel: () -> Unit,
     onSave: (ConnectionProfile, String, Boolean, Boolean) -> Unit,
 ) {
     var selected by remember(profiles) {
         mutableStateOf(profiles?.firstOrNull { it.id == seedProfileId } ?: profiles?.firstOrNull())
     }
-    var command by remember { mutableStateOf(seedCommand) }
+    var command by remember { mutableStateOf(TextFieldValue(seedCommand)) }
     var overlay by remember { mutableStateOf(seedOverlay) }
     var block by remember { mutableStateOf(seedBlock) }
     var expanded by remember { mutableStateOf(false) }
@@ -164,6 +173,16 @@ private fun EditScreen(
                         onValueChange = { command = it },
                         label = { Text(stringResource(R.string.tasker_field_command)) },
                         supportingText = { Text(stringResource(R.string.tasker_field_command_help)) },
+                        // "…" variable picker — only when the host (Tasker,
+                        // and MacroDroid if it advertises them) hands us a
+                        // variable list; inserts the chosen token at the cursor.
+                        trailingIcon = if (hostVariables.isEmpty()) null else {
+                            {
+                                VariablePicker(hostVariables) { token ->
+                                    command = command.insertAtCursor(token)
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
 
@@ -184,12 +203,44 @@ private fun EditScreen(
                 TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
                 Spacer(Modifier.width(8.dp))
                 Button(
-                    enabled = selected != null && command.isNotBlank(),
-                    onClick = { selected?.let { onSave(it, command.trim(), overlay, block) } },
+                    enabled = selected != null && command.text.isNotBlank(),
+                    onClick = { selected?.let { onSave(it, command.text.trim(), overlay, block) } },
                 ) { Text(stringResource(R.string.common_save)) }
             }
         }
     }
+}
+
+/**
+ * The "…" magic-text button MacroDroid/Tasker users expect beside a command
+ * field (#367). Opens a menu of the host-advertised variables; picking one
+ * calls [onPick] with the token to drop in at the cursor.
+ */
+@Composable
+private fun VariablePicker(variables: List<String>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.tasker_insert_variable)
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.semantics { contentDescription = label }) {
+            Text("…")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            variables.forEach { v ->
+                DropdownMenuItem(
+                    text = { Text(v) },
+                    onClick = { onPick(v); open = false },
+                )
+            }
+        }
+    }
+}
+
+/** Replace the current selection (or insert at the caret) with [insert]. */
+private fun TextFieldValue.insertAtCursor(insert: String): TextFieldValue {
+    val start = selection.min
+    val end = selection.max
+    val newText = text.replaceRange(start, end, insert)
+    return TextFieldValue(text = newText, selection = TextRange(start + insert.length))
 }
 
 @Composable

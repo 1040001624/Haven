@@ -5146,6 +5146,25 @@
      }
     },
     {
+     "name": "tasker_insert_variable",
+     "en": "Insert variable",
+     "comment": "Tasker/MacroDroid plugin (#367)",
+     "args": [],
+     "t": {
+      "ar": "إدراج متغير",
+      "bn": "ভেরিয়েবল সন্নিবেশ করান",
+      "de": "Variable einfügen",
+      "es": "Insertar variable",
+      "fr": "Insérer une variable",
+      "hi": "वेरिएबल डालें",
+      "ja": "変数を挿入",
+      "ko": "변수 삽입",
+      "pt": "Inserir variável",
+      "ru": "Вставить переменную",
+      "zh": "插入变量"
+     }
+    },
+    {
      "name": "tasker_toggle_overlay",
      "en": "Show the command in a live terminal",
      "comment": "Tasker/MacroDroid plugin (#367)",

@@ -290,4 +290,5 @@
     <string name="tasker_result_failed">%1$s — ব্যর্থ</string>
     <string name="tasker_watch_title">%1$s দেখুন</string>
     <string name="tasker_watch_text">লাইভ টার্মিনালে %1$s চালাতে ট্যাপ করুন</string>
+    <string name="tasker_insert_variable">ভেরিয়েবল সন্নিবেশ করান</string>
 </resources>

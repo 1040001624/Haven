@@ -290,4 +290,5 @@
     <string name="tasker_result_failed">%1$s — فشل</string>
     <string name="tasker_watch_title">مراقبة %1$s</string>
     <string name="tasker_watch_text">اضغط لتشغيل %1$s في طرفية مباشرة</string>
+    <string name="tasker_insert_variable">إدراج متغير</string>
 </resources>

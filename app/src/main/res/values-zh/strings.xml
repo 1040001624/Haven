@@ -290,4 +290,5 @@
     <string name="tasker_result_failed">%1$s — 失败</string>
     <string name="tasker_watch_title">查看 %1$s</string>
     <string name="tasker_watch_text">点按以在实时终端中运行 %1$s</string>
+    <string name="tasker_insert_variable">插入变量</string>
 </resources>

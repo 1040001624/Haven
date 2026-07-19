@@ -38,8 +38,24 @@ object TaskerPlugin {
     // output to the host as local variables the macro can use downstream.
     /** Result-extras key holding the returned-variables Bundle. */
     const val EXTRA_VARIABLES_BUNDLE = "net.dinglisch.android.tasker.extras.VARIABLES"
-    /** EDIT-result extra (String[]) declaring which variables this action sets. */
+    /**
+     * Both directions on the same key. As an EDIT-result extra (String[]) it
+     * declares which variables this action *sets*; on the incoming EDIT intent
+     * the host uses it to advertise the variables *available* at this point in
+     * the macro (see [hostVariables]).
+     */
     const val BUNDLE_KEY_RELEVANT_VARIABLES = "net.dinglisch.android.tasker.RELEVANT_VARIABLES"
+
+    /**
+     * Config-bundle key (space-separated list of bundle keys) telling the host
+     * to scan those values for its own variables and substitute them *before*
+     * firing. Declaring [BUNDLE_COMMAND] here is what makes a typed Tasker
+     * `%var` / MacroDroid magic-text token in the command actually get replaced
+     * at fire time rather than run literally (#367). Lives inside the config
+     * bundle per the Tasker plugin API, not on the result intent.
+     */
+    const val BUNDLE_VARIABLE_REPLACE_KEYS = "net.dinglisch.android.tasker.extras.VARIABLE_REPLACE_KEYS"
+
     const val VAR_STDOUT = "%hstdout"
     const val VAR_STDERR = "%hstderr"
     const val VAR_EXIT = "%hexit"
@@ -64,7 +80,23 @@ object TaskerPlugin {
         putString(BUNDLE_COMMAND, command)
         putBoolean(BUNDLE_OVERLAY, overlay)
         putBoolean(BUNDLE_BLOCK, block)
+        // Let the host substitute its own variables into the command at fire
+        // time (Tasker %vars / MacroDroid magic text). Harmless if the host
+        // ignores it; the receiver just sees the already-substituted command.
+        putString(BUNDLE_VARIABLE_REPLACE_KEYS, BUNDLE_COMMAND)
     }
+
+    /**
+     * Variables the host advertises as available in this macro, read from the
+     * incoming EDIT intent. Tasker always populates this; other hosts may or
+     * may not — an empty list means the edit screen shows no insert button
+     * rather than an empty picker. The tokens are inserted verbatim (already
+     * carrying the host's own prefix/syntax), so nothing here guesses format.
+     */
+    fun hostVariables(intent: Intent): List<String> =
+        intent.getStringArrayExtra(BUNDLE_KEY_RELEVANT_VARIABLES)
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
 
     /**
      * A config Bundle is valid only if it carries a non-blank profile id and
