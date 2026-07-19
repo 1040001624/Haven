@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.3
+
+🗂️ **Mosh & Eternal Terminal: the Files tab now actually lists** — a Mosh (or Eternal Terminal) connection showed a Files tab, but opening it just said "File browser failed" over an empty list. Browsing rides the SSH connection kept alive from the Mosh handshake, and Haven wasn't wiring that connection into the file browser, so it could never list. It now does — the tab lists the remote folder like any SSH/SFTP tab. (#413, thanks dkoppenh)
+
 ## v5.81.2
 
 🔌 **Tasker / MacroDroid plugin: pick your variables from beside the command field** — the "run a command on a Haven server" action's edit screen now has a "…" button next to the command field. It lists the variables your automation host makes available and inserts the one you choose at the cursor, so you no longer have to type them by hand. The command is also now declared as variable-bearing, so your Tasker/MacroDroid variables are reliably substituted into it before it runs. (#367, thanks ehoeve786)
