@@ -5,6 +5,14 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.2
+
+🔌 **Tasker / MacroDroid plugin: pick your variables from beside the command field** — the "run a command on a Haven server" action's edit screen now has a "…" button next to the command field. It lists the variables your automation host makes available and inserts the one you choose at the cursor, so you no longer have to type them by hand. The command is also now declared as variable-bearing, so your Tasker/MacroDroid variables are reliably substituted into it before it runs. (#367, thanks ehoeve786)
+
+🗂️ **SFTP: no more wrong permissions on rclone connections** — rclone's SFTP backend can't report Unix file modes, so Haven had been filling the permission column with a fabricated `-rw-r--r--` — misleading for anything like a `0600` key. It now leaves that column blank for an rclone-SFTP listing instead of showing a made-up value; for real, editable permissions, use a native SSH/SFTP connection. (#413, thanks dkoppenh)
+
+🗂️ **Mosh: correctly hide the Files tab when the bootstrap SSH has silently dropped** — the tab should show only while the underlying SSH is alive, but JSch can keep reporting a quietly-closed session as connected, leaving a Files tab that never lists. Haven now probes the transport with a bounded round-trip, so a dead connection hides the tab as intended. (#413, thanks dkoppenh)
+
 ## v5.81.1
 
 🛠️ **Fix a rare crash when switching back to a saved SFTP tab** — restoring a cached SFTP connection pre-warmed its session in the background without error handling, so if the server tripped JSch's "inputstream is closed" glitch during the handshake, the app could crash. It now fails quietly and the next action opens a fresh session with the normal retry. (#416, thanks mintleaf84)
