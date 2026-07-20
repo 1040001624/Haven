@@ -187,6 +187,7 @@ fun SettingsScreen(
     val connectionLoggingEnabled by viewModel.connectionLoggingEnabled.collectAsState()
     val excludeFromRecents by viewModel.excludeFromRecents.collectAsState()
     val verboseLoggingEnabled by viewModel.verboseLoggingEnabled.collectAsState()
+    val rdpProgressiveUpgrade by viewModel.rdpProgressiveUpgrade.collectAsState()
     val mcpAgentEndpointEnabled by viewModel.mcpAgentEndpointEnabled.collectAsState()
     val agentAllowFileRead by viewModel.agentAllowFileRead.collectAsState()
     val unseenAgentActivity by viewModel.unseenAgentActivity.collectAsState()
@@ -793,6 +794,13 @@ fun SettingsScreen(
             subtitle = stringResource(R.string.settings_connection_logging_subtitle),
             checked = connectionLoggingEnabled,
             onCheckedChange = viewModel::setConnectionLoggingEnabled,
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.BugReport,
+            title = stringResource(R.string.settings_rdp_progressive_upgrade_title),
+            subtitle = stringResource(R.string.settings_rdp_progressive_upgrade_subtitle),
+            checked = rdpProgressiveUpgrade,
+            onCheckedChange = viewModel::setRdpProgressiveUpgrade,
         )
         if (connectionLoggingEnabled) {
             SettingsItem(

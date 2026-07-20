@@ -306,6 +306,14 @@ class SettingsViewModel @Inject constructor(
     val showCopyOutputButton: StateFlow<Boolean> = preferencesRepository.showCopyOutputButton
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** #418 debug: RDP RemoteFX-Progressive upgrade-tile decoding. */
+    val rdpProgressiveUpgrade: StateFlow<Boolean> = preferencesRepository.rdpProgressiveUpgrade
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setRdpProgressiveUpgrade(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setRdpProgressiveUpgrade(enabled) }
+    }
+
     val keepScreenOnInTerminal: StateFlow<Boolean> = preferencesRepository.keepScreenOnInTerminal
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

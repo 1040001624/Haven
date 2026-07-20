@@ -256,6 +256,16 @@ class HavenApp : Application(), Configuration.Provider {
             }
             .launchIn(appScope)
 
+        // #418 debug: bridge the "RDP progressive upgrade" preference into the
+        // process-global RdpDebugToggles the native decoder reads at connect.
+        // Replays on subscribe (seeds at startup) and updates live when the
+        // Settings → Diagnostics toggle changes. Temporary until the upgrade
+        // decode is verified and enabled by default.
+        preferencesRepository.rdpProgressiveUpgrade
+            .distinctUntilChanged()
+            .onEach { sh.haven.core.rdp.RdpDebugToggles.progressiveUpgrade = it }
+            .launchIn(appScope)
+
         // Auto-detect a USB mass-storage drive on plug-in and offer (via a
         // notification) to open it in a VM (#287). Runtime receiver — fires only
         // while the app process is alive, so the notification tap always lands

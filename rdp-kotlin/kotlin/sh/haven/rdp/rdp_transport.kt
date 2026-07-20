@@ -3649,6 +3649,13 @@ data class RdpConfig (
      * [SessionCallback::on_server_cert] so the caller can pin it.
      */
     var `pinnedCertSha256`: kotlin.String?
+    , 
+    /**
+     * #418: enable RemoteFX-Progressive WBT_TILE_UPGRADE refinement decoding.
+     * Hidden/debug opt-in — the upgrade path is not yet verified against real
+     * Windows captures, so callers default this to `false`.
+     */
+    var `progressiveUpgrade`: kotlin.Boolean
     
 ){
     
@@ -3673,6 +3680,7 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterUByte.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -3684,7 +3692,8 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterUShort.allocationSize(value.`height`) +
             FfiConverterUByte.allocationSize(value.`colorDepth`) +
             FfiConverterBoolean.allocationSize(value.`enableCredssp`) +
-            FfiConverterOptionalString.allocationSize(value.`pinnedCertSha256`)
+            FfiConverterOptionalString.allocationSize(value.`pinnedCertSha256`) +
+            FfiConverterBoolean.allocationSize(value.`progressiveUpgrade`)
     )
 
     override fun write(value: RdpConfig, buf: ByteBuffer) {
@@ -3696,6 +3705,7 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterUByte.write(value.`colorDepth`, buf)
             FfiConverterBoolean.write(value.`enableCredssp`, buf)
             FfiConverterOptionalString.write(value.`pinnedCertSha256`, buf)
+            FfiConverterBoolean.write(value.`progressiveUpgrade`, buf)
     }
 }
 

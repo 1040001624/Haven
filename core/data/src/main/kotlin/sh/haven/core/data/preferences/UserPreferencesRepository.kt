@@ -30,6 +30,9 @@ class UserPreferencesRepository @Inject constructor(
     private val terminalScrollbackRowsKey = intPreferencesKey("terminal_scrollback_rows")
     private val prootIdleTimeoutMinutesKey = intPreferencesKey("proot_idle_timeout_minutes")
     private val terminalTapToPositionCursorKey = booleanPreferencesKey("terminal_tap_to_position_cursor")
+    // #418 debug: enable RemoteFX-Progressive WBT_TILE_UPGRADE refinement
+    // decoding for RDP. Off by default while the upgrade path is verified.
+    private val rdpProgressiveUpgradeKey = booleanPreferencesKey("rdp_progressive_upgrade")
     // Absolute path to a user-chosen Nerd Font (or any TTF/OTF). #123.
     private val terminalFontPathKey = stringPreferencesKey("terminal_font_path")
     // Extra trailing prompt characters (beyond $ # % > ❯) for command-on-attach
@@ -225,6 +228,23 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setShowCopyOutputButton(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[showCopyOutputButtonKey] = enabled
+        }
+    }
+
+    /**
+     * #418 debug: decode RemoteFX-Progressive WBT_TILE_UPGRADE refinement
+     * tiles over RDP. Off by default — the upgrade decode is not yet verified
+     * against real Windows streams, so a mis-decode could paint garbage. Meant
+     * for capture verification before it becomes the default. Bridged to the
+     * native decoder via `RdpDebugToggles` in HavenApp.
+     */
+    val rdpProgressiveUpgrade: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[rdpProgressiveUpgradeKey] ?: false
+    }
+
+    suspend fun setRdpProgressiveUpgrade(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[rdpProgressiveUpgradeKey] = enabled
         }
     }
 

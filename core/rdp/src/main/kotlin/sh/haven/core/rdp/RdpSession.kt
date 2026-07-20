@@ -135,6 +135,9 @@ class RdpSession(
                 colorDepth = colorDepth.toUByte(),
                 enableCredssp = useNla,
                 pinnedCertSha256 = pinnedCert,
+                // #418 debug opt-in: WBT_TILE_UPGRADE refinement decoding.
+                // Bridged from Settings → Diagnostics via RdpDebugToggles.
+                progressiveUpgrade = RdpDebugToggles.progressiveUpgrade,
             )
 
             val c = RdpClient(config)

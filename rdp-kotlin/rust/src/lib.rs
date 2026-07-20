@@ -63,6 +63,10 @@ pub struct RdpConfig {
     /// critical #2). The observed fingerprint is reported back via
     /// [SessionCallback::on_server_cert] so the caller can pin it.
     pub pinned_cert_sha256: Option<String>,
+    /// #418: enable RemoteFX-Progressive WBT_TILE_UPGRADE refinement decoding.
+    /// Hidden/debug opt-in — the upgrade path is not yet verified against real
+    /// Windows captures, so callers default this to `false`.
+    pub progressive_upgrade: bool,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -869,7 +873,10 @@ fn run_rdp_session(
     let mut connector = ironrdp_connector::ClientConnector::new(rdp_config, server_addr)
         .with_static_channel(
             ironrdp_dvc::DrdynvcClient::new()
-                .with_dynamic_channel(crate::egfx::EgfxProcessor::new(state.clone()))
+                .with_dynamic_channel(crate::egfx::EgfxProcessor::new(
+                    state.clone(),
+                    config.progressive_upgrade,
+                ))
                 .with_dynamic_channel(display_control),
         );
 

@@ -117,6 +117,9 @@ fn main() -> ExitCode {
         enable_credssp,
         // Host CLI: no persisted pin store; accept-and-report on first use.
         pinned_cert_sha256: std::env::var("RDP_PINNED_CERT").ok(),
+        // #418: enable WBT_TILE_UPGRADE refinement decoding for capture
+        // verification against a real host — `HAVEN_RFX_UPGRADE=1 rdp-cli …`.
+        progressive_upgrade: std::env::var("HAVEN_RFX_UPGRADE").is_ok(),
     };
 
     let client = Arc::new(RdpClient::new(config));

@@ -77,7 +77,12 @@ pub struct EgfxProcessor {
 }
 
 impl EgfxProcessor {
-    pub fn new(state: Arc<RwLock<SessionState>>) -> Self {
+    /// `progressive_upgrade` enables WBT_TILE_UPGRADE refinement decoding
+    /// (#418) — a hidden/debug opt-in while the upgrade path is verified
+    /// against real Windows captures. Default path passes `false`.
+    pub fn new(state: Arc<RwLock<SessionState>>, progressive_upgrade: bool) -> Self {
+        let mut progressive_decoder = ProgressiveDecoder::new();
+        progressive_decoder.set_upgrade_enabled(progressive_upgrade);
         Self {
             state,
             capabilities_received: false,
@@ -86,7 +91,7 @@ impl EgfxProcessor {
             total_frames_decoded: 0,
             surfaces: SurfaceManager::new(),
             clear_decoder: ClearDecoder::new(),
-            progressive_decoder: ProgressiveDecoder::new(),
+            progressive_decoder,
             planar_decoder: ironrdp_graphics::rdp6::BitmapStreamDecoder::default(),
         }
     }

@@ -24089,6 +24089,20 @@
      }
     },
     {
+     "name": "settings_rdp_progressive_upgrade_title",
+     "en": "RDP: decode progressive upgrade tiles (experimental)",
+     "comment": "Logging section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_rdp_progressive_upgrade_subtitle",
+     "en": "Fills the black squares seen on some Windows RDP desktops by decoding RemoteFX-Progressive refinement tiles. Experimental (#418) — if the picture looks worse, turn this off",
+     "comment": "Logging section",
+     "args": [],
+     "t": {}
+    },
+    {
      "name": "settings_session_persistence_title",
      "en": "Session persistence",
      "comment": "Terminal section",

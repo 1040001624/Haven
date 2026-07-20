@@ -53,6 +53,8 @@
     <string name="settings_view_connection_log_subtitle">Connection history and events</string>
     <string name="settings_verbose_logging_title">Verbose connection logging</string>
     <string name="settings_verbose_logging_subtitle">Capture protocol details for SSH, Mosh, and ET connections. May include hostnames and usernames</string>
+    <string name="settings_rdp_progressive_upgrade_title">RDP: decode progressive upgrade tiles (experimental)</string>
+    <string name="settings_rdp_progressive_upgrade_subtitle">Fills the black squares seen on some Windows RDP desktops by decoding RemoteFX-Progressive refinement tiles. Experimental (#418) — if the picture looks worse, turn this off</string>
 
     <!-- Terminal section -->
     <string name="settings_session_persistence_title">Session persistence</string>
