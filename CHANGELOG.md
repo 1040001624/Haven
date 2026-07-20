@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.5
+
+🎨 **Windows RDP: colour is back** — connecting to a Windows desktop over RDP rendered the whole screen as a flat embossed grey (looked like a relief carving, wallpaper and all). The RemoteFX-Progressive decoder was dropping the low-frequency (DC) part of every tile in the "extrapolate" mode that Windows 8/10/11 always use, so flat areas collapsed to mid-grey and only edges survived. The decoder now reconstructs the DC band in that mode too, and colour returns. (#418, thanks ZGLinus)
+
 ## v5.81.4
 
 🗂️ **Linux desktop: your files (/sdcard) now show up** — when you launched a desktop from Haven, the file manager opened `/sdcard` (and `/storage`) to an empty list, even though the terminal could see them. Shared storage is now mounted into the desktop and into apps launched inside it, so your Downloads, DCIM and the rest are reachable there like they are in the terminal. Honours the existing "share storage with guest" setting. (#420, thanks sugerpersion)
