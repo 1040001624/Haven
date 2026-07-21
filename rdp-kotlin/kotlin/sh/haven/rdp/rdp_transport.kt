@@ -4071,8 +4071,10 @@ data class RdpConfig (
      * #425: advertise EGFX H.264/AVC420 support (V8.1 AVC420_ENABLED) so
      * servers that only encode H.264 — notably KRDP — can drive the session.
      * Requires an [`Avc420Decoder`] to be registered via `set_avc_decoder`;
-     * on Android that's a MediaCodec-backed decoder. Default false: without a
-     * decoder, advertising AVC would black-screen (server sends tiles we drop).
+     * on Android that's a MediaCodec-backed decoder. The Android app sets this
+     * on by default (device-verified against KRDP) and always registers a
+     * decoder; callers that don't register one must pass false, else negotiated
+     * AVC tiles are dropped and the screen stays black.
      */
     var `avcEnabled`: kotlin.Boolean
     

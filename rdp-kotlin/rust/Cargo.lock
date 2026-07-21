@@ -2362,6 +2362,7 @@ dependencies = [
  "ironrdp-tls",
  "log",
  "rustls",
+ "rustls-webpki",
  "sha2",
  "smallvec",
  "uniffi",

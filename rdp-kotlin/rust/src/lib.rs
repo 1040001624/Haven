@@ -708,6 +708,64 @@ fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Extract the SubjectPublicKeyInfo (full DER) from a server certificate with
+/// the lenient x509-cert parser. webpki's cert parser rejects any non-v3
+/// certificate outright (Error::UnsupportedCertVersion), but plenty of RDP
+/// servers — VirtualBox VRDP in particular — present a self-signed X.509 *v1*
+/// certificate. Since we pin the leaf by fingerprint and never chain-validate,
+/// all we need from the cert is its public key, and x509-cert parses v1 fine.
+/// This is the same parser already used post-handshake to feed CredSSP. (#422)
+fn spki_from_cert(
+    cert: &rustls::pki_types::CertificateDer<'_>,
+) -> Result<rustls::pki_types::SubjectPublicKeyInfoDer<'static>, rustls::Error> {
+    use x509_cert::der::{Decode as _, Encode as _};
+    let parsed = x509_cert::Certificate::from_der(cert.as_ref())
+        .map_err(|e| rustls::Error::General(format!("parse server certificate: {e}")))?;
+    let spki_der = parsed
+        .tbs_certificate()
+        .subject_public_key_info()
+        .to_der()
+        .map_err(|e| rustls::Error::General(format!("re-encode server SPKI: {e}")))?;
+    Ok(rustls::pki_types::SubjectPublicKeyInfoDer::from(spki_der))
+}
+
+/// Verify a TLS handshake signature against a bare SubjectPublicKeyInfo instead
+/// of webpki's full-certificate path (which rejects non-v3 certs before it ever
+/// looks at the key). This still proves the server holds the private key for the
+/// pinned certificate, so it preserves the MITM protection the pin relies on;
+/// only the cert *parse* is relaxed. Mirrors rustls's own scheme→algorithm
+/// selection: TLS 1.2 tries every candidate algorithm for the scheme, TLS 1.3
+/// only the first. (#422)
+fn verify_handshake_sig_raw(
+    message: &[u8],
+    spki: &rustls::pki_types::SubjectPublicKeyInfoDer<'_>,
+    scheme: rustls::SignatureScheme,
+    signature: &[u8],
+    algs: &rustls::crypto::WebPkiSupportedAlgorithms,
+    tls13: bool,
+) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+    let raw = webpki::RawPublicKeyEntity::try_from(spki)
+        .map_err(|e| rustls::Error::General(format!("parse server public key: {e:?}")))?;
+    let candidates = algs
+        .mapping
+        .iter()
+        .find(|(s, _)| *s == scheme)
+        .map(|(_, a)| *a)
+        .ok_or_else(|| rustls::Error::General(format!("unsupported signature scheme {scheme:?}")))?;
+    // TLS 1.3 mandates a single scheme→algorithm mapping; TLS 1.2 allows several.
+    let candidates = if tls13 { &candidates[..1] } else { candidates };
+    let mut last_err = None;
+    for alg in candidates {
+        match raw.verify_signature(*alg, message, signature) {
+            Ok(()) => return Ok(rustls::client::danger::HandshakeSignatureValid::assertion()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(rustls::Error::General(format!(
+        "server handshake signature verification failed: {last_err:?}"
+    )))
+}
+
 /// rustls verifier that pins the server's leaf certificate (trust-on-first-use)
 /// instead of accepting any certificate. RDP servers overwhelmingly use
 /// self-signed certificates, so a chain-of-trust check is not viable; we pin
@@ -763,11 +821,16 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCertVerifier {
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
+        // Raw-key verification (not webpki's full-cert path) so X.509 v1 server
+        // certs are accepted; key possession is still proven. (#422)
+        let spki = spki_from_cert(cert)?;
+        verify_handshake_sig_raw(
             message,
-            cert,
-            dss,
+            &spki,
+            dss.scheme,
+            dss.signature(),
             &self.provider.signature_verification_algorithms,
+            false,
         )
     }
 
@@ -777,11 +840,14 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCertVerifier {
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
+        let spki = spki_from_cert(cert)?;
+        verify_handshake_sig_raw(
             message,
-            cert,
-            dss,
+            &spki,
+            dss.scheme,
+            dss.signature(),
             &self.provider.signature_verification_algorithms,
+            true,
         )
     }
 
@@ -866,6 +932,83 @@ mod tls_pin_tests {
         let der = [5u8, 6, 7];
         let v = verifier(Some(&sha256_hex(&der).to_uppercase()));
         assert!(check(&v, &der).is_ok());
+    }
+
+    // --- #422: accept X.509 v1 server certs (VirtualBox VRDP) ---
+
+    // Real self-signed X.509 v1 cert (RSA-2048) + an rsa_pss_rsae_sha256
+    // signature by its key over V1_MSG, minted with asn1crypto. VirtualBox
+    // VRDP presents a v1 cert exactly like this.
+    const V1_CERT: &[u8] = include_bytes!("../tests/data/v1-cert.der");
+    const V1_SIG: &[u8] = include_bytes!("../tests/data/v1-cert-pss-sha256.sig");
+    const V1_MSG: &[u8] = b"haven rdp #422 handshake transcript";
+
+    fn ring_algs() -> rustls::crypto::WebPkiSupportedAlgorithms {
+        rustls::crypto::ring::default_provider().signature_verification_algorithms
+    }
+
+    #[test]
+    fn webpki_rejects_v1_cert_but_x509_cert_parses_it() {
+        // The #422 mechanism: webpki's full-cert path rejects the v1 cert (this
+        // is what broke the handshake) — our lenient extraction accepts it.
+        let der = rustls::pki_types::CertificateDer::from(V1_CERT.to_vec());
+        assert!(
+            webpki::EndEntityCert::try_from(&der).is_err(),
+            "expected webpki to reject the v1 cert"
+        );
+        assert!(spki_from_cert(&der).is_ok(), "spki_from_cert should parse v1");
+    }
+
+    #[test]
+    fn raw_key_verifies_genuine_signature_from_v1_cert() {
+        let der = rustls::pki_types::CertificateDer::from(V1_CERT.to_vec());
+        let spki = spki_from_cert(&der).expect("v1 SPKI");
+        assert!(
+            verify_handshake_sig_raw(
+                V1_MSG,
+                &spki,
+                rustls::SignatureScheme::RSA_PSS_SHA256,
+                V1_SIG,
+                &ring_algs(),
+                true,
+            )
+            .is_ok(),
+            "a genuine signature from the pinned v1 cert's key must verify"
+        );
+    }
+
+    #[test]
+    fn raw_key_rejects_tampered_signature() {
+        // MITM without the private key cannot forge the handshake signature,
+        // even though the cert parse is now relaxed.
+        let der = rustls::pki_types::CertificateDer::from(V1_CERT.to_vec());
+        let spki = spki_from_cert(&der).expect("v1 SPKI");
+        let mut bad = V1_SIG.to_vec();
+        bad[0] ^= 0xff;
+        assert!(verify_handshake_sig_raw(
+            V1_MSG,
+            &spki,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            &bad,
+            &ring_algs(),
+            true,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn raw_key_rejects_signature_over_wrong_message() {
+        let der = rustls::pki_types::CertificateDer::from(V1_CERT.to_vec());
+        let spki = spki_from_cert(&der).expect("v1 SPKI");
+        assert!(verify_handshake_sig_raw(
+            b"not the signed transcript",
+            &spki,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            V1_SIG,
+            &ring_algs(),
+            true,
+        )
+        .is_err());
     }
 }
 

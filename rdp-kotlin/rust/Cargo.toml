@@ -33,6 +33,11 @@ android_logger = "0.15"
 # the toolchain to 1.91 and drop this note).
 uniffi = { version = "0.32", features = ["cli"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+# rustls-webpki's RawPublicKeyEntity verifies a TLS handshake signature against a
+# bare SubjectPublicKeyInfo. We use it so X.509 v1 server certs — which webpki's
+# full-cert parser rejects with UnsupportedCertVersion (VirtualBox VRDP presents
+# one) — still pass our TOFU pin. See PinnedCertVerifier in lib.rs. (#422)
+webpki = { package = "rustls-webpki", version = "0.103", default-features = false, features = ["ring", "std"] }
 sha2 = "0.11"
 
 [[bin]]
