@@ -266,6 +266,14 @@ class HavenApp : Application(), Configuration.Provider {
             .onEach { sh.haven.core.rdp.RdpDebugToggles.progressiveUpgrade = it }
             .launchIn(appScope)
 
+        // #425: bridge the "RDP H.264/AVC420 (KRDP)" preference into the same
+        // process-global toggles so the native side advertises AVC and the
+        // MediaCodec decoder is registered at connect.
+        preferencesRepository.rdpAvcEnabled
+            .distinctUntilChanged()
+            .onEach { sh.haven.core.rdp.RdpDebugToggles.avcEnabled = it }
+            .launchIn(appScope)
+
         // Auto-detect a USB mass-storage drive on plug-in and offer (via a
         // notification) to open it in a VM (#287). Runtime receiver — fires only
         // while the app process is alive, so the notification tap always lands

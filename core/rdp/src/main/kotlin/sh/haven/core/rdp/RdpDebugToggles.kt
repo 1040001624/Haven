@@ -18,4 +18,15 @@ object RdpDebugToggles {
     @Volatile
     @JvmField
     var progressiveUpgrade: Boolean = false
+
+    /**
+     * #425: advertise EGFX H.264/AVC420. On by default (device-verified against
+     * KRDP, which speaks only H.264). Advertising it switches the EGFX caps from
+     * V10/AVC-disabled to V8.1/AVC420 for every server; Windows/xrdp still render
+     * (AVC420 + ClearCodec/Planar/Progressive, all decoded) but Windows drops
+     * from AVC444 to AVC420. Users can turn it off in Settings → Diagnostics.
+     */
+    @Volatile
+    @JvmField
+    var avcEnabled: Boolean = true
 }

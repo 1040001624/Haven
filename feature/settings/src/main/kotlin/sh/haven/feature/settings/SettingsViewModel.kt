@@ -314,6 +314,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.setRdpProgressiveUpgrade(enabled) }
     }
 
+    /** #425: advertise RDP H.264/AVC420 so KRDP (H.264-only) can render. On by default. */
+    val rdpAvcEnabled: StateFlow<Boolean> = preferencesRepository.rdpAvcEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setRdpAvcEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.setRdpAvcEnabled(enabled) }
+    }
+
     val keepScreenOnInTerminal: StateFlow<Boolean> = preferencesRepository.keepScreenOnInTerminal
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

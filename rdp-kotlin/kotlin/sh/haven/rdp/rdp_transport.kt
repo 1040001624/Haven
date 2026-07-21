@@ -650,6 +650,9 @@ internal open class UniffiForeignFutureResultVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureResultVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceAvc420DecoderMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`annexB`: RustBuffer.ByValue,`width`: Short,`height`: Short,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 internal interface UniffiCallbackInterfaceClipboardCallbackMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`text`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
@@ -682,6 +685,25 @@ internal interface UniffiCallbackInterfaceSessionCallbackMethod2 : com.sun.jna.C
 }
 internal interface UniffiCallbackInterfaceSessionCallbackMethod3 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`sha256`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "decode")
+internal open class UniffiVTableCallbackInterfaceAvc420Decoder(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `decode`: UniffiCallbackInterfaceAvc420DecoderMethod0? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `decode`: UniffiCallbackInterfaceAvc420DecoderMethod0? = null,
+    ): UniffiVTableCallbackInterfaceAvc420Decoder(`uniffiFree`,`uniffiClone`,`decode`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceAvc420Decoder) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `decode` = other.`decode`
+    }
+
 }
 @Structure.FieldOrder("uniffiFree", "uniffiClone", "onRemoteClipboard")
 internal open class UniffiVTableCallbackInterfaceClipboardCallback(
@@ -803,6 +825,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_rdp_transport_checksum_method_avc420decoder_decode(
+    ): Int
     external fun uniffi_rdp_transport_checksum_method_clipboardcallback_on_remote_clipboard(
     ): Int
     external fun uniffi_rdp_transport_checksum_method_framecallback_on_frame_update(
@@ -839,6 +863,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_rdp_transport_checksum_method_rdpclient_send_unicode_key(
     ): Int
+    external fun uniffi_rdp_transport_checksum_method_rdpclient_set_avc_decoder(
+    ): Int
     external fun uniffi_rdp_transport_checksum_method_rdpclient_set_clipboard_callback(
     ): Int
     external fun uniffi_rdp_transport_checksum_method_rdpclient_set_frame_callback(
@@ -873,12 +899,21 @@ internal object UniffiLib {
 
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "rdp_transport"))
+        uniffiCallbackInterfaceAvc420Decoder.register(this)
         uniffiCallbackInterfaceClipboardCallback.register(this)
         uniffiCallbackInterfaceFrameCallback.register(this)
         uniffiCallbackInterfacePointerCallback.register(this)
         uniffiCallbackInterfaceSessionCallback.register(this)
         
     }
+    external fun uniffi_rdp_transport_fn_clone_avc420decoder(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_rdp_transport_fn_free_avc420decoder(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_rdp_transport_fn_init_callback_vtable_avc420decoder(`vtable`: UniffiVTableCallbackInterfaceAvc420Decoder,
+    ): Unit
+    external fun uniffi_rdp_transport_fn_method_avc420decoder_decode(`ptr`: Long,`annexB`: RustBuffer.ByValue,`width`: Short,`height`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_rdp_transport_fn_clone_clipboardcallback(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_rdp_transport_fn_free_clipboardcallback(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -938,6 +973,8 @@ internal object UniffiLib {
     external fun uniffi_rdp_transport_fn_method_rdpclient_send_mouse_wheel(`ptr`: Long,`vertical`: Byte,`delta`: Short,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_rdp_transport_fn_method_rdpclient_send_unicode_key(`ptr`: Long,`ch`: Int,`pressed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_rdp_transport_fn_method_rdpclient_set_avc_decoder(`ptr`: Long,`cb`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_rdp_transport_fn_method_rdpclient_set_clipboard_callback(`ptr`: Long,`cb`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1080,6 +1117,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_rdp_transport_checksum_method_avc420decoder_decode() != 16062) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_rdp_transport_checksum_method_clipboardcallback_on_remote_clipboard() != 26900) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1132,6 +1172,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_rdp_transport_checksum_method_rdpclient_send_unicode_key() != 63832) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_rdp_transport_checksum_method_rdpclient_set_avc_decoder() != 17028) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_rdp_transport_checksum_method_rdpclient_set_clipboard_callback() != 53381) {
@@ -1545,6 +1588,348 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
         buf.put(value)
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * #425: decodes one EGFX AVC420 (H.264 YUV420) access unit to RGBA. Rust owns
+ * the framebuffer and decodes every other codec inline on the session thread,
+ * so this is a **blocking** call: given the Annex-B bitstream for one frame's
+ * region and the destination size, return `width*height*4` RGBA bytes (or an
+ * empty Vec on failure, which the caller treats as "skip this tile").
+ *
+ * The implementation MUST be **stateful across calls** — KRDP sends SPS+PPS+IDR
+ * only in the first frame and P-slices (referencing the persistent decoded
+ * picture) thereafter, so the same underlying decoder instance has to persist
+ * and be fed access units in order. On Android this wraps a single MediaCodec
+ * `video/avc` instance.
+ */
+public interface Avc420Decoder {
+    
+    fun `decode`(`annexB`: kotlin.ByteArray, `width`: kotlin.UShort, `height`: kotlin.UShort): kotlin.ByteArray
+    
+    companion object
+}
+
+/**
+ * #425: decodes one EGFX AVC420 (H.264 YUV420) access unit to RGBA. Rust owns
+ * the framebuffer and decodes every other codec inline on the session thread,
+ * so this is a **blocking** call: given the Annex-B bitstream for one frame's
+ * region and the destination size, return `width*height*4` RGBA bytes (or an
+ * empty Vec on failure, which the caller treats as "skip this tile").
+ *
+ * The implementation MUST be **stateful across calls** — KRDP sends SPS+PPS+IDR
+ * only in the first frame and P-slices (referencing the persistent decoded
+ * picture) thereafter, so the same underlying decoder instance has to persist
+ * and be fed access units in order. On Android this wraps a single MediaCodec
+ * `video/avc` instance.
+ */
+open class Avc420DecoderImpl: Disposable, AutoCloseable, Avc420Decoder
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_rdp_transport_fn_free_avc420decoder(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_rdp_transport_fn_clone_avc420decoder(handle, status)
+        }
+    }
+
+    override fun `decode`(`annexB`: kotlin.ByteArray, `width`: kotlin.UShort, `height`: kotlin.UShort): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_rdp_transport_fn_method_avc420decoder_decode(
+        it,
+        
+        FfiConverterByteArray.lower(`annexB`),
+        FfiConverterUShort.lower(`width`),
+        FfiConverterUShort.lower(`height`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceAvc420Decoder {
+    internal object `decode`: UniffiCallbackInterfaceAvc420DecoderMethod0 {
+        override fun callback(`uniffiHandle`: Long,`annexB`: RustBuffer.ByValue,`width`: Short,`height`: Short,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeAvc420Decoder.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`decode`(
+                    FfiConverterByteArray.lift(`annexB`),
+                    FfiConverterUShort.lift(`width`),
+                    FfiConverterUShort.lift(`height`),
+                )
+            }
+            val writeReturn = { value: kotlin.ByteArray -> uniffiOutReturn.setValue(FfiConverterByteArray.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeAvc420Decoder.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeAvc420Decoder.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceAvc420Decoder.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `decode`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_rdp_transport_fn_init_callback_vtable_avc420decoder(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAvc420Decoder: FfiConverter<Avc420Decoder, Long> {
+    internal val handleMap = UniffiHandleMap<Avc420Decoder>()
+
+    override fun lower(value: Avc420Decoder): Long {
+        if (value is Avc420DecoderImpl) {
+             // Rust-implemented object.  Clone the handle and return it
+            return value.uniffiCloneHandle()
+         } else {
+            // Kotlin object, generate a new vtable handle and return that.
+            return handleMap.insert(value)
+         }
+    }
+
+    override fun lift(value: Long): Avc420Decoder {
+        if ((value and 1.toLong()) == 0.toLong()) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return Avc420DecoderImpl(UniffiWithHandle, value)
+        } else {
+            // Kotlin-generated handle, get the object from the handle map
+            return handleMap.remove(value)
+        }
+    }
+
+    override fun read(buf: ByteBuffer): Avc420Decoder {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: Avc420Decoder) = 8UL
+
+    override fun write(value: Avc420Decoder, buf: ByteBuffer) {
+        buf.putLong(lower(value))
     }
 }
 
@@ -2765,6 +3150,13 @@ public interface RdpClientInterface {
     
     fun `sendUnicodeKey`(`ch`: kotlin.UInt, `pressed`: kotlin.Boolean)
     
+    /**
+     * #425: register the AVC420 (H.264) decoder used for EGFX tiles from
+     * H.264-only servers (KRDP). Must be set before `connect` when
+     * `RdpConfig.avc_enabled` is true, else negotiated AVC tiles are dropped.
+     */
+    fun `setAvcDecoder`(`cb`: Avc420Decoder)
+    
     fun `setClipboardCallback`(`cb`: ClipboardCallback)
     
     fun `setFrameCallback`(`cb`: FrameCallback)
@@ -3031,6 +3423,24 @@ open class RdpClient: Disposable, AutoCloseable, RdpClientInterface
         
         FfiConverterUInt.lower(`ch`),
         FfiConverterBoolean.lower(`pressed`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * #425: register the AVC420 (H.264) decoder used for EGFX tiles from
+     * H.264-only servers (KRDP). Must be set before `connect` when
+     * `RdpConfig.avc_enabled` is true, else negotiated AVC tiles are dropped.
+     */override fun `setAvcDecoder`(`cb`: Avc420Decoder)
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_rdp_transport_fn_method_rdpclient_set_avc_decoder(
+        it,
+        
+        FfiConverterTypeAvc420Decoder.lower(`cb`),_status)
 }
     }
     
@@ -3656,6 +4066,15 @@ data class RdpConfig (
      * Windows captures, so callers default this to `false`.
      */
     var `progressiveUpgrade`: kotlin.Boolean
+    , 
+    /**
+     * #425: advertise EGFX H.264/AVC420 support (V8.1 AVC420_ENABLED) so
+     * servers that only encode H.264 — notably KRDP — can drive the session.
+     * Requires an [`Avc420Decoder`] to be registered via `set_avc_decoder`;
+     * on Android that's a MediaCodec-backed decoder. Default false: without a
+     * decoder, advertising AVC would black-screen (server sends tiles we drop).
+     */
+    var `avcEnabled`: kotlin.Boolean
     
 ){
     
@@ -3681,6 +4100,7 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -3693,7 +4113,8 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterUByte.allocationSize(value.`colorDepth`) +
             FfiConverterBoolean.allocationSize(value.`enableCredssp`) +
             FfiConverterOptionalString.allocationSize(value.`pinnedCertSha256`) +
-            FfiConverterBoolean.allocationSize(value.`progressiveUpgrade`)
+            FfiConverterBoolean.allocationSize(value.`progressiveUpgrade`) +
+            FfiConverterBoolean.allocationSize(value.`avcEnabled`)
     )
 
     override fun write(value: RdpConfig, buf: ByteBuffer) {
@@ -3706,6 +4127,7 @@ public object FfiConverterTypeRdpConfig: FfiConverterRustBuffer<RdpConfig> {
             FfiConverterBoolean.write(value.`enableCredssp`, buf)
             FfiConverterOptionalString.write(value.`pinnedCertSha256`, buf)
             FfiConverterBoolean.write(value.`progressiveUpgrade`, buf)
+            FfiConverterBoolean.write(value.`avcEnabled`, buf)
     }
 }
 

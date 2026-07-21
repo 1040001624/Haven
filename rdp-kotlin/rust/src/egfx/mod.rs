@@ -8,11 +8,11 @@
 
 use std::sync::{Arc, RwLock};
 
-use ironrdp_core::{impl_as_any, Encode, EncodeResult, ReadCursor, WriteCursor};
+use ironrdp_core::{impl_as_any, Decode as _, Encode, EncodeResult, ReadCursor, WriteCursor};
 use ironrdp_dvc::{DvcClientProcessor, DvcEncode, DvcMessage, DvcProcessor};
 use ironrdp_graphics::zgfx::Decompressor;
 use ironrdp_egfx::pdu::{
-    CapabilitiesAdvertisePdu, CapabilitiesV10Flags, CapabilitySet, GfxPdu, Codec1Type, Codec2Type, FrameAcknowledgePdu, QueueDepth, WireToSurface1Pdu, WireToSurface2Pdu,
+    Avc420BitmapStream, CapabilitiesAdvertisePdu, CapabilitiesV10Flags, CapabilitiesV81Flags, CapabilitySet, GfxPdu, Codec1Type, Codec2Type, FrameAcknowledgePdu, QueueDepth, WireToSurface1Pdu, WireToSurface2Pdu,
 };
 use ironrdp_pdu::PduResult;
 use log::{debug, info, warn};
@@ -74,13 +74,17 @@ pub struct EgfxProcessor {
     /// RDP 6.0 planar bitmap decoder (xrdp encodes greeter/session tiles
     /// as Codec1Type::Planar). Holds a reusable planes buffer.
     planar_decoder: ironrdp_graphics::rdp6::BitmapStreamDecoder,
+    /// #425: advertise H.264/AVC420 support (KRDP). Decode itself is done by
+    /// the host-registered [`crate::Avc420Decoder`] (MediaCodec on Android),
+    /// reached through `state.avc_decoder`.
+    avc_enabled: bool,
 }
 
 impl EgfxProcessor {
     /// `progressive_upgrade` enables WBT_TILE_UPGRADE refinement decoding
     /// (#418) — a hidden/debug opt-in while the upgrade path is verified
     /// against real Windows captures. Default path passes `false`.
-    pub fn new(state: Arc<RwLock<SessionState>>, progressive_upgrade: bool) -> Self {
+    pub fn new(state: Arc<RwLock<SessionState>>, progressive_upgrade: bool, avc_enabled: bool) -> Self {
         let mut progressive_decoder = ProgressiveDecoder::new();
         progressive_decoder.set_upgrade_enabled(progressive_upgrade);
         Self {
@@ -93,6 +97,7 @@ impl EgfxProcessor {
             clear_decoder: ClearDecoder::new(),
             progressive_decoder,
             planar_decoder: ironrdp_graphics::rdp6::BitmapStreamDecoder::default(),
+            avc_enabled,
         }
     }
 }
@@ -111,10 +116,32 @@ impl DvcProcessor for EgfxProcessor {
     /// codec selection is per-tile by content type, independent of cap
     /// version, so Windows still emits ClearCodec for desktop UI either way.
     fn start(&mut self, _channel_id: u32) -> PduResult<Vec<DvcMessage>> {
-        let caps = CapabilitiesAdvertisePdu::from_typed(&[CapabilitySet::V10 {
-            flags: CapabilitiesV10Flags::AVC_DISABLED,
-        }]);
-        info!("EGFX: sending CapabilitiesAdvertise(V10, AVC_DISABLED)");
+        // #425: advertising AVC420_ENABLED lets an H.264-only server (KRDP)
+        // drive the session. Gated on `RdpConfig.avc_enabled` (threaded in via
+        // `EgfxProcessor::new`), which requires the host to have registered an
+        // `Avc420Decoder` (MediaCodec on Android) — else negotiated AVC tiles
+        // are dropped and the screen stays black. The Android app enables it by
+        // default (KRDP-verified); `HAVEN_RDP_AVC=1` is an additional OR for the
+        // host `rdp-cli` capture harness. When off → V10 AVC_DISABLED (server
+        // picks ClearCodec / RemoteFX-Progressive).
+        let avc = self.avc_enabled || std::env::var("HAVEN_RDP_AVC").is_ok();
+        let caps = if avc {
+            // Advertise ONLY V8.1 with AVC420_ENABLED. KRDP (FreeRDP server) only
+            // encodes AVC420/YUV420, gated on the V8.1 AVC420_ENABLED flag, and
+            // FreeRDP always *selects the highest advertised version* — so adding
+            // V10 makes it pick V10 (which it reads as "YUV420 false") and it then
+            // has nothing to send. V8.1-only forces the YUV420 path. AVC444 (V10)
+            // is a later slice once we decode it. #425.
+            info!("EGFX: sending CapabilitiesAdvertise(V8_1 AVC420_ENABLED)");
+            CapabilitiesAdvertisePdu::from_typed(&[CapabilitySet::V8_1 {
+                flags: CapabilitiesV81Flags::AVC420_ENABLED,
+            }])
+        } else {
+            info!("EGFX: sending CapabilitiesAdvertise(V10, AVC_DISABLED)");
+            CapabilitiesAdvertisePdu::from_typed(&[CapabilitySet::V10 {
+                flags: CapabilitiesV10Flags::AVC_DISABLED,
+            }])
+        };
         let msg: DvcMessage = Box::new(GfxClientMessage(GfxPdu::CapabilitiesAdvertise(caps)));
         Ok(vec![msg])
     }
@@ -507,6 +534,59 @@ impl EgfxProcessor {
                 surface.blit_rgba(u32::from(r.left), u32::from(r.top), w, h, &tile);
                 self.surfaces.dirty.push((p.surface_id, r.clone()));
             }
+            Codec1Type::Avc420 => {
+                // #425 slice 2: decode H.264/AVC420 via the host-registered
+                // MediaCodec decoder (Rust owns no H.264 decoder). Capture dump
+                // for triage is kept, gated on EGFX_DUMP_DIR.
+                if let Ok(dir) = std::env::var("EGFX_DUMP_DIR") {
+                    let path = format!("{dir}/avc_{n}_{:?}_{w}x{h}.bin", p.codec_id);
+                    let _ = std::fs::write(&path, &p.bitmap_data);
+                }
+                // Parse RFX_AVC420_BITMAP_STREAM: region rects + QUANT_QUALITY,
+                // then the Annex-B H.264 access unit in `stream.data`.
+                let mut cursor = ReadCursor::new(&p.bitmap_data);
+                let stream = match Avc420BitmapStream::decode(&mut cursor) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("EGFX[{n}]: AVC420 bitmap-stream parse failed: {e} ({} bytes)", p.bitmap_data.len());
+                        return;
+                    }
+                };
+                let Some(decoder) = self.state.read().ok().and_then(|s| s.avc_decoder.clone()) else {
+                    warn!("EGFX[{n}]: AVC420 tile but no decoder registered (set_avc_decoder) — dropping");
+                    return;
+                };
+                // The H.264 frame is a full picture the size of the destination
+                // rectangle; `stream.rectangles` are changed-region hints. KRDP
+                // sends one full-frame region, so blit the whole decoded frame
+                // to the destination. ponytail: multi-region partial blits
+                // (Windows/AVC444) collapse to a full-dest repaint here — still
+                // correct pixels, just not minimal; refine in slice 3.
+                let rgba = decoder.decode(stream.data.to_vec(), w as u16, h as u16);
+                let want = (w * h * 4) as usize;
+                if rgba.len() < want {
+                    warn!("EGFX[{n}]: AVC420 decoder returned {} bytes, need {} ({w}x{h}) — dropping", rgba.len(), want);
+                    return;
+                }
+                let Some(surface) = self.surfaces.surface_mut(p.surface_id) else {
+                    warn!("EGFX[{n}]: WireToSurface1 unknown surface {}", p.surface_id);
+                    return;
+                };
+                surface.blit_rgba(u32::from(r.left), u32::from(r.top), w, h, &rgba);
+                self.surfaces.dirty.push((p.surface_id, r.clone()));
+            }
+            Codec1Type::Avc444 | Codec1Type::Avc444v2 => {
+                // #425 slice 3: AVC444 dual-stream (4:2:0 luma + chroma aux)
+                // → 4:4:4. Not decoded yet; dump for capture, then drop.
+                info!(
+                    "EGFX[{n}]: AVC444 tile codec={:?} {}x{} {} bytes (decode NYI — #425 slice 3)",
+                    p.codec_id, w, h, p.bitmap_data.len()
+                );
+                if let Ok(dir) = std::env::var("EGFX_DUMP_DIR") {
+                    let path = format!("{dir}/avc_{n}_{:?}_{w}x{h}.bin", p.codec_id);
+                    let _ = std::fs::write(&path, &p.bitmap_data);
+                }
+            }
             other => {
                 debug!(
                     "EGFX[{n}]: WireToSurface1 codec {other:?} not yet handled ({} bytes ignored)",
@@ -636,5 +716,34 @@ fn pdu_kind_label(p: &GfxPdu) -> &'static str {
         // Client-origin variants (the merged GfxPdu enum covers both
         // directions); a server never legitimately sends these.
         _ => "unexpected_client_origin_pdu",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #425: verify the RFX_AVC420_BITMAP_STREAM header parse matches the wire
+    /// format observed in real KRDP captures — 1 full-frame region (0,0,1280,
+    /// 800), QUANT_QUALITY, then the Annex-B H.264 access unit. The AVC420 arm
+    /// relies on `stream.data` being exactly the trailing Annex-B bytes (it
+    /// forwards them to the MediaCodec decoder), so this pins that contract.
+    #[test]
+    fn avc420_bitmap_stream_parse() {
+        // Header bytes lifted verbatim from a real KRDP frame-1 capture.
+        let mut buf: Vec<u8> = vec![
+            0x01, 0x00, 0x00, 0x00, // numRegionRects = 1
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x20, 0x03, // RECT16 l=0 t=0 r=1280 b=800
+            0x16, 0x64, // QUANT_QUALITY: quant=22 quality=100
+        ];
+        // Annex-B start code + SPS NAL header (0x67) + a couple payload bytes.
+        let annex_b = [0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0];
+        buf.extend_from_slice(&annex_b);
+
+        let stream = Avc420BitmapStream::decode(&mut ReadCursor::new(&buf))
+            .expect("AVC420 header should parse");
+        assert_eq!(stream.rectangles.len(), 1, "one region rect");
+        assert_eq!(stream.quant_qual_vals.len(), 1, "one quant/quality pair");
+        assert_eq!(stream.data, &annex_b, "data is the trailing Annex-B AU");
     }
 }

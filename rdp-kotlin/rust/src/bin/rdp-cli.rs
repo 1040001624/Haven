@@ -120,6 +120,10 @@ fn main() -> ExitCode {
         // #418: enable WBT_TILE_UPGRADE refinement decoding for capture
         // verification against a real host — `HAVEN_RFX_UPGRADE=1 rdp-cli …`.
         progressive_upgrade: std::env::var("HAVEN_RFX_UPGRADE").is_ok(),
+        // #425: advertise AVC420 for KRDP capture — `HAVEN_RDP_AVC=1 rdp-cli …`.
+        // No MediaCodec on the host, so tiles are dumped (EGFX_DUMP_DIR) and
+        // dropped (no Avc420Decoder registered); capture-only.
+        avc_enabled: std::env::var("HAVEN_RDP_AVC").is_ok(),
     };
 
     let client = Arc::new(RdpClient::new(config));

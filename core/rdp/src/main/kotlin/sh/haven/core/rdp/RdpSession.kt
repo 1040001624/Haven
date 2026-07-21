@@ -65,6 +65,8 @@ class RdpSession(
     private var closed = false
     private var client: RdpClient? = null
     private var currentBitmap: Bitmap? = null
+    // #425: MediaCodec H.264 decoder, created only when AVC is enabled.
+    private var avcDecoder: Avc420MediaCodecDecoder? = null
     private val startTime = System.currentTimeMillis()
 
     private fun log(level: String, msg: String) {
@@ -138,10 +140,22 @@ class RdpSession(
                 // #418 debug opt-in: WBT_TILE_UPGRADE refinement decoding.
                 // Bridged from Settings → Diagnostics via RdpDebugToggles.
                 progressiveUpgrade = RdpDebugToggles.progressiveUpgrade,
+                // #425: advertise H.264/AVC420 (KRDP). Only meaningful with a
+                // decoder registered below, so keep the two in lock-step.
+                avcEnabled = RdpDebugToggles.avcEnabled,
             )
 
             val c = RdpClient(config)
             client = c
+
+            // #425: register the MediaCodec AVC420 decoder before connect so
+            // negotiated H.264 tiles have somewhere to decode. The native side
+            // calls it (blocking) on the session thread per frame.
+            if (RdpDebugToggles.avcEnabled) {
+                val dec = Avc420MediaCodecDecoder()
+                avcDecoder = dec
+                c.setAvcDecoder(dec)
+            }
 
             c.setFrameCallback(object : FrameCallback {
                 override fun onFrameUpdate(x: UShort, y: UShort, w: UShort, h: UShort) {
@@ -159,7 +173,13 @@ class RdpSession(
                     log("D", "Desktop resized: ${width}x${height}")
                     try {
                         synchronized(this@RdpSession) {
-                            currentBitmap?.recycle()
+                            // #425: don't recycle() — this bitmap may still be
+                            // referenced by the Compose viewer (asImageBitmap);
+                            // recycling under an in-flight draw crashes with
+                            // "trying to use a recycled bitmap". refreshBitmap
+                            // already leaks superseded frames to GC, so just drop
+                            // the ref. Continuous H.264 streaming (KRDP) makes the
+                            // draw-vs-recycle race fire where sporadic RDP didn't.
                             currentBitmap = null
                         }
                         refreshBitmap()
@@ -380,8 +400,15 @@ class RdpSession(
             log("E", "Error disconnecting RDP: ${e.message}")
         }
         client = null
+        try {
+            avcDecoder?.close()
+        } catch (e: Exception) {
+            log("E", "Error releasing AVC decoder: ${e.message}")
+        }
+        avcDecoder = null
         synchronized(this) {
-            currentBitmap?.recycle()
+            // #425: never recycle a bitmap the Compose viewer may still be
+            // drawing (see onResize) — drop the ref and let GC reclaim it.
             currentBitmap = null
         }
     }

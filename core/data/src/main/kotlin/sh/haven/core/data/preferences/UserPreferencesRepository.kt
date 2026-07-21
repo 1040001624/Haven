@@ -33,6 +33,9 @@ class UserPreferencesRepository @Inject constructor(
     // #418 debug: enable RemoteFX-Progressive WBT_TILE_UPGRADE refinement
     // decoding for RDP. Off by default while the upgrade path is verified.
     private val rdpProgressiveUpgradeKey = booleanPreferencesKey("rdp_progressive_upgrade")
+    // #425: advertise EGFX H.264/AVC420 so H.264-only servers (KRDP) render.
+    // Off by default while the MediaCodec decode path is verified on-device.
+    private val rdpAvcEnabledKey = booleanPreferencesKey("rdp_avc_enabled")
     // Absolute path to a user-chosen Nerd Font (or any TTF/OTF). #123.
     private val terminalFontPathKey = stringPreferencesKey("terminal_font_path")
     // Extra trailing prompt characters (beyond $ # % > ❯) for command-on-attach
@@ -245,6 +248,22 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setRdpProgressiveUpgrade(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[rdpProgressiveUpgradeKey] = enabled
+        }
+    }
+
+    /**
+     * #425: advertise EGFX H.264/AVC420. Needed for KRDP (KDE's RDP server),
+     * which only encodes H.264 and won't fall back to ClearCodec/RemoteFX.
+     * Bridged to the native negotiation + MediaCodec decoder via
+     * `RdpDebugToggles` in HavenApp. Off by default while it's verified.
+     */
+    val rdpAvcEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[rdpAvcEnabledKey] ?: true
+    }
+
+    suspend fun setRdpAvcEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[rdpAvcEnabledKey] = enabled
         }
     }
 

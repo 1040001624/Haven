@@ -55,6 +55,8 @@
     <string name="settings_verbose_logging_subtitle">Capture protocol details for SSH, Mosh, and ET connections. May include hostnames and usernames</string>
     <string name="settings_rdp_progressive_upgrade_title">RDP: decode progressive upgrade tiles (experimental)</string>
     <string name="settings_rdp_progressive_upgrade_subtitle">Fills the black squares seen on some Windows RDP desktops by decoding RemoteFX-Progressive refinement tiles. Experimental (#418) — if the picture looks worse, turn this off</string>
+    <string name="settings_rdp_avc_title">RDP: H.264/AVC420 decoding</string>
+    <string name="settings_rdp_avc_subtitle">On by default. Decodes H.264 graphics so servers that only speak H.264 — notably KRDP (KDE\'s RDP server) — render instead of a black screen; hardware-decoded on-device via MediaCodec. Turn off if a Windows or xrdp desktop renders wrong (#425)</string>
 
     <!-- Terminal section -->
     <string name="settings_session_persistence_title">Session persistence</string>

@@ -24103,6 +24103,20 @@
      "t": {}
     },
     {
+     "name": "settings_rdp_avc_title",
+     "en": "RDP: H.264/AVC420 decoding",
+     "comment": "Logging section",
+     "args": [],
+     "t": {}
+    },
+    {
+     "name": "settings_rdp_avc_subtitle",
+     "en": "On by default. Decodes H.264 graphics so servers that only speak H.264 — notably KRDP (KDE\\'s RDP server) — render instead of a black screen; hardware-decoded on-device via MediaCodec. Turn off if a Windows or xrdp desktop renders wrong (#425)",
+     "comment": "Logging section",
+     "args": [],
+     "t": {}
+    },
+    {
      "name": "settings_session_persistence_title",
      "en": "Session persistence",
      "comment": "Terminal section",

@@ -67,6 +67,14 @@ pub struct RdpConfig {
     /// Hidden/debug opt-in — the upgrade path is not yet verified against real
     /// Windows captures, so callers default this to `false`.
     pub progressive_upgrade: bool,
+    /// #425: advertise EGFX H.264/AVC420 support (V8.1 AVC420_ENABLED) so
+    /// servers that only encode H.264 — notably KRDP — can drive the session.
+    /// Requires an [`Avc420Decoder`] to be registered via `set_avc_decoder`;
+    /// on Android that's a MediaCodec-backed decoder. The Android app sets this
+    /// on by default (device-verified against KRDP) and always registers a
+    /// decoder; callers that don't register one must pass false, else negotiated
+    /// AVC tiles are dropped and the screen stays black.
+    pub avc_enabled: bool,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -110,6 +118,22 @@ pub trait FrameCallback: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait ClipboardCallback: Send + Sync {
     fn on_remote_clipboard(&self, text: String);
+}
+
+/// #425: decodes one EGFX AVC420 (H.264 YUV420) access unit to RGBA. Rust owns
+/// the framebuffer and decodes every other codec inline on the session thread,
+/// so this is a **blocking** call: given the Annex-B bitstream for one frame's
+/// region and the destination size, return `width*height*4` RGBA bytes (or an
+/// empty Vec on failure, which the caller treats as "skip this tile").
+///
+/// The implementation MUST be **stateful across calls** — KRDP sends SPS+PPS+IDR
+/// only in the first frame and P-slices (referencing the persistent decoded
+/// picture) thereafter, so the same underlying decoder instance has to persist
+/// and be fed access units in order. On Android this wraps a single MediaCodec
+/// `video/avc` instance.
+#[uniffi::export(with_foreign)]
+pub trait Avc420Decoder: Send + Sync {
+    fn decode(&self, annex_b: Vec<u8>, width: u16, height: u16) -> Vec<u8>;
 }
 
 /// Server-side pointer (cursor) updates. RDP servers send the cursor shape and
@@ -171,6 +195,9 @@ struct SessionState {
     clipboard_callback: Option<Arc<dyn ClipboardCallback>>,
     session_callback: Option<Arc<dyn SessionCallback>>,
     pointer_callback: Option<Arc<dyn PointerCallback>>,
+    /// #425: MediaCodec-backed H.264 decoder for EGFX AVC420 tiles (KRDP).
+    /// None unless the host registered one via `set_avc_decoder`.
+    avc_decoder: Option<Arc<dyn Avc420Decoder>>,
     shutdown: bool,
 }
 
@@ -207,6 +234,7 @@ impl RdpClient {
                 clipboard_callback: None,
                 session_callback: None,
                 pointer_callback: None,
+                avc_decoder: None,
                 shutdown: false,
             })),
             input_queue: Arc::new(Mutex::new(Vec::new())),
@@ -372,6 +400,15 @@ impl RdpClient {
     pub fn set_clipboard_callback(&self, cb: Arc<dyn ClipboardCallback>) {
         if let Ok(mut s) = self.state.write() {
             s.clipboard_callback = Some(cb);
+        }
+    }
+
+    /// #425: register the AVC420 (H.264) decoder used for EGFX tiles from
+    /// H.264-only servers (KRDP). Must be set before `connect` when
+    /// `RdpConfig.avc_enabled` is true, else negotiated AVC tiles are dropped.
+    pub fn set_avc_decoder(&self, cb: Arc<dyn Avc420Decoder>) {
+        if let Ok(mut s) = self.state.write() {
+            s.avc_decoder = Some(cb);
         }
     }
 
@@ -876,6 +913,7 @@ fn run_rdp_session(
                 .with_dynamic_channel(crate::egfx::EgfxProcessor::new(
                     state.clone(),
                     config.progressive_upgrade,
+                    config.avc_enabled,
                 ))
                 .with_dynamic_channel(display_control),
         );
@@ -1140,6 +1178,12 @@ fn run_rdp_session(
         // Read server PDU
         match tls_framed.read_pdu() {
             Ok((action, frame)) => {
+                // #425 diag: log action + header bytes to diagnose the KRDP
+                // "unexpected channel received: ID 0" interop error.
+                if std::env::var("HAVEN_RDP_FRAMEDIAG").is_ok() {
+                    let n = frame.len().min(64);
+                    debug!("FRAMEDIAG action={:?} len={} bytes={:02x?}", action, frame.len(), &frame[..n]);
+                }
                 match active_stage.process(&mut image, action, &frame) {
                     Ok(outputs) => {
                         for output in outputs {
@@ -1239,7 +1283,16 @@ fn run_rdp_session(
                             warn!("{reason} (redir_flags={:#06x})", info.redir_flags);
                             return Err(reason);
                         }
-                        if msg.contains("unhandled") || msg.contains("unsupported") {
+                        if msg.contains("unexpected channel received") {
+                            // #425: KRDP (FreeRDP server) addresses the IO channel
+                            // as MCS channel 0 for a small one-shot control PDU
+                            // (not a valid ShareControl PDU). IronRDP's session
+                            // layer treats data on a non-joined channel as fatal;
+                            // a robust client ignores it and continues. Dropping
+                            // this frame lets the EGFX pipeline (drdynvc) proceed —
+                            // without it, KRDP sessions die before the first frame.
+                            debug!("Ignoring PDU on unexpected channel: {}", msg);
+                        } else if msg.contains("unhandled") || msg.contains("unsupported") {
                             // Try to decode as slow-path bitmap update
                             if try_handle_slow_path_bitmap(&frame, state) {
                                 debug!("Decoded slow-path bitmap update");
