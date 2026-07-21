@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.8
+
+🧪 **Windows RDP: experimental fix for the black squares (opt-in)** — the v5.81.5 colour fix left scattered black squares on some Windows RDP desktops, because Haven decodes the first pass of each RemoteFX-Progressive tile but not the later "upgrade" refinement passes. This adds that decoder — but it's **off by default and experimental**, because it isn't yet verified against real Windows and a bad decode could look worse than the black squares. To try it: Settings → Diagnostics → "RDP: decode progressive upgrade tiles". If the picture looks worse, turn it off. Feedback on #418 very welcome. (#418, thanks ZGLinus)
+
 ## v5.81.7
 
 📶 **Mosh: the "no server contact — retrying" banner no longer gets stuck** — when a mosh session actually ended (the server exited, or a fatal transport error), the red "No server contact for Ns — retrying" banner could freeze on screen forever, reading as a reconnect that never happens. The banner now clears when the transport closes, so it only shows while a live connection is genuinely stalling. This is a first fix toward #421 (mosh disconnects when scrolling tmux scrollback); the underlying disconnect is still being investigated. (#421, thanks dkoppenh)
