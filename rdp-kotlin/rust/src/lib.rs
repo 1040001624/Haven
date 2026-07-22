@@ -1210,6 +1210,10 @@ fn run_rdp_session(
         cb.on_resize(fb_width, fb_height);
     }
 
+    // #438: keep a resettable copy of the activation sequence so a bare
+    // Server Demand Active (FreeRDP shadow skips the preceding Deactivate
+    // All) can re-enter the activation state machine mid-session.
+    let activation_template = connection_result.connection_activation.reset_clone();
     let mut active_stage = ActiveStage::new(connection_result);
 
     // Handshake is done; shrink the read timeout to 100ms so the session
@@ -1386,9 +1390,20 @@ fn run_rdp_session(
                                     error!("Server disconnect: {}", reason);
                                     break;
                                 }
-                                ActiveStageOutput::DeactivateAll(_cas) => {
-                                    // Server-initiated deactivation-reactivation
-                                    // Would need to handle reconnection here
+                                ActiveStageOutput::DeactivateAll(mut cas) => {
+                                    // Server-initiated Deactivation-Reactivation
+                                    // (#438): re-run the activation sequence and
+                                    // swap onto the renegotiated parameters. Any
+                                    // outputs queued after this one belong to the
+                                    // pre-deactivation state — drop them.
+                                    info!("Server Deactivate All — running reactivation");
+                                    let _ = stream_ctl.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                                    let res = perform_reactivation(
+                                        &mut tls_framed, &mut cas, None,
+                                        &mut active_stage, &mut image, state,
+                                    );
+                                    let _ = stream_ctl.set_read_timeout(Some(std::time::Duration::from_millis(100)));
+                                    res?;
                                     break;
                                 }
                                 // New in session 0.10: multitransport/autodetect
@@ -1435,6 +1450,22 @@ fn run_rdp_session(
                             // this frame lets the EGFX pipeline (drdynvc) proceed —
                             // without it, KRDP sessions die before the first frame.
                             debug!("Ignoring PDU on unexpected channel: {}", msg);
+                        } else if msg.contains("got Server Demand Active PDU") {
+                            // #438: FreeRDP's shadow server starts a mid-session
+                            // Deactivation-Reactivation (it resizes the client to
+                            // its display) with a bare Server Demand Active — no
+                            // preceding Deactivate All — which IronRDP's session
+                            // layer rejects. Re-enter the activation state machine
+                            // and hand it the frame we already consumed.
+                            info!("Bare Server Demand Active — running reactivation");
+                            let mut cas = activation_template.reset_clone();
+                            let _ = stream_ctl.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                            let res = perform_reactivation(
+                                &mut tls_framed, &mut cas, Some(&frame),
+                                &mut active_stage, &mut image, state,
+                            );
+                            let _ = stream_ctl.set_read_timeout(Some(std::time::Duration::from_millis(100)));
+                            res?;
                         } else if msg.contains("unhandled") || msg.contains("unsupported") {
                             // Try to decode as slow-path bitmap update
                             if try_handle_slow_path_bitmap(&frame, state) {
@@ -1706,6 +1737,123 @@ fn try_handle_slow_path_bitmap(
     }
 
     any_updates
+}
+
+/// Drive a server-initiated Deactivation-Reactivation Sequence (MS-RDPBCGR
+/// 1.3.1.3) to completion on the live transport, then swap the session onto
+/// the renegotiated parameters (#438). Servers reactivate to change session
+/// parameters mid-session — FreeRDP's shadow server does it to resize the
+/// client to its display, and Windows does it on resolution changes.
+///
+/// `first_frame` carries the already-consumed `Server Demand Active` for
+/// servers that skip the preceding `Deactivate All` PDU (FreeRDP shadow);
+/// `None` when the sequence was entered properly via `Deactivate All`.
+///
+/// The caller must widen the transport read timeout around this call — the
+/// sequence blocks on multi-PDU reads that the session loop's 100ms poll
+/// timeout would abort.
+fn perform_reactivation<S: std::io::Read + std::io::Write>(
+    framed: &mut ironrdp_blocking::Framed<S>,
+    cas: &mut ironrdp_connector::connection_activation::ConnectionActivationSequence,
+    first_frame: Option<&[u8]>,
+    active_stage: &mut ironrdp_session::ActiveStage,
+    image: &mut ironrdp_session::image::DecodedImage,
+    state: &Arc<RwLock<SessionState>>,
+) -> Result<(), String> {
+    use ironrdp_connector::connection_activation::ConnectionActivationState;
+    use ironrdp_connector::Sequence as _;
+    use ironrdp_graphics::image_processing::PixelFormat;
+
+    let mut buf = ironrdp_core::WriteBuf::new();
+    let feed = |cas: &mut ironrdp_connector::connection_activation::ConnectionActivationSequence,
+                    input: &[u8],
+                    framed: &mut ironrdp_blocking::Framed<S>,
+                    buf: &mut ironrdp_core::WriteBuf|
+     -> Result<(), String> {
+        buf.clear();
+        let written = cas
+            .step(input, buf)
+            .map_err(|e| format!("reactivation step: {e}"))?;
+        if let Some(n) = written.size() {
+            framed
+                .write_all(&buf[..n])
+                .map_err(|e| format!("reactivation write: {e}"))?;
+        }
+        Ok(())
+    };
+
+    if let Some(frame) = first_frame {
+        feed(cas, frame, framed, &mut buf)?;
+    }
+    while !cas.state().is_terminal() {
+        // A hint means "read that PDU and feed it"; no hint means the next
+        // step emits a client-side PDU and takes no input (the finalization
+        // Synchronize/Control/FontList sends) — same contract as
+        // ironrdp_blocking::single_sequence_step.
+        let pdu = match cas.next_pdu_hint() {
+            Some(hint) => Some(
+                framed
+                    .read_by_hint(hint)
+                    .map_err(|e| format!("reactivation read: {e}"))?,
+            ),
+            None => None,
+        };
+        feed(cas, pdu.as_deref().unwrap_or(&[]), framed, &mut buf)?;
+    }
+
+    match cas.connection_activation_state() {
+        ConnectionActivationState::Finalized {
+            io_channel_id,
+            user_channel_id,
+            desktop_size,
+            share_id,
+            enable_server_pointer,
+            pointer_software_rendering,
+        } => {
+            info!(
+                "Reactivation finalized: desktop {}x{}",
+                desktop_size.width, desktop_size.height
+            );
+            *image = ironrdp_session::image::DecodedImage::new(
+                PixelFormat::RgbA32,
+                desktop_size.width,
+                desktop_size.height,
+            );
+            active_stage.set_fastpath_processor(
+                ironrdp_session::fast_path::ProcessorBuilder {
+                    io_channel_id,
+                    user_channel_id,
+                    share_id,
+                    enable_server_pointer,
+                    pointer_software_rendering,
+                    bulk_decompressor: None,
+                }
+                .build(),
+            );
+            active_stage.set_share_id(share_id);
+            active_stage.set_enable_server_pointer(enable_server_pointer);
+
+            let resize_cb = {
+                let mut s = state
+                    .write()
+                    .map_err(|_| "session state lock poisoned".to_string())?;
+                s.framebuffer = Some(FrameData {
+                    width: desktop_size.width,
+                    height: desktop_size.height,
+                    pixels: vec![0u8; desktop_size.width as usize * desktop_size.height as usize * 4],
+                });
+                s.frame_callback.clone()
+            };
+            // Outside the lock — Kotlin handlers may call back into the client.
+            if let Some(cb) = resize_cb {
+                cb.on_resize(desktop_size.width, desktop_size.height);
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "reactivation ended in unexpected state: {other:?}"
+        )),
+    }
 }
 
 /// Copy updated region from DecodedImage to our ARGB framebuffer
