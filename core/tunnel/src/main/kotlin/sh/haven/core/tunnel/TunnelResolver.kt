@@ -98,9 +98,9 @@ class TunnelResolver @Inject constructor(
      *
      * The factory throws [java.io.IOException] if the tunnel was torn
      * down between acquisition and a rebind attempt (e.g. user toggled
-     * the tunnel off mid-session). [MoshConnection.rebindSocket] catches
-     * and the receive loop continues, matching the existing
-     * "raw socket close" failure mode.
+     * the tunnel off mid-session). [MoshConnection.rebindSocket] swallows
+     * that failure and keeps the current socket, so the send loop survives
+     * and the next stall cycle retries once the tunnel is back (#421).
      */
     suspend fun udpSocketSupplier(
         profile: ConnectionProfile,
