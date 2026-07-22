@@ -22,10 +22,16 @@ subprojects {
                     missingDimensionStrategy("store", "full")
                 }
             }
-            lint.warning += "MissingTranslation"
         }
-        extensions.findByType<com.android.build.gradle.AppExtension>()?.apply {
-            lintOptions.warning("MissingTranslation")
+        // AGP 9 removed `lintOptions` and the old-extension `lint.warning +=` path
+        // no longer downgrades severity, so MissingTranslation started blocking CI
+        // again (4 errors slipped onto main because lint only runs on PRs, not push).
+        // Configure via the current DSL lint {} block on both module types instead.
+        extensions.findByType<com.android.build.api.dsl.LibraryExtension>()?.lint {
+            warning += "MissingTranslation"
+        }
+        extensions.findByType<com.android.build.api.dsl.ApplicationExtension>()?.lint {
+            warning += "MissingTranslation"
         }
     }
 }
