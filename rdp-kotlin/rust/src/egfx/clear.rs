@@ -34,8 +34,9 @@
 //!   a fresh "short" miss that reads new BGR triplets.
 //! * **Subcodecs** — per-region records `(xStart u16, yStart u16, w u16,
 //!   h u16, bitmapDataByteCount u32, subcodecId u8)`. We support id=0
-//!   (uncompressed BGR24) and id=2 (RLEX palette+runs). NSCodec (id=1) is
-//!   logged + skipped — Windows desktops don't emit it for typical UI.
+//!   (uncompressed BGR24), id=1 (NSCodec, MS-RDPNSC — Windows 10/11 does
+//!   emit it for desktop UI regions, see #418) and id=2 (RLEX
+//!   palette+runs).
 //!
 //! Caches:
 //!
@@ -474,14 +475,7 @@ fn decode_subcodecs(mut chunk: &[u8], nwidth: u32, nheight: u32, tile: &mut [u8]
         let payload = c.slice(data_len)?;
         match subcodec_id {
             0 => decode_subcodec_uncompressed(payload, x_start, y_start, width, height, nwidth, tile)?,
-            1 => {
-                // NSCodec — not implemented. Skip, leaving the region whatever
-                // the residual/bands phase wrote.
-                warn!(
-                    "clearcodec: skipping NSCodec sub-region {}x{} at ({},{}) — not implemented",
-                    width, height, x_start, y_start
-                );
-            }
+            1 => decode_subcodec_nscodec(payload, x_start, y_start, width, height, nwidth, tile)?,
             2 => decode_subcodec_rlex(payload, x_start, y_start, width, height, nwidth, tile)?,
             other => {
                 return Err(ClearError::Malformed(match other {
@@ -522,6 +516,133 @@ fn decode_subcodec_uncompressed(
         }
     }
     Ok(())
+}
+
+/// NSCodec (MS-RDPNSC) bitmap stream, embedded as ClearCodec subcodec id=1.
+///
+/// Header: `4 x u32` plane byte counts (Luma, OrangeChroma, GreenChroma,
+/// Alpha), `u8 ColorLossLevel` (1..=7), `u8 ChromaSubsamplingLevel`,
+/// `u16 reserved`, then the four planes back to back. Each plane is
+/// RLE-compressed when its byte count is smaller than the decoded plane
+/// size, raw when equal-or-larger, and an all-0xFF fill when zero.
+///
+/// Pixels are AYCoCg: `r = y + co - cg, g = y + cg, b = y - co - cg`,
+/// with chroma bytes sign-recovered by `<< (ColorLossLevel - 1)` then
+/// truncated to i8. With subsampling, the luma plane is stored at a
+/// width-rounded-to-8 stride and chroma planes at half that stride with
+/// one sample per 2x2 pixel block.
+///
+/// Reference: FreeRDP `libfreerdp/codec/nsc.c` (Apache 2.0). Algorithm
+/// ported, code is original.
+fn decode_subcodec_nscodec(
+    payload: &[u8],
+    x_start: u32,
+    y_start: u32,
+    width: u32,
+    height: u32,
+    nwidth: u32,
+    tile: &mut [u8],
+) -> Result<()> {
+    let mut c = Cursor::new(payload);
+    let mut plane_bytes = [0usize; 4];
+    for pb in &mut plane_bytes {
+        *pb = c.u32()? as usize;
+    }
+    let color_loss_level = c.u8()?;
+    if !(1..=7).contains(&color_loss_level) {
+        return Err(ClearError::Malformed("nscodec ColorLossLevel out of range"));
+    }
+    let subsampled = c.u8()? != 0;
+    c.u16()?; // reserved
+
+    let w = width as usize;
+    let h = height as usize;
+    let rw = (w + 7) / 8 * 8;
+    let rh = (h + 1) / 2 * 2;
+
+    // Decoded sizes of the Y / Co / Cg planes. The alpha plane is parsed
+    // (to keep the stream position honest) but not decoded: the surface is
+    // opaque and every other ClearCodec path writes alpha 0xFF.
+    let org: [usize; 3] = if subsampled {
+        [rw * h, (rw / 2) * (rh / 2), (rw / 2) * (rh / 2)]
+    } else {
+        [w * h; 3]
+    };
+
+    let mut planes: [Vec<u8>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for (i, plane) in planes.iter_mut().enumerate() {
+        let data = c.slice(plane_bytes[i])?;
+        *plane = if plane_bytes[i] == 0 {
+            vec![0xFF; org[i]]
+        } else if plane_bytes[i] < org[i] {
+            nsc_rle_decode(data, org[i])?
+        } else {
+            data[..org[i]].to_vec()
+        };
+    }
+    c.slice(plane_bytes[3])?; // alpha plane, unused
+
+    let shift = color_loss_level - 1;
+    for row in 0..h {
+        let (y_base, c_base) = if subsampled {
+            (row * rw, (row >> 1) * (rw >> 1))
+        } else {
+            (row * w, row * w)
+        };
+        let dst_row = (y_start as usize + row) * nwidth as usize + x_start as usize;
+        for col in 0..w {
+            let c_idx = c_base + if subsampled { col >> 1 } else { col };
+            let y_val = planes[0][y_base + col] as i16;
+            let co_val = ((planes[1][c_idx] as i16) << shift) as u8 as i8 as i16;
+            let cg_val = ((planes[2][c_idx] as i16) << shift) as u8 as i8 as i16;
+            let r = (y_val + co_val - cg_val).clamp(0, 0xFF) as u8;
+            let g = (y_val + cg_val).clamp(0, 0xFF) as u8;
+            let b = (y_val - co_val - cg_val).clamp(0, 0xFF) as u8;
+            let dst = (dst_row + col) * BPP;
+            if dst + BPP <= tile.len() {
+                tile[dst..dst + BPP].copy_from_slice(&[r, g, b, 0xFF]);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// NSCodec plane RLE (MS-RDPNSC 2.2.2): a byte repeated twice starts a run
+/// (`value value len`, run length `len + 2`, escaping to u32 when
+/// `len == 0xFF`); a lone byte is a literal; the final 4 bytes of every
+/// plane are always raw, and the 5th-from-last byte is always a literal.
+fn nsc_rle_decode(input: &[u8], original_size: usize) -> Result<Vec<u8>> {
+    let mut c = Cursor::new(input);
+    let mut out = Vec::with_capacity(original_size);
+    let mut left = original_size;
+    while left > 4 {
+        let value = c.u8()?;
+        if left == 5 {
+            out.push(value);
+            left -= 1;
+        } else if c.remaining() > 0 && c.peek() == value {
+            c.u8()?;
+            let l = c.u8()?;
+            let len = if l < 0xFF {
+                usize::from(l) + 2
+            } else {
+                c.u32()? as usize
+            };
+            if len > left {
+                return Err(ClearError::Malformed("nscodec rle run overflow"));
+            }
+            out.resize(out.len() + len, value);
+            left -= len;
+        } else {
+            out.push(value);
+            left -= 1;
+        }
+    }
+    if left != 4 {
+        return Err(ClearError::Malformed("nscodec rle run misaligned tail"));
+    }
+    out.extend_from_slice(c.slice(4)?);
+    Ok(out)
 }
 
 fn decode_subcodec_rlex(
@@ -675,6 +796,10 @@ impl<'a> Cursor<'a> {
         self.buf = &self.buf[1..];
         Ok(v)
     }
+    /// Next byte without consuming it. Caller must check `remaining() > 0`.
+    fn peek(&self) -> u8 {
+        self.buf[0]
+    }
     fn u16(&mut self) -> Result<u16> {
         self.need(2)?;
         let v = u16::from_le_bytes([self.buf[0], self.buf[1]]);
@@ -796,6 +921,145 @@ mod tests {
                 let off = (y * 4 + x) * 4;
                 let expected = if (1..=2).contains(&x) && (1..=2).contains(&y) {
                     [0xFF, 0, 0, 0xFF]
+                } else {
+                    [0, 0xFF, 0, 0xFF]
+                };
+                assert_eq!(&tile[off..off + 4], &expected, "pixel ({x},{y})");
+            }
+        }
+    }
+
+    /// NSCODEC_BITMAP_STREAM: header + Y/Co/Cg/A planes back to back.
+    fn build_nsc(
+        planes: [&[u8]; 4],
+        color_loss_level: u8,
+        subsampled: bool,
+    ) -> Vec<u8> {
+        let mut v = Vec::new();
+        for p in &planes {
+            v.extend_from_slice(&(p.len() as u32).to_le_bytes());
+        }
+        v.push(color_loss_level);
+        v.push(u8::from(subsampled));
+        v.extend_from_slice(&[0, 0]); // reserved
+        for p in &planes {
+            v.extend_from_slice(p);
+        }
+        v
+    }
+
+    #[test]
+    fn nsc_rle_runs_literals_and_raw_tail() {
+        // run of 6 x 0xAA, two literals, then the mandatory 4 raw bytes.
+        let stream = [0xAA, 0xAA, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+        let out = nsc_rle_decode(&stream, 12).unwrap();
+        assert_eq!(
+            out,
+            [0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]
+        );
+    }
+
+    #[test]
+    fn nsc_rle_run_overflow_rejected() {
+        // Run of 200 into a 12-byte plane.
+        let stream = [0xAA, 0xAA, 0xC6, 0x03, 0x04, 0x05, 0x06];
+        assert!(nsc_rle_decode(&stream, 12).is_err());
+    }
+
+    #[test]
+    fn nscodec_grey_no_subsampling() {
+        // 2x2 region: Co=Cg=0 makes each pixel grey at its luma value.
+        let y = [100u8, 150, 200, 250];
+        let zero = [0u8; 4];
+        let payload = build_nsc([&y, &zero, &zero, &[]], 1, false);
+        let mut tile = vec![0u8; 2 * 2 * BPP];
+        decode_subcodec_nscodec(&payload, 0, 0, 2, 2, 2, &mut tile).unwrap();
+        for (i, px) in tile.chunks_exact(4).enumerate() {
+            let v = y[i];
+            assert_eq!(px, &[v, v, v, 0xFF], "pixel {i}");
+        }
+    }
+
+    #[test]
+    fn nscodec_chroma_subsampling_and_color_loss() {
+        // 4x2, subsampled: luma stride rounds up to 8, chroma planes are
+        // (rw/2) x (rh/2) = 4x1 with one sample per 2x2 block. Co sample 0
+        // is 16, recovered by << (loss-1 = 2) to +64; samples 1..4 are 0.
+        let mut y = [0u8; 16];
+        for row in 0..2 {
+            for col in 0..4 {
+                y[row * 8 + col] = 100;
+            }
+        }
+        let co = [16u8, 0, 0, 0];
+        let cg = [0u8; 4];
+        let payload = build_nsc([&y, &co, &cg, &[]], 3, true);
+        let mut tile = vec![0u8; 4 * 2 * BPP];
+        decode_subcodec_nscodec(&payload, 0, 0, 4, 2, 4, &mut tile).unwrap();
+        for row in 0..2 {
+            for col in 0..4 {
+                let off = (row * 4 + col) * BPP;
+                let expected = if col < 2 {
+                    [164, 100, 36, 0xFF] // r=y+co, g=y, b=y-co
+                } else {
+                    [100, 100, 100, 0xFF]
+                };
+                assert_eq!(&tile[off..off + 4], &expected, "pixel ({col},{row})");
+            }
+        }
+    }
+
+    #[test]
+    fn nscodec_negative_chroma() {
+        // Chroma bytes are signed: 0xF0 at shift 0 is -16.
+        let payload = build_nsc([&[100], &[0xF0], &[0], &[]], 1, false);
+        let mut tile = vec![0u8; BPP];
+        decode_subcodec_nscodec(&payload, 0, 0, 1, 1, 1, &mut tile).unwrap();
+        assert_eq!(tile, [84, 100, 116, 0xFF]); // r=y-16, g=y, b=y+16
+    }
+
+    #[test]
+    fn nscodec_rle_compressed_luma_plane() {
+        // 3x3: luma plane RLE (7 bytes < 9) = run of 5 x 100 + 4 raw bytes.
+        let y_rle = [100u8, 100, 0x03, 1, 2, 3, 4];
+        let zero = [0u8; 9];
+        let payload = build_nsc([&y_rle, &zero, &zero, &[]], 1, false);
+        let mut tile = vec![0u8; 3 * 3 * BPP];
+        decode_subcodec_nscodec(&payload, 0, 0, 3, 3, 3, &mut tile).unwrap();
+        let expected_y = [100u8, 100, 100, 100, 100, 1, 2, 3, 4];
+        for (i, px) in tile.chunks_exact(4).enumerate() {
+            let v = expected_y[i];
+            assert_eq!(px, &[v, v, v, 0xFF], "pixel {i}");
+        }
+    }
+
+    #[test]
+    fn nscodec_subregion_via_subcodec_record() {
+        // Full ClearCodec packet: green residual background, NSCodec 2x2
+        // grey-200 sub-region at (1,1) of a 4x4 tile.
+        let y = [200u8; 4];
+        let zero = [0u8; 4];
+        let nsc = build_nsc([&y, &zero, &zero, &[]], 1, false);
+
+        let mut sub = Vec::new();
+        sub.extend_from_slice(&1u16.to_le_bytes()); // x_start
+        sub.extend_from_slice(&1u16.to_le_bytes()); // y_start
+        sub.extend_from_slice(&2u16.to_le_bytes()); // width
+        sub.extend_from_slice(&2u16.to_le_bytes()); // height
+        sub.extend_from_slice(&(nsc.len() as u32).to_le_bytes());
+        sub.push(1); // subcodec_id = NSCodec
+        sub.extend_from_slice(&nsc);
+
+        let mut residual = Vec::new();
+        residual.extend_from_slice(&[0x00, 0xFF, 0x00, 16]);
+        let payload = build(0, 0, &residual, &[], &sub);
+        let mut dec = ClearDecoder::new();
+        let tile = dec.decompress(&payload, 4, 4).unwrap();
+        for y in 0..4 {
+            for x in 0..4 {
+                let off = (y * 4 + x) * 4;
+                let expected = if (1..=2).contains(&x) && (1..=2).contains(&y) {
+                    [200, 200, 200, 0xFF]
                 } else {
                     [0, 0xFF, 0, 0xFF]
                 };
