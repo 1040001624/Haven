@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.11
+
+🟦 **Windows RDP: the remaining black squares are fixed (NSCodec)** — the logcat on #418 finally showed what the persisting black rectangles actually are: not the progressive "upgrade" tiles v5.81.8 targeted, but regions Windows compresses with an embedded **NSCodec** sub-stream inside ClearCodec, which Haven logged and skipped on the (wrong) assumption Windows doesn't emit it for desktop UI. Windows 10 1909 and Windows 11 25H2 both do. Haven now decodes NSCodec — plane RLE, AYCoCg colour recovery, chroma subsampling — so those regions paint instead of staying black. Verified against 7 new decoder unit tests ported from the FreeRDP reference; not yet confirmed against a live Windows desktop, so feedback on #418 is very welcome. The same logcat confirmed the v5.81.8 upgrade-tile toggle does engage — the squares it couldn't fix were these NSCodec regions. (#418, thanks ZGLinus)
+
 ## v5.81.10
 
 🔌 **RDP: connecting to VirtualBox (and other v1-certificate servers) works again** — RDP to a headless VirtualBox VM failed at the TLS handshake with "server certificate problem (UnsupportedCertVersion)". Haven's certificate pinning ran the server's certificate through a parser that rejects the older X.509 **v1** format outright — and VirtualBox's built-in RDP server presents a v1 certificate. Haven now accepts v1 certificates: it still pins the exact certificate on first connection and still verifies the server holds the matching private key, so the man-in-the-middle protection is unchanged; only the needless version check is dropped. (#422, thanks pawlosck)
