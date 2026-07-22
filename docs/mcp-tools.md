@@ -93,7 +93,6 @@ Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, S
 - `emailTls` (boolean) — EMAIL/imap only: implicit TLS (SSL). Default true.
 - `ignoreSavedKeys` (boolean) — SSH-family only: when true, authenticate with password (and keyboard-interactive) only — saved keystore keys are never offered to the server. Lets a profile target a password-only server without the auto-key-offer suppressing the password prompt (#121). Default false.
 - `keyId` (string) — SSH only: id of a saved SSH key (from list_ssh_keys) to authenticate with. Mutually optional with password.
-- `sshOptions` (string) — SSH only: ssh_config-style option lines ('Key value' or 'Key=value', newline-separated) applied to this profile — e.g. 'ServerAliveInterval 60' or the Haven-internal 'HavenSshEngine sshlib' engine toggle (#58).
 - `password` (string) — Password (stored). Optional for SSH if a key is used; some VNC/SMB setups allow guest.
 - `port` (integer) — TCP port. Defaults: SSH 22, SMB 445, VNC 5900, RDP 3389, SPICE 5900. Type-specific vncPort/rdpPort/spicePort override this.
 - `portKnockDelayMs` (integer) — Inter-knock delay in ms (default 100). Ignored when portKnockSequence is empty.
@@ -108,6 +107,7 @@ Create a saved connection profile. Supports connectionType=SSH, SMB, VNC, RDP, S
 - `spicePort` (integer) — SPICE only: TCP port (default 5900). Overrides the generic `port`.
 - `spiceSshForward` (boolean) — SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId). The SPICE target is reached at 127.0.0.1:<port> from the SSH server. Default false.
 - `spiceSshProfileId` (string) — SPICE only: id of the SSH profile (from list_connections) to tunnel through when spiceSshForward is true.
+- `sshOptions` (string) — SSH only: ssh_config-style option lines ('Key value' or 'Key=value', newline-separated) applied to this profile — e.g. 'ServerAliveInterval 60' or the Haven-internal 'HavenSshEngine sshlib' engine toggle (#58).
 - `tunnelConfigId` (string) — Optional: route the new profile through this tunnel (from list_tunnels). Equivalent to follow-up set_profile_routing.
 - `tunnelOnly` (boolean) — SSH only: tunnel-only mode (#150). When true, the profile brings up the SSH transport and registers port forwards but does not open a terminal. Default false. Pair with auto_reconnect for autossh-style keepalive.
 - `usbBaudRate` (integer) — USBSERIAL only: serial baud rate (default 115200). Stored in `port`.
@@ -190,7 +190,6 @@ Edit fields on an existing connection profile (load → change → save). Pass p
 - `ignoreSavedKeys` (boolean) — SSH-family only: force password-only auth, never offer saved keystore keys (#121).
 - `jumpProfileId` (string) — SSH only: id of the SSH profile to jump through (ssh -J). The target host is dialled from the jump host, so it may be an address only the jump can reach. Empty string clears.
 - `keyId` (string) — SSH only: id of a saved key (list_ssh_keys). Empty string clears.
-- `sshOptions` (string) — SSH only: replace the profile's ssh_config-style option lines (e.g. 'HavenSshEngine sshlib' toggles the #58 SFTP engine). Empty string clears. Ignored on non-SSH profiles (USB-serial packs its line format here).
 - `label` (string) — New user-facing label.
 - `password` (string) — New password (stored encrypted). Mapped to the profile's transport (SSH/VNC/RDP/SMB). Pass an empty string to clear it.
 - `port` (integer) — New TCP port.
@@ -200,6 +199,7 @@ Edit fields on an existing connection profile (load → change → save). Pass p
 - `smbSshProfileId` (string) — SMB only: SSH profile id to tunnel through. Empty string clears.
 - `spiceSshForward` (boolean) — SPICE only: tunnel through a saved SSH profile (set spiceSshProfileId).
 - `spiceSshProfileId` (string) — SPICE only: SSH profile id to tunnel through. Empty string clears.
+- `sshOptions` (string) — SSH only: replace the profile's ssh_config-style option lines (e.g. 'HavenSshEngine sshlib' toggles the #58 SFTP engine). Empty string clears. Ignored on non-SSH profiles (USB-serial packs its line format here).
 - `useMosh` (boolean) — SSH only: use Mosh on top of the SSH bootstrap.
 - `username` (string) — New username (SSH/SMB).
 - `vncSshForward` (boolean) — VNC only: tunnel through a saved SSH profile (set vncSshProfileId).
