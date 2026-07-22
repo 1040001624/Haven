@@ -429,6 +429,22 @@ class SshlibCapabilitySpikeTest {
     }
 
     // ------------------------------------------------------------------
+    // Exec exit status (phase 3)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `GAP exec exit status is not surfaced — flips when a release carries cbssh PR 232`() {
+        // sshlib runs exec fine but drops the RFC 4254 §6.10 exit-status
+        // report, so ExecResult.exitStatus cannot be produced honestly.
+        // Upstreamed as connectbot/cbssh#232 (SshSession.exitInfo). When a
+        // release carries it, this fails: add SshlibExecContractTest and the
+        // engine-aware exec routing (#58 P3).
+        val exitMembers = org.connectbot.sshlib.SshSession::class.java.methods
+            .filter { "exit" in it.name.lowercase() }
+        assertTrue("exit API appeared: $exitMembers", exitMembers.isEmpty())
+    }
+
+    // ------------------------------------------------------------------
     // TransportFactory pluggability + jump chains (phase 7)
     // ------------------------------------------------------------------
 
