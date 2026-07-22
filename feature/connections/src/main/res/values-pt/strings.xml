@@ -552,4 +552,10 @@
     <string name="connections_usbserial_parity_space">Espaço</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">Motor SSH</string>
+    <string name="connections_helper_ssh_engine">Qual implementação SSH esta conexão usa. sshlib é experimental: por enquanto apenas transferência de arquivos — terminal e túneis continuam no JSch.</string>
+    <string name="connections_ssh_engine_jsch_label">Padrão (JSch)</string>
+    <string name="connections_ssh_engine_jsch_desc">O motor comprovado. Todos os recursos.</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib (experimental)</string>
+    <string name="connections_ssh_engine_sshlib_desc">Motor Kotlin, apenas navegação/transferência de arquivos SFTP. Requer conexão direta — sem jump host ou proxy.</string>
 </resources>

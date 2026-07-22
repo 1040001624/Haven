@@ -2591,6 +2591,50 @@ fun ConnectionEditDialog(
                         }
                     }
 
+                    // SSH engine picker (#58) — JSch / sshlib. Stored as a
+                    // HavenSshEngine directive inside sshOptions, no schema bump.
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.connections_section_ssh_engine),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        stringResource(R.string.connections_helper_ssh_engine),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        listOf(
+                            Triple("JSCH",
+                                stringResource(R.string.connections_ssh_engine_jsch_label),
+                                stringResource(R.string.connections_ssh_engine_jsch_desc)),
+                            Triple("SSHLIB",
+                                stringResource(R.string.connections_ssh_engine_sshlib_label),
+                                stringResource(R.string.connections_ssh_engine_sshlib_desc)),
+                        ).forEach { (value, label, sub) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { sshOptions = setSshEngineInOptions(sshOptions, value) }
+                                    .padding(vertical = 4.dp),
+                            ) {
+                                RadioButton(
+                                    selected = sshEngineFromOptions(sshOptions) == value,
+                                    onClick = { sshOptions = setSshEngineInOptions(sshOptions, value) },
+                                )
+                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        sub,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Alternate screen buffer toggle
                     Spacer(Modifier.height(4.dp))
                     BooleanToggleRow(
@@ -3892,6 +3936,38 @@ private fun SshTunnelBlock(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
+    }
+}
+
+/**
+ * Read the SSH-engine choice out of the sshOptions text (#58): "SSHLIB" when
+ * a `HavenSshEngine sshlib` line is present, "JSCH" otherwise. Mirrors
+ * `ConnectionConfig.sshEngine`'s safe-fallback parse.
+ */
+internal fun sshEngineFromOptions(options: String): String {
+    val sshlib = options.lineSequence().any { line ->
+        val trimmed = line.trim()
+        if (trimmed.startsWith("#")) return@any false
+        val sep = trimmed.indexOfFirst { it == ' ' || it == '=' }
+        sep > 0 &&
+            trimmed.substring(0, sep).trim().equals("HavenSshEngine", ignoreCase = true) &&
+            trimmed.substring(sep + 1).trim().equals("sshlib", ignoreCase = true)
+    }
+    return if (sshlib) "SSHLIB" else "JSCH"
+}
+
+/** Rewrite the sshOptions text with the given engine choice ("JSCH" drops the directive). */
+internal fun setSshEngineInOptions(options: String, engine: String): String {
+    val kept = options.lines().filterNot { line ->
+        val trimmed = line.trim()
+        val sep = trimmed.indexOfFirst { it == ' ' || it == '=' }
+        sep > 0 && trimmed.substring(0, sep).trim().equals("HavenSshEngine", ignoreCase = true)
+    }
+    val base = kept.joinToString("\n").trim('\n')
+    return when {
+        engine != "SSHLIB" -> base
+        base.isBlank() -> "HavenSshEngine sshlib"
+        else -> "$base\nHavenSshEngine sshlib"
     }
 }
 

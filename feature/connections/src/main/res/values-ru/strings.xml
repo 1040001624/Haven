@@ -552,4 +552,10 @@
     <string name="connections_usbserial_parity_space">Пробел</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">Движок SSH</string>
+    <string name="connections_helper_ssh_engine">Какая реализация SSH используется этим подключением. sshlib — экспериментальный: пока только передача файлов; терминал и туннели остаются на JSch.</string>
+    <string name="connections_ssh_engine_jsch_label">По умолчанию (JSch)</string>
+    <string name="connections_ssh_engine_jsch_desc">Проверенный движок. Все функции.</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib (экспериментальный)</string>
+    <string name="connections_ssh_engine_sshlib_desc">Движок на Kotlin, только просмотр/передача файлов по SFTP. Нужно прямое подключение — без jump-хоста и прокси.</string>
 </resources>

@@ -59,6 +59,16 @@ class SshClient : Closeable {
     var hostVerifiedByCa: Boolean = false
         private set
 
+    /**
+     * True when the last [connect]/[connectBlocking] dialed through a proxy
+     * or jump chain rather than direct TCP. The sshlib SFTP engine (#58)
+     * needs a direct path for its dedicated connection, so [SshSessionManager]
+     * consults this before routing a profile's SFTP to sshlib.
+     */
+    @Volatile
+    var connectedViaProxy: Boolean = false
+        private set
+
     /** Whether the active session should set agent forwarding on newly opened shell/exec channels. */
     private var agentForwardingEnabled = false
 
@@ -290,6 +300,7 @@ class SshClient : Closeable {
         verboseLogger?.let { jsch.setInstanceLogger(it) }
 
         val resolvedIp = if (proxy != null) config.host else resolveHost(config.host, family = config.addressFamily)
+        connectedViaProxy = proxy != null
         val sess = jsch.getSession(config.username, resolvedIp, config.port)
         if (proxy != null) sess.setProxy(proxy.jschProxy)
         // Accept any key at the JSch level; we verify post-connect ourselves (TOFU)
@@ -499,6 +510,7 @@ class SshClient : Closeable {
         verboseLogger?.let { jsch.setInstanceLogger(it) }
 
         val resolvedIp = if (proxy != null) config.host else resolveHost(config.host, family = config.addressFamily)
+        connectedViaProxy = proxy != null
         val sess = jsch.getSession(config.username, resolvedIp, config.port)
         if (proxy != null) sess.setProxy(proxy.jschProxy)
         sess.setConfig("StrictHostKeyChecking", "no")

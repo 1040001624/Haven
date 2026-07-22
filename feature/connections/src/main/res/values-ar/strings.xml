@@ -552,4 +552,10 @@
     <string name="connections_usbserial_parity_space">فراغ</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">محرك SSH</string>
+    <string name="connections_helper_ssh_engine">تنفيذ SSH الذي يستخدمه هذا الاتصال. ‏sshlib تجريبي: نقل الملفات فقط حاليًا — تبقى الطرفية والأنفاق على JSch.</string>
+    <string name="connections_ssh_engine_jsch_label">افتراضي (JSch)</string>
+    <string name="connections_ssh_engine_jsch_desc">المحرك المُجرَّب. جميع الميزات.</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib (تجريبي)</string>
+    <string name="connections_ssh_engine_sshlib_desc">محرك Kotlin، تصفح/نقل ملفات SFTP فقط. يتطلب اتصالًا مباشرًا — دون مضيف وسيط أو وكيل.</string>
 </resources>

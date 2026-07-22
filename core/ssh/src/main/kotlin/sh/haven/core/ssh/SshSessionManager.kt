@@ -22,6 +22,7 @@ import sh.haven.core.data.repository.ConnectionLogRepository
 import sh.haven.core.data.terminal.ScrollbackRing
 import sh.haven.core.ssh.sftp.JschSftpSession
 import sh.haven.core.ssh.sftp.SftpSession
+import sh.haven.core.ssh.sshlib.SshlibSftpConnector
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -341,6 +342,12 @@ class SshSessionManager @Inject constructor(
                 postLoginBeforeSessionManager = postLoginBeforeSessionManager,
             ))
         }
+        if (config.sshEngine == SshEngine.SSHLIB) {
+            engineLog(
+                _sessions.value[sessionId]?.profileId ?: return,
+                "engine=sshlib: SFTP only in this build — terminal/tunnels via JSch",
+            )
+        }
     }
 
     /**
@@ -559,6 +566,12 @@ class SshSessionManager @Inject constructor(
      * Callers in feature- and app-modules use this so they never import
      * engine types (JSch's `ChannelSftp`) directly. Returns null if no
      * session for this profile is connected.
+     *
+     * Engine routing (#58): a profile toggled to [SshEngine.SSHLIB] gets a
+     * sshlib-backed session over its own dedicated connection when the
+     * config is within sshlib's phase-1 capabilities; otherwise it falls
+     * back to JSch with a connection-log line naming why. A dial failure on
+     * the sshlib path throws — never a silent fallback.
      */
     fun openSftpSession(profileId: String): SftpSession? {
         val session = _sessions.value.values
@@ -566,12 +579,47 @@ class SshSessionManager @Inject constructor(
             .firstOrNull() ?: return null
         // Reuse the existing session if still connected
         session.sftpSession?.let { if (it.isConnected) return it }
-        val sftp = JschSftpSession(session.client.openSftpChannel())
+        val sftp = dialSftp(session)
         _sessions.update { map ->
             val existing = map[session.sessionId] ?: return@update map
             map + (session.sessionId to existing.copy(sftpSession = sftp))
         }
         return sftp
+    }
+
+    private fun dialSftp(session: SessionState): SftpSession {
+        val config = session.connectionConfig
+        if (config?.sshEngine == SshEngine.SSHLIB) {
+            val reason = SshlibSftpConnector.unsupportedReason(
+                config,
+                hasJump = session.jumpSessionId != null,
+                hasProxy = session.client.connectedViaProxy,
+            )
+            if (reason == null) {
+                // Blocking dial — callers already invoke openSftpSession off
+                // the main thread (the JSch path opens a channel over the wire
+                // too). Same precedent as the reconnect loop's connectBlocking.
+                val sftp = runBlocking { SshlibSftpConnector.connect(config, hostKeyVerifier) }
+                engineLog(session.profileId, "SFTP: sshlib engine (dedicated connection)")
+                return sftp
+            }
+            engineLog(
+                session.profileId,
+                "SFTP: falling back to JSch — sshlib engine does not support $reason yet",
+            )
+        }
+        return JschSftpSession(session.client.openSftpChannel())
+    }
+
+    /** Best-effort connection-log line for SSH-engine routing decisions (#58). */
+    private fun engineLog(profileId: String, detail: String) {
+        logScope.launch {
+            runCatching {
+                connectionLogRepository.logEvent(
+                    profileId, ConnectionLog.Status.CONNECTED, details = detail,
+                )
+            }
+        }
     }
 
     /**

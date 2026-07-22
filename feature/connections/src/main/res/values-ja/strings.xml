@@ -552,4 +552,10 @@
     <string name="connections_usbserial_parity_space">スペース</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">SSH エンジン</string>
+    <string name="connections_helper_ssh_engine">この接続が使用する SSH 実装。sshlib は実験的機能です：現時点ではファイル転送のみ — ターミナルとトンネルは JSch のままです。</string>
+    <string name="connections_ssh_engine_jsch_label">デフォルト（JSch）</string>
+    <string name="connections_ssh_engine_jsch_desc">実績あるエンジン。全機能対応。</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib（実験的）</string>
+    <string name="connections_ssh_engine_sshlib_desc">Kotlin エンジン。SFTP ファイル閲覧・転送のみ。直接接続が必要 — 踏み台・プロキシ非対応。</string>
 </resources>

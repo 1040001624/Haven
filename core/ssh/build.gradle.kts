@@ -26,6 +26,13 @@ android {
 
 dependencies {
     api(libs.jsch)
+    // Second SSH engine (#58). implementation, NOT api — no module outside
+    // core:ssh may see sshlib types, same rule as ChannelSftp before it.
+    implementation(libs.sshlib) {
+        // sshlib ships JVM tink; Haven already carries tink-android (same
+        // classes, same package) — keeping both is a duplicate-class error.
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
     // JSch optional deps — compileOnly so R8 doesn't error on missing classes
     compileOnly("org.slf4j:slf4j-api:2.0.18")
     compileOnly("net.java.dev.jna:jna:5.14.0")
@@ -56,6 +63,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     // Embedded SSH server used to reproduce the v4.51.0 TOFU bypass bug (#75 follow-up)
     testImplementation(libs.sshd.core)
+    testImplementation(libs.sshd.sftp)
     testRuntimeOnly(libs.slf4j.simple)
 }
 

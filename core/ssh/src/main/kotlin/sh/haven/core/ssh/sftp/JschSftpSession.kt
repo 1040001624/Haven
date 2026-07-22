@@ -110,16 +110,18 @@ internal class JschSftpSession(private val channel: ChannelSftp) : SftpSession {
             // IndexOutOfBounds ("src.length=1024 … length=2048"), which then
             // desyncs the channel. Confirmed unfixed through jsch 2.28.2. So
             // stream via the non-buggy get(src, OutputStream, …, skip) overload on
-            // a background thread and surface the bytes through a pipe. OVERWRITE
-            // + `offset` reads the source starting at `offset` (offset 0 = whole
-            // file — the install / serve_file case).
+            // a background thread and surface the bytes through a pipe. JSch only
+            // honours `skip` when mode == RESUME (with OVERWRITE it silently reads
+            // from 0 — caught by the #58 SftpSessionContractTest), so pick the
+            // mode from the offset; offset 0 = whole file (install / serve_file).
             val pipeIn = PipedInputStream(PIPE_BUFFER_BYTES)
             val pipeOut = PipedOutputStream(pipeIn)
             val failure = AtomicReference<Throwable?>(null)
             Thread({
                 try {
                     translatingJschErrors {
-                        channel.get(path, pipeOut, null, ChannelSftp.OVERWRITE, offset)
+                        val mode = if (offset > 0) ChannelSftp.RESUME else ChannelSftp.OVERWRITE
+                        channel.get(path, pipeOut, null, mode, offset)
                     }
                 } catch (t: Throwable) {
                     failure.set(t)

@@ -552,4 +552,10 @@
     <string name="connections_usbserial_parity_space">Space</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">SSH-Engine</string>
+    <string name="connections_helper_ssh_engine">Welche SSH-Implementierung diese Verbindung nutzt. sshlib ist experimentell: vorerst nur Dateiübertragung — Terminal und Tunnel bleiben bei JSch.</string>
+    <string name="connections_ssh_engine_jsch_label">Standard (JSch)</string>
+    <string name="connections_ssh_engine_jsch_desc">Die bewährte Engine. Alle Funktionen.</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib (experimentell)</string>
+    <string name="connections_ssh_engine_sshlib_desc">Kotlin-Engine, nur SFTP-Dateibrowsing/-übertragung. Benötigt eine Direktverbindung — kein Jump-Host oder Proxy.</string>
 </resources>

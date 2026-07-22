@@ -550,4 +550,10 @@
     <string name="connections_usbserial_parity_space">空格</string>
     <string name="connections_usbserial_flow_rtscts">RTS/CTS</string>
     <string name="connections_usbserial_flow_xonxoff">XON/XOFF</string>
+    <string name="connections_section_ssh_engine">SSH 引擎</string>
+    <string name="connections_helper_ssh_engine">此连接使用的 SSH 实现。sshlib 为实验性：目前仅用于文件传输 — 终端和隧道仍使用 JSch。</string>
+    <string name="connections_ssh_engine_jsch_label">默认（JSch）</string>
+    <string name="connections_ssh_engine_jsch_desc">成熟稳定的引擎。支持全部功能。</string>
+    <string name="connections_ssh_engine_sshlib_label">sshlib（实验性）</string>
+    <string name="connections_ssh_engine_sshlib_desc">Kotlin 引擎，仅支持 SFTP 文件浏览/传输。需要直接连接 — 不支持跳板机或代理。</string>
 </resources>
