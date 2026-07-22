@@ -1467,6 +1467,7 @@ internal class McpTools(
                 boolean("tunnelOnly", "SSH only: tunnel-only mode (#150). When true, the profile brings up the SSH transport and registers port forwards but does not open a terminal. Default false. Pair with auto_reconnect for autossh-style keepalive.")
                 boolean("useMosh", "SSH only: when true, the profile uses Mosh on top of the SSH bootstrap. SSH execs `mosh-server new -s`, parses MOSH CONNECT, then the UDP transport takes over. Default false.")
                 string("keyId", "SSH only: id of a saved SSH key (from list_ssh_keys) to authenticate with. Mutually optional with password.")
+                string("sshOptions", "SSH only: ssh_config-style option lines ('Key value' or 'Key=value', newline-separated) applied to this profile — e.g. 'ServerAliveInterval 60' or the Haven-internal 'HavenSshEngine sshlib' engine toggle (#58).")
                 boolean("ignoreSavedKeys", "SSH-family only: when true, authenticate with password (and keyboard-interactive) only — saved keystore keys are never offered to the server. Lets a profile target a password-only server without the auto-key-offer suppressing the password prompt (#121). Default false.")
                 stringArray("authMethods", "SSH only (#166): ordered multi-factor auth methods attempted in one connect, for servers requiring a chain like publickey,password. Each element is a token: \"PASSWORD\", \"KEY\" (any saved key), \"KEY:<keyId>\", \"KEYBOARD_INTERACTIVE\", or \"TOTP:<id>\" (auto-fill an OATH-TOTP code from list_totp_secrets, #178). Omit for the single-method default derived from keyId/password.")
                 string("portKnockSequence", "Optional port-knock sequence fired before the real connect. Format: whitespace/comma-separated 'port[/proto]' tokens — e.g. '7000 8000 9000' (all TCP) or '7000/tcp 8000/udp 9000/tcp'. Empty = disabled.")
@@ -1500,6 +1501,7 @@ internal class McpTools(
                 string("username", "New username (SSH/SMB).")
                 string("password", "New password (stored encrypted). Mapped to the profile's transport (SSH/VNC/RDP/SMB). Pass an empty string to clear it.")
                 string("keyId", "SSH only: id of a saved key (list_ssh_keys). Empty string clears.")
+                string("sshOptions", "SSH only: replace the profile's ssh_config-style option lines (e.g. 'HavenSshEngine sshlib' toggles the #58 SFTP engine). Empty string clears. Ignored on non-SSH profiles (USB-serial packs its line format here).")
                 string("jumpProfileId", "SSH only: id of the SSH profile to jump through (ssh -J). The target host is dialled from the jump host, so it may be an address only the jump can reach. Empty string clears.")
                 boolean("ignoreSavedKeys", "SSH-family only: force password-only auth, never offer saved keystore keys (#121).")
                 boolean("useMosh", "SSH only: use Mosh on top of the SSH bootstrap.")
@@ -5584,6 +5586,7 @@ internal class McpTools(
             smbPassword = if (existing.connectionType == "SMB") newPassword(existing.smbPassword) else existing.smbPassword,
             spicePassword = if (existing.connectionType == "SPICE") newPassword(existing.spicePassword) else existing.spicePassword,
             keyId = newKeyId,
+            sshOptions = if (existing.connectionType == "SSH") str("sshOptions", existing.sshOptions) else existing.sshOptions,
             jumpProfileId = str("jumpProfileId", existing.jumpProfileId),
             ignoreSavedKeys = bool("ignoreSavedKeys", existing.ignoreSavedKeys),
             useMosh = bool("useMosh", existing.useMosh),
@@ -5690,6 +5693,7 @@ internal class McpTools(
                 connectionType = "SSH",
                 useMosh = args.optBoolean("useMosh", false),
                 keyId = args.optString("keyId").ifBlank { null },
+                sshOptions = args.optString("sshOptions").ifBlank { null },
                 authMethods = authMethodsText,
                 ignoreSavedKeys = ignoreSavedKeys,
                 sessionManager = parseSessionManager(args.optString("sessionManager")),
