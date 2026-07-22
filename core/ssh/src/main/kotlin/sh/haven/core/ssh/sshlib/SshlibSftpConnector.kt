@@ -67,10 +67,20 @@ internal object SshlibSftpConnector {
         connectTimeoutMs: Long = CONNECT_TIMEOUT_MS,
     ): SshlibSftpSession {
         val host = SshClient.resolveHost(config.host, config.addressFamily)
+        val trustGate = TrustedOnlyVerifier(hostKeyVerifier, config.host, config.port)
         val client = SshlibClient(
-            host = host,
-            port = config.port,
-            hostKeyVerifier = TrustedOnlyVerifier(hostKeyVerifier, config.host, config.port),
+            org.connectbot.sshlib.SshClientConfig {
+                this.host = host
+                this.port = config.port
+                this.hostKeyVerifier = trustGate
+                // sshlib 0.3.1 client-initiated rekey is broken both ways: a
+                // byte-limit rekey mid-transfer kills the channel, an interval
+                // rekey wedges an idle session (SshlibCapabilitySpikeTest GAP
+                // probes). Push both thresholds out of practical reach until
+                // the upstream fix ships; the probes flip when it does.
+                rekeyIntervalMs = Long.MAX_VALUE / 2
+                rekeyBytesLimit = Long.MAX_VALUE / 2
+            },
         )
         try {
             when (val result = withTimeout(connectTimeoutMs) { client.connect() }) {
