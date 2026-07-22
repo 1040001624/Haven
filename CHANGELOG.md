@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.83.1
+
+🔌 **Agent API: profiles' remote command is settable over MCP** — `create_connection` and `update_connection` now take `remoteCommand` (run via an SSH exec request instead of a login shell, e.g. `tmux new -A -s work`) and `requestPty`, and profiles report them back through `list_connections`. Previously the v5.83.0 remote-command field could only be set in the connection editor. (#436)
+
 ## v5.83.0
 
 ⌨️ **SSH profiles can run a remote command on connect — reliable tmux attach** — a new per-profile "Remote command (advanced)" field, with a "Request terminal (PTY)" toggle, runs a command via an SSH `exec` request instead of an interactive login shell. Because it runs *before* shell startup files (`.bashrc` and any auto-tmux hook), setting it to `tmux new -A -s work` attaches to — or creates — that exact named session every time, with no risk of racing a startup hook into the wrong or a duplicate session. It works over mosh too (passed as `mosh-server -- <command>`), so mosh's roaming resilience is preserved — unlike a server-side forced command, which mosh can't bootstrap through. The setting round-trips through encrypted backups. (#436, thanks kanazawahere)
