@@ -5,6 +5,12 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.81.12
+
+🪦 **Remote desktops: a dead session no longer pretends to be connected** — when an RDP/SPICE session died right after the handshake (a protocol error, a server restart, a network drop the session loop shrugged off), the desktop tab kept claiming "connected" while showing a frozen or black frame — and worse, tapping Connect again silently did nothing until you closed the zombie tab by hand. Fatal protocol errors now surface as real errors, a server-side session end flips the tab to a new "disconnected" state (shown in the connections list and `list_desktop_sessions`), reconnecting replaces the dead tab instead of no-opping, and the session's end is written to the connection audit log. Verified on-device against a server that kills the session milliseconds after connect. (#437)
+
+🔌 **Agent API: `disconnect_profile` now closes desktop tabs** — for directly-connected (non-SSH-tunnelled) VNC/RDP/SPICE profiles, the MCP `disconnect_profile` verb tore down the transport but left the desktop tab open. It now closes the tab too, so `list_desktop_sessions` reflects reality. (#437)
+
 ## v5.81.11
 
 🟦 **Windows RDP: the remaining black squares are fixed (NSCodec)** — the logcat on #418 finally showed what the persisting black rectangles actually are: not the progressive "upgrade" tiles v5.81.8 targeted, but regions Windows compresses with an embedded **NSCodec** sub-stream inside ClearCodec, which Haven logged and skipped on the (wrong) assumption Windows doesn't emit it for desktop UI. Windows 10 1909 and Windows 11 25H2 both do. Haven now decodes NSCodec — plane RLE, AYCoCg colour recovery, chroma subsampling — so those regions paint instead of staying black. Verified against 7 new decoder unit tests ported from the FreeRDP reference; not yet confirmed against a live Windows desktop, so feedback on #418 is very welcome. The same logcat confirmed the v5.81.8 upgrade-tile toggle does engage — the squares it couldn't fix were these NSCodec regions. (#418, thanks ZGLinus)
