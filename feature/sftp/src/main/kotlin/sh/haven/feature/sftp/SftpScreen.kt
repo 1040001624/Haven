@@ -642,34 +642,43 @@ fun SftpScreen(
                             }) {
                                 Icon(Icons.Filled.FolderOpen, stringResource(R.string.sftp_add_folder_location))
                             }
-                            SmallFloatingActionButton(onClick = {
-                                fabExpanded = false
-                                folderUploadLauncher.launch(null)
-                            }) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(24.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Folder,
-                                        stringResource(R.string.sftp_upload_folder),
+                            // Upload targets a connected remote (or a writable SAF
+                            // folder) — the synthetic Local tab is a browse/source
+                            // only and these error "Not connected" there (same
+                            // reason activeProfileId=="local" blocks a paste dest,
+                            // sftp_attach_local_no_upload). Hiding them on Local also
+                            // stops "Upload folder" being mistaken for the browse
+                            // picker "Add folder location" right above it (#415).
+                            if (activeProfileId != "local") {
+                                SmallFloatingActionButton(onClick = {
+                                    fabExpanded = false
+                                    folderUploadLauncher.launch(null)
+                                }) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
                                         modifier = Modifier.size(24.dp),
-                                    )
-                                    Icon(
-                                        Icons.Filled.ArrowUpward,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .padding(top = 2.dp),
-                                        tint = MaterialTheme.colorScheme.primaryContainer,
-                                    )
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Folder,
+                                            stringResource(R.string.sftp_upload_folder),
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                        Icon(
+                                            Icons.Filled.ArrowUpward,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .padding(top = 2.dp),
+                                            tint = MaterialTheme.colorScheme.primaryContainer,
+                                        )
+                                    }
                                 }
-                            }
-                            SmallFloatingActionButton(onClick = {
-                                fabExpanded = false
-                                uploadLauncher.launch(arrayOf("*/*"))
-                            }) {
-                                Icon(Icons.Filled.Upload, stringResource(R.string.sftp_upload_file))
+                                SmallFloatingActionButton(onClick = {
+                                    fabExpanded = false
+                                    uploadLauncher.launch(arrayOf("*/*"))
+                                }) {
+                                    Icon(Icons.Filled.Upload, stringResource(R.string.sftp_upload_file))
+                                }
                             }
                             if (hasMediaFiles) {
                                 SmallFloatingActionButton(onClick = {
