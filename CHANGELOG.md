@@ -5,6 +5,10 @@ the corresponding GitHub Release; a release can't ship without its section
 (enforced by `scripts/check-changelog.sh` in CI). The GitHub "Full Changelog"
 compare link is appended automatically — don't add it here.
 
+## v5.83.2
+
+🔌 **RDP: connecting to VirtualBox works past login (empty Font Map)** — after v5.81.10 fixed the certificate handshake, RDP to a VirtualBox VM authenticated ("access granted") but then died immediately with a protocol decode error. VirtualBox's built-in RDP server sends an *empty* Server Font Map in the connection-finalisation handshake, and Haven's decoder rejected it as malformed. The Font Map is only a "you may start drawing now" signal and its contents are unused, so Haven now accepts an empty/short one and continues — the same leniency mstsc and FreeRDP have. Reported for VirtualBox; should also help other RDP servers that send a minimal Font Map. (#422, thanks pawlosck)
+
 ## v5.83.1
 
 🔌 **Agent API: profiles' remote command is settable over MCP** — `create_connection` and `update_connection` now take `remoteCommand` (run via an SSH exec request instead of a login shell, e.g. `tmux new -A -s work`) and `requestPty`, and profiles report them back through `list_connections`. Previously the v5.83.0 remote-command field could only be set in the connection editor. (#436)
